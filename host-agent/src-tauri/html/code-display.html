@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Duxo — Code Display</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #141414;
+      color: #ffffff;
+      font-family: 'Noto Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .container {
+      text-align: center;
+      padding: 24px;
+    }
+    .label {
+      font-size: 11px;
+      color: #999;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 12px;
+    }
+    .code {
+      font-family: 'Noto Sans Mono', 'Courier New', monospace;
+      font-size: 40px;
+      font-weight: 600;
+      letter-spacing: 8px;
+      color: #ffffff;
+      margin-bottom: 16px;
+      font-variant-numeric: tabular-nums;
+    }
+    .copy-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 20px;
+      border-radius: 999px;
+      border: none;
+      background: #ef443b;
+      color: #fff;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 100ms;
+      margin-bottom: 20px;
+    }
+    .copy-btn:hover { background: #f55c54; }
+    .copy-btn:focus-visible {
+      outline: 2px solid #fff;
+      outline-offset: 2px;
+    }
+    .copy-btn.copied { background: #22c55e; }
+    .status {
+      font-size: 13px;
+      color: #999;
+    }
+    .status.active { color: #22c55e; }
+    .hide { display: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="label">Connection Code</div>
+    <div id="codeDisplay" class="code">---- ----</div>
+    <button id="copyBtn" class="copy-btn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      Copy Code
+    </button>
+    <div id="statusText" class="status">Waiting for connection…</div>
+  </div>
+
+  <script>
+    const { invoke } = window.__TAURI__;
+
+    let currentCode = '';
+
+    async function updateDisplay() {
+      try {
+        const code = await invoke('get_display_code');
+        const status = await invoke('get_session_status');
+        const codeEl = document.getElementById('codeDisplay');
+        const statusEl = document.getElementById('statusText');
+
+        if (code) {
+          currentCode = code;
+          codeEl.textContent = code;
+        }
+        if (status === 'connecting' || status === 'active') {
+          statusEl.textContent = 'Connected';
+          statusEl.className = 'status active';
+        } else if (status === 'ended' || status === 'expired') {
+          statusEl.textContent = 'Session ended — generate a new code';
+          statusEl.className = 'status';
+        } else {
+          statusEl.textContent = 'Waiting for connection…';
+          statusEl.className = 'status';
+        }
+      } catch (e) {
+        // Tauri errors on non-existent commands are handled silently
+      }
+    }
+
+    document.getElementById('copyBtn').addEventListener('click', async () => {
+      if (!currentCode) return;
+      try {
+        await navigator.clipboard.writeText(currentCode.replace(' ', ''));
+        const btn = document.getElementById('copyBtn');
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy Code`;
+          btn.classList.remove('copied');
+        }, 2000);
+      } catch (e) { /* clipboard unavailable */ }
+    });
+
+    updateDisplay();
+    setInterval(updateDisplay, 2000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,44 @@
+rules_version = '2';
+
+// Duxo — Firestore Security Rules (§10.1).
+// Durable, low-frequency records only — never per-frame/per-input data (§6.3).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // §6.3 — user profile. TOTP secret encrypted, never plaintext (§2.3).
+    match /users/{uid} {
+      allow read, update: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null && request.auth.uid == uid;
+      // Account deletion handled via dedicated multi-step flow (§10.6),
+      // not direct delete — prevents accidental loss.
+      allow delete: if false;
+    }
+
+    // §6.3, §8.2 — device registry. Revoke = delete + force token refresh fail.
+    match /devices/{deviceId} {
+      allow read, delete: if request.auth != null && resource.data.ownerUid == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.ownerUid == request.auth.uid;
+      // Devices are recreated on re-registration, never mutated.
+      allow update: if false;
+    }
+
+    // §6.3 — post-session record. Metadata only (timestamp/duration/platform),
+    // NEVER screen content.
+    match /sessionHistory/{sessionId} {
+      allow read: if request.auth != null &&
+        (resource.data.hostUid == request.auth.uid || resource.data.viewerUid == request.auth.uid);
+      // Written at session end; Path B validates server-side via Cloud Function.
+      allow create: if request.auth != null;
+      // Append-only history.
+      allow update, delete: if false;
+    }
+
+    // §6.3, §7.3 — audit log. Append-only + SHA-256 hash chain integrity.
+    match /auditLog/{entryId} {
+      allow read: if request.auth != null && resource.data.uid == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
+      // Append-only — supports the hash-chain tamper-evidence model (§7.3).
+      allow update, delete: if false;
+    }
+  }
+}

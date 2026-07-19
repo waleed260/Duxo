@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Duxo — global styles.
+ *
+ * Design intent (§9.1): trustworthy, modern SaaS, dark-first, single accent.
+ * §9.7 anti-patterns enforced here:
+ *   - No color-only error/success signaling (always pair with text/icon)
+ *   - No one-off spacing/typography outside the token scale (§9.2 / §9.8)
+ */
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background-color: theme("colors.surface.base");
+  color: theme("colors.text.primary");
+  font-family: theme("fontFamily.sans");
+  /* §9.2 — base font size, accessibility baseline. */
+  font-size: theme("fontSize.md");
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/*
+ * §9.5 — Focus visibility acceptance criterion.
+ * Every interactive element must have a visible :focus-visible outline
+ * distinct from hover. Never `outline: none` without a replacement (§9.8).
+ */
+:focus-visible {
+  outline: 2px solid theme("colors.text.primary");
+  outline-offset: 2px;
+  border-radius: theme("borderRadius.sm");
+}
+
+/*
+ * §9.3b #10 / §9.5 Motion — respect prefers-reduced-motion.
+ * Disables animation entirely when set, not just shortens it.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Accessible-code helper — visible only to screen readers. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

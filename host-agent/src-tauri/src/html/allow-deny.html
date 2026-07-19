@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Duxo — Connection Request</title>
+  <style>
+    /* §9.2 design tokens */
+    :root {
+      --surface-base: #000000;
+      --surface-raised: #141414;
+      --surface-overlay: #1c1c1c;
+      --border-default: #2a2a2a;
+      --border-strong: #3a3a3a;
+      --text-primary: #ffffff;
+      --text-secondary: #999999;
+      --accent: #ef443b;
+      --danger: #ef443b;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: var(--surface-overlay);
+      color: var(--text-primary);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .header-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .header-title {
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .email-section {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px;
+      background: var(--surface-raised);
+      border: 1px solid var(--border-default);
+      border-radius: 12px;
+      margin-bottom: 16px;
+    }
+
+    .warning-icon {
+      color: var(--accent);
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+
+    .email {
+      font-size: 15px;
+      font-weight: 600;
+      word-break: break-all;
+    }
+
+    .status-badge {
+      font-size: 12px;
+      color: var(--text-secondary);
+      background: var(--surface-overlay);
+      border: 1px solid var(--border-default);
+      border-radius: 999px;
+      padding: 4px 12px;
+      margin-bottom: 16px;
+      display: inline-block;
+    }
+
+    /* §2.4 — plain-language warning, not technical jargon */
+    .warning-text {
+      font-size: 15px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+
+    .warning-text strong {
+      color: var(--text-primary);
+    }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+      margin-top: auto;
+    }
+
+    /* §2.4 — Deny is visually default/safe-colored */
+    .btn-deny {
+      flex: 1;
+      padding: 12px 24px;
+      font-size: 15px;
+      font-weight: 600;
+      background: var(--surface-raised);
+      color: var(--text-primary);
+      border: 1px solid var(--border-default);
+      border-radius: 999px;
+      cursor: pointer;
+      transition: border-color 100ms;
+    }
+
+    .btn-deny:hover {
+      border-color: var(--border-strong);
+    }
+
+    /* §2.4 — Allow requires deliberate action, no default focus */
+    .btn-allow {
+      flex: 1;
+      padding: 12px 24px;
+      font-size: 15px;
+      font-weight: 600;
+      background: var(--accent);
+      color: var(--text-primary);
+      border: none;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: opacity 100ms;
+    }
+
+    .btn-allow:hover {
+      opacity: 0.9;
+    }
+
+    /* §2.4 — NO default focus on Allow. Focus ring only shows on Tab. */
+    .btn-allow:focus-visible {
+      outline: 2px solid var(--text-primary);
+      outline-offset: 2px;
+    }
+
+    .btn-deny:focus-visible {
+      outline: 2px solid var(--text-primary);
+      outline-offset: 2px;
+    }
+
+    .timeout-bar {
+      height: 3px;
+      background: var(--border-default);
+      border-radius: 2px;
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+
+    .timeout-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 2px;
+      animation: timeout 60s linear forwards;
+    }
+
+    @keyframes timeout {
+      from { width: 100%; }
+      to { width: 0%; }
+    }
+
+    .timeout-text {
+      font-size: 12px;
+      color: var(--text-secondary);
+      text-align: center;
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span class="header-dot" aria-hidden="true"></span>
+    <span class="header-title">Duxo</span>
+  </div>
+
+  <div class="email-section">
+    <span class="warning-icon" aria-hidden="true">⚠</span>
+    <span class="email" id="viewer-email">Loading…</span>
+  </div>
+
+  <div class="status-badge">Requesting access</div>
+
+  <p class="warning-text">
+    This person is requesting <strong>full control</strong> of your screen,
+    mouse, and keyboard. Only allow connections from people you trust.
+  </p>
+
+  <!-- §2.4 — 60-second timeout, auto-Deny (never Allow) -->
+  <div class="timeout-bar">
+    <div class="timeout-fill"></div>
+  </div>
+  <div class="timeout-text">Auto-denies in <span id="countdown">60</span>s</div>
+
+  <div class="actions">
+    <!-- §2.4 — Deny is the default/safe option -->
+    <button class="btn-deny" id="btn-deny" autofocus>
+      Deny
+    </button>
+    <!-- §2.4 — Allow requires deliberate action (no autofocus) -->
+    <button class="btn-allow" id="btn-allow">
+      Allow
+    </button>
+  </div>
+
+  <script>
+    // Read the verified viewer email from URL params.
+    const params = new URLSearchParams(window.location.search);
+    const email = params.get('email') || 'Unknown';
+    document.getElementById('viewer-email').textContent = email;
+
+    // §2.4 — 60-second timeout → auto-Deny.
+    let seconds = 60;
+    const countdownEl = document.getElementById('countdown');
+    const timer = setInterval(() => {
+      seconds--;
+      countdownEl.textContent = seconds;
+      if (seconds <= 0) {
+        clearInterval(timer);
+        // §2.4 — timeout resolves to Denied, never Allowed.
+        deny();
+      }
+    }, 1000);
+
+    function deny() {
+      clearInterval(timer);
+      // In production, invoke tauri::generate_handler![handle_deny].
+      window.__TAURI__?.invoke('handle_deny');
+      window.close();
+    }
+
+    function allow() {
+      clearInterval(timer);
+      // In production, invoke tauri::generate_handler![handle_allow].
+      window.__TAURI__?.invoke('handle_allow');
+      window.close();
+    }
+
+    document.getElementById('btn-deny').addEventListener('click', deny);
+    document.getElementById('btn-allow').addEventListener('click', allow);
+
+    // §2.4 — keyboard: Enter on focused button activates it.
+    // No default focus on Allow — Tab required first.
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') deny();
+    });
+  </script>
+</body>
+</html>

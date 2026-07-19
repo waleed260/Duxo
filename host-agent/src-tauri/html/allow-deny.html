@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Duxo — Connection Request</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #1c1c1c;
+      color: #ffffff;
+      font-family: 'Noto Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .container {
+      text-align: center;
+      max-width: 380px;
+    }
+    .email {
+      font-size: 17px;
+      font-weight: 600;
+      color: #ffffff;
+      margin-bottom: 4px;
+      word-break: break-all;
+    }
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      color: #ef443b;
+      border: 1px solid #ef443b;
+      border-radius: 999px;
+      padding: 2px 10px;
+      margin-bottom: 16px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .warning {
+      font-size: 13px;
+      color: #999;
+      line-height: 1.5;
+      margin-bottom: 24px;
+    }
+    .warning strong {
+      color: #ffffff;
+    }
+    .actions {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+    .btn {
+      min-width: 100px;
+      padding: 10px 28px;
+      border-radius: 999px;
+      border: none;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 100ms;
+    }
+    .btn:focus-visible {
+      outline: 2px solid #fff;
+      outline-offset: 2px;
+    }
+    .btn-deny {
+      background: #2a2a2a;
+      color: #ffffff;
+    }
+    .btn-deny:hover {
+      background: #3a3a3a;
+    }
+    .btn-allow {
+      background: #ef443b;
+      color: #ffffff;
+    }
+    .btn-allow:hover {
+      background: #f55c54;
+    }
+    .btn-allow:focus-visible {
+      outline-color: #ef443b;
+    }
+    .status {
+      font-size: 12px;
+      color: #999;
+      margin-top: 16px;
+    }
+    .timer {
+      font-size: 11px;
+      color: #666;
+      margin-top: 8px;
+    }
+    .hidden-focus {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div id="emailDisplay" class="email">—</div>
+    <div class="badge">Requesting Access</div>
+    <p class="warning">
+      This person is requesting <strong>full control</strong> of your screen,
+      mouse and keyboard.
+    </p>
+    <div class="actions">
+      <button id="denyBtn" class="btn btn-deny" tabindex="2">Deny</button>
+      <button id="allowBtn" class="btn btn-allow" tabindex="3">Allow</button>
+    </div>
+    <div id="statusMsg" class="status"></div>
+    <div id="timerDisplay" class="timer">Auto-deny in 60s</div>
+    <div class="hidden-focus" tabindex="1" id="initialFocus"></div>
+  </div>
+
+  <script>
+    const { invoke } = window.__TAURI__;
+
+    // Read viewer email from URL query param (§2.5 — verified by backend before this window opens).
+    const params = new URLSearchParams(window.location.search);
+    const email = params.get('email') || 'Unknown';
+    document.getElementById('emailDisplay').textContent = email;
+
+    // §2.4 — no default focus on Allow. Tab starts on hidden element → Deny → Allow.
+    document.getElementById('initialFocus').focus();
+
+    let decisionMade = false;
+
+    async function sendDecision(allowed) {
+      if (decisionMade) return;
+      decisionMade = true;
+      try {
+        await invoke(allowed ? 'handle_allow' : 'handle_deny');
+        document.getElementById('statusMsg').textContent = allowed ? 'Access granted' : 'Access denied';
+        document.getElementById('statusMsg').style.color = allowed ? '#22c55e' : '#ef443b';
+        document.getElementById('timerDisplay').textContent = 'You may close this window';
+      } catch (e) {
+        document.getElementById('statusMsg').textContent = 'Error sending decision';
+      }
+    }
+
+    document.getElementById('allowBtn').addEventListener('click', () => sendDecision(true));
+    document.getElementById('denyBtn').addEventListener('click', () => sendDecision(false));
+
+    // §2.4 — 60 second timeout → auto-deny.
+    let remaining = 60;
+    const timerEl = document.getElementById('timerDisplay');
+    const interval = setInterval(() => {
+      remaining--;
+      if (remaining > 0) {
+        timerEl.textContent = `Auto-deny in ${remaining}s`;
+      } else {
+        clearInterval(interval);
+        if (!decisionMade) {
+          timerEl.textContent = 'Timed out — auto-denied';
+          sendDecision(false);
+        }
+      }
+    }, 1000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Duxo — Code Display</title>
+  <style>
+    /* §9.2 design tokens */
+    :root {
+      --surface-base: #000000;
+      --surface-raised: #141414;
+      --surface-overlay: #1c1c1c;
+      --border-default: #2a2a2a;
+      --border-strong: #3a3a3a;
+      --text-primary: #ffffff;
+      --text-secondary: #999999;
+      --accent: #ef443b;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: var(--surface-base);
+      color: var(--text-primary);
+      font-family: var(--font-mono);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .code-label {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    /* §3.4 — large, legible monospace code (read aloud over phone) */
+    .code-display {
+      font-size: 48px;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      color: var(--text-primary);
+      text-align: center;
+      padding: 16px 24px;
+      background: var(--surface-raised);
+      border: 1px solid var(--border-default);
+      border-radius: 12px;
+      min-width: 320px;
+      user-select: all;
+    }
+
+    .status {
+      margin-top: 16px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .copy-btn {
+      margin-top: 16px;
+      padding: 8px 24px;
+      font-size: 13px;
+      font-family: inherit;
+      background: var(--surface-overlay);
+      color: var(--text-primary);
+      border: 1px solid var(--border-default);
+      border-radius: 999px;
+      cursor: pointer;
+      transition: border-color 100ms;
+    }
+
+    .copy-btn:hover {
+      border-color: var(--border-strong);
+    }
+
+    .copy-btn:focus-visible {
+      outline: 2px solid var(--text-primary);
+      outline-offset: 2px;
+    }
+
+    .copied {
+      color: var(--accent);
+      font-size: 12px;
+      margin-top: 8px;
+      opacity: 0;
+      transition: opacity 200ms;
+    }
+
+    .copied.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div class="code-label">Share this code</div>
+  <div class="code-display" id="code">Loading...</div>
+  <div class="status">
+    <span class="status-dot"></span>
+    <span id="status-text">Waiting for connection…</span>
+  </div>
+  <button class="copy-btn" id="copy-btn" aria-label="Copy code to clipboard">
+    Copy code
+  </button>
+  <div class="copied" id="copied-msg">Copied!</div>
+
+  <script>
+    // §3.4 — read the code from the Tauri command.
+    // In production, invoke tauri::generate_handler![get_display_code].
+    // For now, read from the window title or URL params.
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code') || '0000 0000';
+    document.getElementById('code').textContent = code;
+
+    // §3.4 — copy-to-clipboard button.
+    document.getElementById('copy-btn').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(code.replace(/\s/g, ''));
+        const msg = document.getElementById('copied-msg');
+        msg.classList.add('show');
+        setTimeout(() => msg.classList.remove('show'), 2000);
+      } catch {
+        // Fallback: select the text for manual copy.
+        const el = document.getElementById('code');
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    });
+  </script>
+</body>
+</html>

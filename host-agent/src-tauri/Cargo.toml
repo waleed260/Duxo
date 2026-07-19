@@ -1,0 +1,84 @@
+[package]
+name = "duxo-host"
+version = "0.1.0"
+description = "Duxo host agent — Tauri v2 + Rust remote desktop host"
+authors = ["Duxo Contributors"]
+license = "MIT"
+repository = "https://github.com/your-org/duxo"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Tauri v2 core
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+
+# §0.5 — WebRTC via webrtc-rs
+webrtc = "0.11"
+
+# §2.5 — JWT verification (Firebase ID token → Google public certs)
+jsonwebtoken = "9"
+reqwest = { version = "0.12", features = ["json"] }
+
+# §2.6 — OS-native secure storage (Windows Credential Manager / Linux Secret Service)
+keyring = "3"
+
+# §0.5 — Screen capture
+# Cross-platform: scrap (DXGI on Windows, XShm on Linux)
+scrap = "0.5"
+
+# Windows-specific: DXGI Desktop Duplication (future optimization)
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+  "Win32_Graphics_Gdi",
+  "Win32_Graphics_Dxgi",
+  "Win32_Graphics_Direct3D",
+  "Win32_Graphics_Direct3D11",
+  "Win32_UI_WindowsAndMessaging",
+], optional = true }
+enigo = { version = "0.2", features = ["serde"] }
+
+# Linux X11: x11rb for X11-specific features
+[target.'cfg(target_os = "linux")'.dependencies]
+x11rb = { version = "0.13", features = ["all-extensions"], optional = true }
+enigo = { version = "0.2", features = ["serde"] }
+
+# §1.6 — logging (local rotating file, no cloud logging bill)
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
+
+# §7.2 — memory hygiene (zeroize secrets on drop)
+zeroize = { version = "1", features = ["derive"] }
+
+# §7.3 — SHA-256 hash chain for audit log
+sha2 = "0.10"
+
+# Random (session ID / 8-digit code generation)
+rand = "0.8"
+
+# §1.5 — self-update check (GitHub Releases API, free)
+chrono = "0.4"
+
+# §10.3b — error derivation
+thiserror = "1"
+
+# §1.5 — semver for version comparison in update check
+semver = "1"
+
+# §1.6 — log directory resolution
+dirs = "5"
+
+# §2.4 — URL encoding for Allow/Deny window query params
+urlencoding = "2"
+
+[features]
+default = []
+# §0.5 — feature flags for display-server backends
+capture-x11 = ["x11rb"]
+capture-wayland = []

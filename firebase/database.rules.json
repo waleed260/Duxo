@@ -1,0 +1,41 @@
+// Duxo — RTDB Security Rules (§10.2, full & deployable).
+//
+// RTDB is for LIVE signaling only (ICE candidates, offer/answer, status).
+// Durable records live in Firestore (§6.3, §10.1) — never write per-frame
+// or per-input-event data here, it blows the quota.
+{
+  "rules": {
+    "sessions": {
+      "$sessionId": {
+        // §0.7 — host and viewer only. Hijacking blocked at rule layer.
+        ".read": "auth != null && (data.child('hostId').val() == auth.uid || data.child('viewerId').val() == auth.uid)",
+        ".write": "auth != null && (data.child('hostId').val() == auth.uid || data.child('viewerId').val() == auth.uid || !data.exists())",
+        ".validate": "newData.child('createdAt').val() <= now",
+        // §1.1 — explicit enum, no loose strings ("Allowed" vs "allowed").
+        "status": {
+          ".validate": "newData.val() == 'waiting' || newData.val() == 'requested' || newData.val() == 'allowed' || newData.val() == 'denied' || newData.val() == 'connecting' || newData.val() == 'active' || newData.val() == 'ended' || newData.val() == 'expired'"
+        },
+        // §0.6 — SDP 10KB cap, ICE batching max 10 per write.
+        "offer":   { ".validate": "newData.isString() && newData.val().length <= 10000" },
+        "answer":  { ".validate": "newData.isString() && newData.val().length <= 10000" },
+        "hostCandidates":   { "$index": { ".validate": "$index.matches(/^([0-9]|[1-9][0-9])$/)" } },
+        "viewerCandidates": { "$index": { ".validate": "$index.matches(/^([0-9]|[1-8][0-9]|9[0-9])$/)" } }
+      }
+    },
+    "codes": {
+      "$code": {
+        // §0.7 — 8-digit codes, 100M combinations.
+        ".read": "auth != null",
+        ".write": "auth != null",
+        ".validate": "newData.isString() && $code.length == 8 && newData.val().length <= 50"
+      }
+    },
+    "rateLimit": {
+      "$ipHash": {
+        // §0.7 — 5 attempts/min per IP, brute-force defense.
+        ".read": false,
+        ".write": "auth != null && (!data.exists() || data.child('count').val() < 5 || now - data.child('lastAttempt').val() > 60000)"
+      }
+    }
+  }
+}
