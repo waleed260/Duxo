@@ -1,5 +1,7 @@
+'use client'
+
 import { useRef, useEffect, useState } from 'react'
-import { useCursorPosition } from '../hooks/useCursorPosition'
+import { useCursorPosition } from './useCursorPosition'
 
 const CELL = 48
 
@@ -38,6 +40,7 @@ export default function GridBackground() {
       <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <pattern id="grid" width={CELL} height={CELL} patternUnits="userSpaceOnUse">
+            {/* eslint-disable-next-line no-restricted-syntax */}
             <path d={`M ${CELL} 0 L 0 0 0 ${CELL}`} stroke="#64748b" strokeWidth={0.6} fill="none" />
           </pattern>
         </defs>

@@ -1,5 +1,7 @@
-import { useEffect, useRef } from 'react'
-import { useBodyLock } from '../hooks/useBodyLock'
+'use client'
+
+import { useEffect } from 'react'
+import { useBodyLock } from './useBodyLock'
 
 const navItems = ['Device', 'Real Stories', 'Science', 'Plans', 'Reach Us']
 
@@ -9,8 +11,6 @@ interface MobileMenuProps {
 }
 
 export default function MobileMenu({ open, onClose }: MobileMenuProps) {
-  const overlayRef = useRef<HTMLDivElement>(null)
-
   useBodyLock(open)
 
   useEffect(() => {
@@ -25,10 +25,7 @@ export default function MobileMenu({ open, onClose }: MobileMenuProps) {
   if (!open) return null
 
   return (
-    <div
-      ref={overlayRef}
-      className="fixed inset-0 z-55 flex flex-col bg-[#0a0a0a]"
-    >
+    <div className="fixed inset-0 z-[55] flex flex-col bg-[#0a0a0a]">
       <div className="flex justify-end px-4 pt-4 sm:px-6 md:px-10">
         <button
           onClick={onClose}
@@ -48,7 +45,9 @@ export default function MobileMenu({ open, onClose }: MobileMenuProps) {
             onClick={onClose}
             className="text-3xl sm:text-4xl text-white/90 font-medium"
             style={{
-              animation: open ? `slideUp 0.6s cubic-bezier(0.77, 0, 0.18, 1) ${100 + i * 60}ms both` : 'none',
+              animation: open
+                ? `measured-slideUp 0.6s cubic-bezier(0.77, 0, 0.18, 1) ${100 + i * 60}ms both`
+                : 'none',
             }}
           >
             {item}
@@ -60,7 +59,9 @@ export default function MobileMenu({ open, onClose }: MobileMenuProps) {
         <button
           className="liquid-glass flex items-center gap-3 px-8 py-3 rounded-full text-white text-sm font-medium"
           style={{
-            animation: open ? `slideUp 0.6s cubic-bezier(0.77, 0, 0.18, 1) ${100 + navItems.length * 60}ms both` : 'none',
+            animation: open
+              ? `measured-slideUp 0.6s cubic-bezier(0.77, 0, 0.18, 1) ${100 + navItems.length * 60}ms both`
+              : 'none',
           }}
         >
           <span className="w-2 h-2 rounded-full bg-green-400" />

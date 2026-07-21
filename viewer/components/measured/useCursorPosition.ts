@@ -1,9 +1,6 @@
-import { useRef, useEffect, useCallback } from 'react'
+'use client'
 
-export interface SmoothCursor {
-  x: number
-  y: number
-}
+import { useRef, useEffect, useCallback } from 'react'
 
 export function useCursorPosition(
   containerRef: React.RefObject<HTMLElement | null>,

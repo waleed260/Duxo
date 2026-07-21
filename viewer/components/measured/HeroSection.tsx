@@ -1,12 +1,19 @@
+'use client'
+
 import GridBackground from './GridBackground'
 import SpotlightReveal from './SpotlightReveal'
 
-const BG_IMAGE_1 = 'https://images.higgs.ai/?default=1&output=webp&url=https%3A%2F%2Fd8j0ntlcm91z4.cloudfront.net%2Fuser_38xzZboKViGWJOttwIXH07lWA1P%2Fhf_20260713_140344_79e1296a-86d7-43fd-9b5f-63ffe560f291.png&w=1280&q=85'
-const OVERLAY_IMAGE = 'https://soft-zoom-63098134.figma.site/_assets/v11/3f10f1876e118f72a396e05a6c2d099569478272.png'
+const BG_IMAGE_1 =
+  'https://images.higgs.ai/?default=1&output=webp&url=https%3A%2F%2Fd8j0ntlcm91z4.cloudfront.net%2Fuser_38xzZboKViGWJOttwIXH07lWA1P%2Fhf_20260713_140344_79e1296a-86d7-43fd-9b5f-63ffe560f291.png&w=1280&q=85'
+const OVERLAY_IMAGE =
+  'https://soft-zoom-63098134.figma.site/_assets/v11/3f10f1876e118f72a396e05a6c2d099569478272.png'
 
 export default function HeroSection() {
   return (
-    <section className="relative w-full h-screen overflow-hidden bg-black font-helvetica-neue">
+    <section
+      className="relative w-full h-screen overflow-hidden bg-black"
+      style={{ fontFamily: "'Helvetica Neue Roman', 'Inter', sans-serif" }}
+    >
       <GridBackground />
 
       <div
@@ -23,6 +30,7 @@ export default function HeroSection() {
         </span>
       </h1>
 
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={OVERLAY_IMAGE}
         alt=""

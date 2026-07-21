@@ -1,17 +1,20 @@
+'use client'
+
 import { useRef, useEffect } from 'react'
-import { useCursorPosition } from '../hooks/useCursorPosition'
+import { useCursorPosition } from './useCursorPosition'
 
 const RADIUS = 260
 const STOPS: [number, number][] = [
   [0.0, 1],
   [0.4, 1],
-  [0.60, 0.75],
-  [0.75, 0.40],
+  [0.6, 0.75],
+  [0.75, 0.4],
   [0.88, 0.12],
   [1.0, 0.0],
 ]
 
-const FRONT_VIDEO = 'https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260713_162101_0d7498c5-29bb-47bf-a99f-2773c0a880a9.mp4'
+const FRONT_VIDEO =
+  'https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260713_162101_0d7498c5-29bb-47bf-a99f-2773c0a880a9.mp4'
 
 export default function SpotlightReveal() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -72,7 +75,7 @@ export default function SpotlightReveal() {
         className="absolute inset-0"
         style={{
           clipPath: 'inset(40% 0 0 0)',
-          WebkitMaskRepeat: 'no-repeat',
+          WebkitMaskRepeat: 'no-repeat' as React.CSSProperties['WebkitMaskRepeat'],
           maskRepeat: 'no-repeat',
           WebkitMaskSize: '100% 100%',
           maskSize: '100% 100%',

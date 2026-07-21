@@ -19,6 +19,9 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      screens: {
+        xs: "480px",
+      },
       colors: {
         // §9.2 — Surface progression (replaces shadows).
         surface: {
