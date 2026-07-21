@@ -54,11 +54,11 @@ function Hero() {
         </div>
 
         <div className="mt-spacing-6 flex flex-col gap-spacing-4">
-          <h1 className="text-4xl font-weight-emphasis text-text-primary sm:text-5xl sm:leading-tight">
+          <h1 className="text-4xl font-weight-emphasis text-text-primary">
             Remote access,{" "}
             <span className="text-accent">built in the open.</span>
           </h1>
-          <p className="mx-auto max-w-2xl text-lg text-text-secondary">
+          <p className="mx-auto max-w-2xl text-md text-text-secondary">
             Connect to any Windows or Linux machine, end-to-end encrypted over
             WebRTC. Open source, zero telemetry, zero cost.
           </p>
@@ -123,19 +123,16 @@ const features = [
     icon: Lock,
     title: "End-to-end encrypted",
     body: "DTLS-SRTP over WebRTC. Even TURN relays can't decrypt your traffic. Your session, your data.",
-    accent: "bg-accent/10 text-accent",
   },
   {
     icon: MonitorSmartphone,
     title: "Cross-platform",
     body: "Full control on Windows and Linux X11. Wayland ships view-only, honestly scoped. One binary, any machine.",
-    accent: "bg-[#2563eb]/10 text-[#2563eb]",
   },
   {
     icon: Fingerprint,
     title: "Host permission gate",
     body: "Every connection requires an explicit Allow click from the host. No silent takeovers, no backdoors.",
-    accent: "bg-[#7c3aed]/10 text-[#7c3aed]",
   },
 ];
 
@@ -155,7 +152,7 @@ function Features() {
             key={f.title}
             className="flex flex-col gap-spacing-4 rounded-md border border-border-default bg-surface-raised p-spacing-6 transition-colors duration-fast hover:border-border-strong"
           >
-            <div className={`flex h-10 w-10 items-center justify-center rounded-sm ${f.accent}`}>
+            <div className="flex h-10 w-10 items-center justify-center rounded-sm bg-accent/10 text-accent">
               <f.icon className="h-5 w-5" />
             </div>
             <h3 className="text-md font-weight-emphasis">{f.title}</h3>
