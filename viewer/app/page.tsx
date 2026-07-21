@@ -17,6 +17,7 @@ import {
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/Button";
+import { AnimatedCounter } from "@/components/AnimatedCounter";
 
 export default function LandingPage() {
   return (
@@ -60,7 +61,7 @@ function Hero() {
 
       <div className="relative z-10 mx-auto flex max-w-6xl flex-col items-center px-spacing-6 py-spacing-8 text-center">
         <div className="flex items-center gap-spacing-2 rounded-pill border border-border-default bg-surface-raised/80 px-spacing-4 py-spacing-1 text-xs text-text-secondary backdrop-blur">
-          <span className="h-1.5 w-1.5 rounded-pill bg-success" />
+          <Code className="h-3 w-3 text-accent" />
           Open source &middot; MIT licensed &middot; v0.1.0
         </div>
 
@@ -89,16 +90,17 @@ function Hero() {
         </div>
 
         <div className="relative mt-spacing-8 w-full max-w-4xl">
-          <div className="animate-glow-pulse rounded-md border border-border-default bg-surface-raised p-spacing-2">
-            <div className="flex items-center gap-spacing-2 border-b border-border-default px-spacing-3 py-spacing-2">
-              <div className="flex gap-spacing-1">
-                <span className="h-2.5 w-2.5 rounded-pill bg-accent" />
-                <span className="h-2.5 w-2.5 rounded-pill bg-text-secondary" />
-                <span className="h-2.5 w-2.5 rounded-pill bg-text-secondary" />
-              </div>
-              <span className="ml-spacing-2 text-xs text-text-secondary">
+          <div className="animate-glow-pulse rounded-md border border-border-default bg-surface-raised">
+            <div className="flex items-center justify-between border-b border-border-default px-spacing-4 py-spacing-2">
+              <div className="flex items-center gap-spacing-2 text-xs text-text-secondary">
+                <MonitorSmartphone className="h-3 w-3" />
                 duxo session — live preview
-              </span>
+              </div>
+              <div className="flex gap-spacing-1">
+                <span className="h-2 w-2 rounded-pill bg-accent" />
+                <span className="h-2 w-2 rounded-pill bg-text-secondary" />
+                <span className="h-2 w-2 rounded-pill bg-text-secondary" />
+              </div>
             </div>
             <div className="relative aspect-video w-full overflow-hidden rounded-sm bg-surface-overlay">
               <ImageWithBasePath
@@ -140,16 +142,19 @@ const features = [
     icon: Lock,
     title: "End-to-end encrypted",
     body: "DTLS-SRTP over WebRTC. Even TURN relays can't decrypt your traffic. Your session, your data.",
+    bento: "large",
   },
   {
     icon: MonitorSmartphone,
     title: "Cross-platform",
     body: "Full control on Windows and Linux X11. Wayland ships view-only, honestly scoped. One binary, any machine.",
+    bento: "small",
   },
   {
     icon: Fingerprint,
     title: "Host permission gate",
     body: "Every connection requires an explicit Allow click from the host. No silent takeovers, no backdoors.",
+    bento: "small",
   },
 ];
 
@@ -163,17 +168,23 @@ function Features() {
         </p>
       </div>
 
-      <div className="grid gap-spacing-5 sm:grid-cols-3">
+      <div className="grid gap-spacing-5 sm:grid-cols-2">
         {features.map((f) => (
           <div
             key={f.title}
-            className="flex flex-col gap-spacing-4 rounded-md border border-border-default bg-surface-raised p-spacing-6 transition-colors duration-fast hover:border-border-strong"
+            className={
+              f.bento === "large"
+                ? "flex flex-col gap-spacing-4 rounded-md border border-border-default bg-surface-raised p-spacing-6 transition-colors duration-fast hover:border-border-strong sm:col-span-2 sm:flex-row sm:items-start"
+                : "flex flex-col gap-spacing-4 rounded-md border border-border-default bg-surface-raised p-spacing-6 transition-colors duration-fast hover:border-border-strong"
+            }
           >
-            <IconBox>
+            <IconBox className={f.bento === "large" ? "shrink-0" : ""}>
               <f.icon className="h-5 w-5" />
             </IconBox>
-            <h3 className="text-md font-weight-emphasis">{f.title}</h3>
-            <p className="text-sm text-text-secondary">{f.body}</p>
+            <div className="flex flex-col gap-spacing-2">
+              <h3 className="text-md font-weight-emphasis">{f.title}</h3>
+              <p className="text-sm text-text-secondary">{f.body}</p>
+            </div>
           </div>
         ))}
       </div>
@@ -284,10 +295,10 @@ function DemoSection() {
 }
 
 const stats = [
-  { icon: Github, value: "100%", label: "Open source" },
-  { icon: Code, value: "$0", label: "Cost to use" },
-  { icon: EyeOff, value: "0", label: "Telemetry events" },
-  { icon: Layers, value: "2", label: "Platforms supported" },
+  { icon: Github, value: 100, suffix: "%", label: "Open source" },
+  { icon: Code, value: 0, prefix: "$", suffix: "", label: "Cost to use" },
+  { icon: EyeOff, value: 0, suffix: "", label: "Telemetry events" },
+  { icon: Layers, value: 2, suffix: "", label: "Platforms supported" },
 ];
 
 function StatsSection() {
@@ -297,7 +308,9 @@ function StatsSection() {
         {stats.map((s) => (
           <div key={s.label} className="flex flex-col items-center gap-spacing-2 text-center">
             <s.icon className="h-4 w-4 text-accent" />
-            <span className="text-2xl font-weight-emphasis text-accent">{s.value}</span>
+            <span className="text-2xl font-weight-emphasis text-accent">
+              {s.prefix || ""}<AnimatedCounter value={s.value} />{s.suffix}
+            </span>
             <span className="text-xs text-text-secondary">{s.label}</span>
           </div>
         ))}
