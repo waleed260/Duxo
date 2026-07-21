@@ -42,8 +42,8 @@ const variantClasses: Record<ButtonVariant, string> = {
 
 const sizeClasses: Record<ButtonSize, string> = {
   // Min 40px hit target height, 44px on touch surfaces (§9.4).
-  md: "min-h-[40px] px-spacing-4 py-spacing-2 text-sm",
-  lg: "min-h-[44px] px-spacing-6 py-spacing-3 text-md",
+  md: "min-h-[40px] px-4 py-2 text-sm",
+  lg: "min-h-[44px] px-6 py-3 text-md",
 };
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
@@ -69,7 +69,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={isDisabled}
         aria-disabled={isDisabled || undefined}
         className={cn(
-          "inline-flex items-center justify-center gap-spacing-2 font-weight-base",
+          "inline-flex items-center justify-center gap-2 font-weight-base",
           "transition-colors duration-instant motion-reduce:transition-none",
           "focus-visible:outline focus-visible:outline-2 focus-visible:outline-text-primary focus-visible:outline-offset-2",
           variantClasses[variant],

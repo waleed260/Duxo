@@ -60,27 +60,27 @@ export default function DownloadPage() {
   return (
     <>
       <Navbar />
-      <main className="mx-auto max-w-4xl px-spacing-6 py-spacing-8">
+      <main className="mx-auto max-w-4xl px-6 py-8">
         <h1 className="text-2xl font-weight-emphasis">Download Duxo</h1>
-        <p className="mt-spacing-2 text-md text-text-secondary">
+        <p className="mt-2 text-md text-text-secondary">
           Open-source, free forever. The host agent generates an 8-digit code
           you share with the person connecting to you.
         </p>
 
         {/* Primary download — §3.4 auto-detected */}
-        <div className="mt-spacing-6 rounded-md border border-border-default bg-surface-raised p-spacing-6">
-          <div className="flex items-start justify-between gap-spacing-4">
+        <div className="mt-6 rounded-md border border-border-default bg-surface-raised p-6">
+          <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="text-lg font-weight-emphasis">{primary.label}</h2>
-              <p className="mt-spacing-1 text-sm text-text-secondary">
+              <p className="mt-1 text-sm text-text-secondary">
                 {primary.note}
               </p>
             </div>
-            <div className="flex h-spacing-7 w-spacing-7 items-center justify-center rounded-sm bg-surface-overlay text-accent">
+            <div className="flex h-7 w-7 items-center justify-center rounded-sm bg-surface-overlay text-accent">
               <Terminal className="h-5 w-5" aria-hidden="true" />
             </div>
           </div>
-          <a href={primary.href} aria-label={`Download Duxo for ${primary.label}`} className="mt-spacing-4 inline-block">
+          <a href={primary.href} aria-label={`Download Duxo for ${primary.label}`} className="mt-4 inline-block">
             <Button size="lg" leadingIcon={<Download className="h-5 w-5" />}>
               Download
             </Button>
@@ -89,11 +89,11 @@ export default function DownloadPage() {
 
         {/* Secondary — other platform still visible (§3.4 "not hidden") */}
         {os !== "unknown" && os !== "mac" && (
-          <div className="mt-spacing-4 rounded-md border border-border-default bg-surface-raised p-spacing-5">
-            <div className="flex items-center justify-between gap-spacing-4">
+          <div className="mt-4 rounded-md border border-border-default bg-surface-raised p-5">
+            <div className="flex items-center justify-between gap-4">
               <div>
                 <h3 className="text-md font-weight-emphasis">{secondary.label}</h3>
-                <p className="mt-spacing-1 text-sm text-text-secondary">
+                <p className="mt-1 text-sm text-text-secondary">
                   {secondary.note}
                 </p>
               </div>
@@ -105,12 +105,12 @@ export default function DownloadPage() {
         )}
 
         {/* SmartScreen / trust copy — §0.9, exact wording from the plan */}
-        <section className="mt-spacing-7 rounded-md border border-border-strong bg-surface-overlay p-spacing-6">
-          <h2 className="flex items-center gap-spacing-3 text-lg font-weight-emphasis">
+        <section className="mt-7 rounded-md border border-border-strong bg-surface-overlay p-6">
+          <h2 className="flex items-center gap-3 text-lg font-weight-emphasis">
             <ShieldAlert className="h-5 w-5 text-accent" aria-hidden="true" />
             Why Windows shows a warning
           </h2>
-          <div className="mt-spacing-4 space-y-spacing-3 text-sm text-text-secondary">
+          <div className="mt-4 space-y-3 text-sm text-text-secondary">
             <p>
               Windows will show a <strong className="text-text-primary">
               &ldquo;Windows protected your PC&rdquo;</strong> warning because
@@ -136,16 +136,16 @@ export default function DownloadPage() {
         </section>
 
         {os === "mac" && (
-          <p className="mt-spacing-5 text-sm text-text-secondary">
-            <Apple className="mr-spacing-2 inline h-4 w-4" aria-hidden="true" />
+          <p className="mt-5 text-sm text-text-secondary">
+            <Apple className="mr-2 inline h-4 w-4" aria-hidden="true" />
             macOS host support is planned as a Phase 5 feature once funded by
             usage or donations.
           </p>
         )}
 
         {os === "windows" && (
-          <p className="mt-spacing-5 text-sm text-text-secondary">
-            <MonitorCheck className="mr-spacing-2 inline h-4 w-4" aria-hidden="true" />
+          <p className="mt-5 text-sm text-text-secondary">
+            <MonitorCheck className="mr-2 inline h-4 w-4" aria-hidden="true" />
             Looking for Linux instead? Scroll up — both builds are listed.
           </p>
         )}

@@ -37,7 +37,7 @@ export default function LandingPage() {
 
 function Tag({ children }: { children: React.ReactNode }) {
   return (
-    <span className="rounded-pill border border-border-default bg-surface-raised px-spacing-3 py-spacing-1 text-xs text-text-secondary">
+    <span className="rounded-pill border border-border-default bg-surface-raised px-3 py-1 text-xs text-text-secondary">
       {children}
     </span>
   );
@@ -65,8 +65,8 @@ function Hero() {
         <div className="absolute inset-0 bg-gradient-to-b from-surface-base via-surface-base/80 to-surface-base" />
       </div>
 
-      <div className="relative z-10 mx-auto flex max-w-6xl flex-col items-center px-spacing-6 py-spacing-8 text-center">
-        <div className="flex flex-col gap-spacing-5 text-center">
+      <div className="relative z-10 mx-auto flex max-w-6xl flex-col items-center px-6 py-8 text-center">
+        <div className="flex flex-col gap-5 text-center">
           <h1 className="max-w-4xl text-4xl font-weight-emphasis text-text-primary">
             Remote access,{" "}
             <span className="text-accent">built in the open.</span>
@@ -77,7 +77,7 @@ function Hero() {
           </p>
         </div>
 
-        <div className="mt-spacing-6 flex flex-wrap items-center justify-center gap-spacing-4">
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
           <Link href="/download">
             <Button size="lg" leadingIcon={<Download className="h-5 w-5" />}>
               Download for free
@@ -90,7 +90,7 @@ function Hero() {
           </Link>
         </div>
 
-        <div className="mt-spacing-7 flex flex-wrap items-center justify-center gap-spacing-2">
+        <div className="mt-7 flex flex-wrap items-center justify-center gap-2">
           <Tag>E2E encrypted</Tag>
           <Tag>Cross-platform</Tag>
           <Tag>Permission gate</Tag>
@@ -128,15 +128,15 @@ const features = [
 
 function Features() {
   return (
-    <section id="features" className="mx-auto max-w-6xl px-spacing-6 py-spacing-8">
-      <div className="mb-spacing-7 text-center">
+    <section id="features" className="mx-auto max-w-6xl px-6 py-8">
+      <div className="mb-7 text-center">
         <h2 className="text-2xl font-weight-emphasis">Why Duxo</h2>
-        <p className="mt-spacing-2 text-md text-text-secondary">
+        <p className="mt-2 text-md text-text-secondary">
           Built different. Built transparent.
         </p>
       </div>
 
-      <div className="flex flex-col gap-spacing-6">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
         {features.map((f) => (
           <div
             key={f.title}
@@ -151,13 +151,13 @@ function Features() {
               />
               <div className="absolute inset-0 bg-gradient-to-r from-surface-raised via-surface-raised/70 to-transparent" />
             </div>
-            <div className="relative z-10 flex flex-col gap-spacing-4 p-spacing-6 sm:max-w-xl">
+            <div className="relative z-10 flex flex-col gap-4 p-6 sm:max-w-xl">
               <IconBox>
                 <f.icon className="h-5 w-5" />
               </IconBox>
               <h3 className="text-xl font-weight-emphasis">{f.title}</h3>
               <p className="text-sm text-text-secondary">{f.body}</p>
-              <div className="flex flex-wrap gap-spacing-2">
+              <div className="flex flex-wrap gap-2">
                 {f.tags.map((t) => (
                   <Tag key={t}>{t}</Tag>
                 ))}
@@ -180,9 +180,9 @@ const stats = [
 function StatsSection() {
   return (
     <section className="border-y border-border-default bg-surface-raised">
-      <div className="mx-auto grid max-w-6xl grid-cols-2 gap-spacing-6 px-spacing-6 py-spacing-7 sm:grid-cols-4">
+      <div className="mx-auto grid max-w-6xl grid-cols-2 gap-6 px-6 py-12 sm:grid-cols-4">
         {stats.map((s) => (
-          <div key={s.label} className="flex flex-col items-center gap-spacing-2 text-center">
+          <div key={s.label} className="flex flex-col items-center gap-2 text-center">
             <s.icon className="h-4 w-4 text-accent" />
             <span className="text-2xl font-weight-emphasis text-accent">
               {s.prefix || ""}<AnimatedCounter value={s.value} />{s.suffix}
@@ -197,10 +197,10 @@ function StatsSection() {
 
 function DemoSection() {
   return (
-    <section id="demo" className="mx-auto max-w-6xl px-spacing-6 py-spacing-8">
-      <div className="mb-spacing-7 text-center">
+    <section id="demo" className="mx-auto max-w-6xl px-6 py-8">
+      <div className="mb-7 text-center">
         <h2 className="text-2xl font-weight-emphasis">See it in action</h2>
-        <p className="mt-spacing-2 text-md text-text-secondary">
+        <p className="mt-2 text-md text-text-secondary">
           A remote desktop session from start to finish
         </p>
       </div>
@@ -215,37 +215,37 @@ function DemoSection() {
           />
           <div className="absolute inset-0 bg-gradient-to-r from-surface-raised via-surface-raised/70 to-surface-raised" />
         </div>
-        <div className="relative z-10 p-spacing-6">
+        <div className="relative z-10 p-6">
           <div className="animate-glow-pulse rounded-sm border border-border-default bg-surface-overlay/60 backdrop-blur">
-            <div className="flex items-center justify-between border-b border-border-default px-spacing-4 py-spacing-2">
-              <div className="flex items-center gap-spacing-2 text-xs text-text-secondary">
+            <div className="flex items-center justify-between border-b border-border-default px-4 py-2">
+              <div className="flex items-center gap-2 text-xs text-text-secondary">
                 <Terminal className="h-3 w-3 text-accent" />
                 duxo session
               </div>
-              <div className="flex gap-spacing-1">
+              <div className="flex gap-1">
                 <span className="h-2 w-2 rounded-pill bg-accent" />
                 <span className="h-2 w-2 rounded-pill bg-text-secondary" />
                 <span className="h-2 w-2 rounded-pill bg-text-secondary" />
               </div>
             </div>
-            <div className="relative aspect-video w-full overflow-hidden rounded-sm">
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="flex items-center gap-spacing-8">
-                  <div className="flex flex-col items-center gap-spacing-2">
+            <div className="relative w-full overflow-hidden rounded-sm py-12">
+              <div className="flex items-center justify-center">
+                <div className="flex items-center gap-8">
+                  <div className="flex flex-col items-center gap-2">
                     <div className="flex h-12 w-12 items-center justify-center rounded-md border border-accent/30 bg-surface-base/60 backdrop-blur">
                       <MonitorSmartphone className="h-6 w-6 text-accent" />
                     </div>
                     <span className="text-xs text-text-secondary">Viewer</span>
                   </div>
-                  <div className="flex flex-col items-center gap-spacing-2">
+                  <div className="flex flex-col items-center gap-2">
                     <Lock className="h-4 w-4 text-accent" />
                     <div className="h-0.5 w-24 bg-accent/60 animate-connection-pulse" />
-                    <div className="flex items-center gap-spacing-2 text-xs text-success">
+                    <div className="flex items-center gap-2 text-xs text-success">
                       <CheckCircle className="h-3 w-3" />
                       <span>Connected</span>
                     </div>
                   </div>
-                  <div className="flex flex-col items-center gap-spacing-2">
+                  <div className="flex flex-col items-center gap-2">
                     <div className="flex h-12 w-12 items-center justify-center rounded-md border border-border-strong bg-surface-base/60 backdrop-blur">
                       <Shield className="h-6 w-6 text-text-primary" />
                     </div>
@@ -256,9 +256,9 @@ function DemoSection() {
             </div>
           </div>
 
-          <div className="mt-spacing-6 grid gap-spacing-5 sm:grid-cols-3">
-            <div className="flex flex-col gap-spacing-3">
-              <div className="flex items-center gap-spacing-2">
+          <div className="mt-6 grid gap-5 sm:grid-cols-3">
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2">
                 <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-accent/10 text-accent">
                   <span className="text-sm font-weight-emphasis">1</span>
                 </div>
@@ -268,13 +268,13 @@ function DemoSection() {
                 Launch Duxo on the host machine. An 8-digit code appears.
                 No account needed.
               </p>
-              <div className="rounded-sm bg-surface-overlay px-spacing-3 py-spacing-2 text-center">
-                <span className="font-mono text-xl tracking-widest text-accent">4A2K &mdash; 9B7D</span>
+              <div className="rounded-sm bg-surface-overlay px-3 py-2 text-center">
+                <span className="font-mono text-sm tracking-widest text-accent">4A2K &mdash; 9B7D</span>
               </div>
             </div>
 
-            <div className="flex flex-col gap-spacing-3">
-              <div className="flex items-center gap-spacing-2">
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2">
                 <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-accent/10 text-accent">
                   <span className="text-sm font-weight-emphasis">2</span>
                 </div>
@@ -283,17 +283,17 @@ function DemoSection() {
               <p className="text-sm text-text-secondary">
                 Enter the code from any browser. The host must click Allow.
               </p>
-              <div className="flex items-center justify-center gap-spacing-2 rounded-sm bg-surface-overlay px-spacing-3 py-spacing-2">
+              <div className="flex items-center justify-center gap-2 rounded-sm bg-surface-overlay px-3 py-2">
                 <MonitorSmartphone className="h-4 w-4 text-text-secondary" />
                 <ArrowRight className="h-3 w-3 text-accent" />
-                <span className="rounded-sm border border-border-default px-spacing-2 py-spacing-0.5 text-xs text-accent">
+                <span className="rounded-sm border border-border-default px-2 py-0.5 text-sm text-accent">
                   Allow
                 </span>
               </div>
             </div>
 
-            <div className="flex flex-col gap-spacing-3">
-              <div className="flex items-center gap-spacing-2">
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2">
                 <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-accent/10 text-accent">
                   <span className="text-sm font-weight-emphasis">3</span>
                 </div>
@@ -302,7 +302,7 @@ function DemoSection() {
               <p className="text-sm text-text-secondary">
                 Full control with clipboard sync, file transfer, adaptive quality.
               </p>
-              <div className="flex items-center justify-center gap-spacing-2 rounded-sm bg-surface-overlay px-spacing-3 py-spacing-2 text-xs text-success">
+              <div className="flex items-center justify-center gap-2 rounded-sm bg-surface-overlay px-3 py-2 text-sm text-success">
                 <CheckCircle className="h-3 w-3" />
                 <span>Active session</span>
               </div>
@@ -316,8 +316,8 @@ function DemoSection() {
 
 function CtaSection() {
   return (
-    <section className="mx-auto max-w-6xl px-spacing-6 py-spacing-8 text-center">
-      <div className="flex flex-col items-center gap-spacing-5">
+    <section className="mx-auto max-w-6xl px-6 py-8 text-center">
+      <div className="flex flex-col items-center gap-5">
         <h2 className="text-2xl font-weight-emphasis">
           Ready to connect?
         </h2>
@@ -325,7 +325,7 @@ function CtaSection() {
           No sign-up required. Download the host binary, generate a code,
           and connect from any browser.
         </p>
-        <div className="flex flex-wrap items-center justify-center gap-spacing-4">
+        <div className="flex flex-wrap items-center justify-center gap-3">
           <Link href="/download">
             <Button size="lg" leadingIcon={<Download className="h-5 w-5" />}>
               Download for free

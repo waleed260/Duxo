@@ -39,7 +39,7 @@ function Suspended() {
   return (
     <>
       <Navbar />
-      <main className="mx-auto flex min-h-[calc(100vh-60px)] max-w-4xl items-center justify-center px-spacing-6">
+      <main className="mx-auto flex min-h-[calc(100vh-60px)] max-w-4xl items-center justify-center px-6">
         <Loader2 className="h-5 w-5 animate-spin text-text-secondary" aria-hidden="true" />
       </main>
     </>
@@ -210,12 +210,12 @@ function SessionPage() {
   return (
     <>
       <Navbar />
-      <main className="mx-auto flex max-w-6xl flex-col gap-spacing-4 px-spacing-6 py-spacing-6">
+      <main className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-6">
         {/* Wayland view-only banner — §3.4 persistent, non-dismissible */}
         {isViewOnly && phase === "active" && (
           <div
             role="status"
-            className="flex items-center gap-spacing-3 rounded-sm border border-border-strong bg-surface-overlay px-spacing-4 py-spacing-3 text-sm text-text-secondary"
+            className="flex items-center gap-3 rounded-sm border border-border-strong bg-surface-overlay px-4 py-3 text-sm text-text-secondary"
           >
             <AlertTriangle className="h-4 w-4 text-accent" aria-hidden="true" />
             View-only session — this Linux desktop doesn&apos;t support remote
@@ -225,13 +225,13 @@ function SessionPage() {
 
         {/* Failed / denied / ended states */}
         {phase !== "active" && phase !== "connecting" && (
-          <div className="rounded-md border border-border-default bg-surface-raised p-spacing-7 text-center">
+          <div className="rounded-md border border-border-default bg-surface-raised p-7 text-center">
             <h2 className="text-xl font-weight-emphasis">
               {phase === "denied" && "Connection denied"}
               {phase === "ended" && "Session ended"}
               {phase === "failed" && "Connection failed"}
             </h2>
-            <p className="mt-spacing-2 text-sm text-text-secondary">
+            <p className="mt-2 text-sm text-text-secondary">
               {phase === "denied" &&
                 "The host denied this connection request. Double-check with them and try a new code."}
               {phase === "ended" &&
@@ -239,7 +239,7 @@ function SessionPage() {
               {phase === "failed" &&
                 (errorMsg ?? "Something went wrong. Please try again.")}
             </p>
-            <div className="mt-spacing-5">
+            <div className="mt-5">
               <Button onClick={() => router.push("/dashboard")}>
                 Back to dashboard
               </Button>
@@ -259,7 +259,7 @@ function SessionPage() {
               className="h-full w-full"
             />
             {phase === "connecting" && (
-              <div className="absolute inset-0 flex items-center justify-center gap-spacing-3 bg-surface-base/80 text-sm text-text-secondary">
+              <div className="absolute inset-0 flex items-center justify-center gap-3 bg-surface-base/80 text-sm text-text-secondary">
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                 Connecting…
               </div>
@@ -268,9 +268,9 @@ function SessionPage() {
             {/* §3.4 toolbar — slim, collapsible, never blocks primary actions */}
             {/* §9.3b #11 — collapses secondary actions into overflow on narrow viewports */}
             {phase === "active" && (
-              <div className="absolute inset-x-0 top-0 flex items-center justify-between gap-spacing-3 bg-gradient-to-b from-black/70 to-transparent px-spacing-4 py-spacing-3">
+              <div className="absolute inset-x-0 top-0 flex items-center justify-between gap-3 bg-gradient-to-b from-black/70 to-transparent px-4 py-3">
                 {/* §1.4 — ping/pong RTT doubles as quality indicator */}
-                <div className="flex items-center gap-spacing-2 text-sm text-text-primary">
+                <div className="flex items-center gap-2 text-sm text-text-primary">
                   <span
                     className={`h-2 w-2 rounded-pill ${
                       quality === null
@@ -287,9 +287,9 @@ function SessionPage() {
                     {quality === null ? "—" : `${quality}ms`}
                   </span>
                 </div>
-                <div className="flex items-center gap-spacing-2">
+                <div className="flex items-center gap-2">
                   {/* §9.3b #11 — secondary actions visible on wide viewports */}
-                  <div className="hidden sm:flex items-center gap-spacing-2">
+                  <div className="hidden sm:flex items-center gap-2">
                     <ToolbarButton
                       label="Clipboard sync"
                       disabled={isViewOnly}
@@ -438,7 +438,7 @@ function ToolbarOverflowMenu({
       </button>
       {open && (
         <div
-          className="absolute right-0 top-full mt-spacing-2 z-20 min-w-[180px] max-h-[240px] overflow-y-auto rounded-md border border-border-default bg-surface-raised py-spacing-1 shadow-none"
+          className="absolute right-0 top-full mt-2 z-20 min-w-[180px] max-h-[240px] overflow-y-auto rounded-md border border-border-default bg-surface-raised py-1 shadow-none"
           role="menu"
           onKeyDown={handleKeyDown}
         >
@@ -484,7 +484,7 @@ function OverflowMenuItem({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="flex w-full items-center gap-spacing-3 px-spacing-3 py-spacing-2 text-sm text-text-primary hover:bg-surface-overlay transition-colors duration-instant disabled:opacity-40 disabled:pointer-events-none"
+      className="flex w-full items-center gap-3 px-3 py-2 text-sm text-text-primary hover:bg-surface-overlay transition-colors duration-instant disabled:opacity-40 disabled:pointer-events-none"
       role="menuitem"
     >
       {icon}

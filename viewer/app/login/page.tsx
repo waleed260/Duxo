@@ -96,12 +96,12 @@ export default function LoginPage() {
   return (
     <>
       <Navbar />
-      <main className="mx-auto flex min-h-[calc(100vh-60px)] w-full max-w-md flex-col justify-center px-spacing-6 py-spacing-8">
-        <div className="rounded-md border border-border-default bg-surface-raised p-spacing-6">
-          <h1 className="mb-spacing-2 text-xl font-weight-emphasis">
+      <main className="mx-auto flex min-h-[calc(100vh-60px)] w-full max-w-md flex-col justify-center px-6 py-8">
+        <div className="rounded-md border border-border-default bg-surface-raised p-6">
+          <h1 className="mb-2 text-xl font-weight-emphasis">
             {mode === "login" ? "Welcome back" : "Create your account"}
           </h1>
-          <p className="mb-spacing-5 text-sm text-text-secondary">
+          <p className="mb-5 text-sm text-text-secondary">
             Sign in to connect to or host a remote machine.
           </p>
 
@@ -119,13 +119,13 @@ export default function LoginPage() {
           </Button>
 
           {/* §3.4 — email/password secondary below a divider */}
-          <div className="my-spacing-5 flex items-center gap-spacing-3">
+          <div className="my-5 flex items-center gap-3">
             <div className="h-px flex-1 bg-border-default" />
             <span className="text-xs text-text-secondary">or</span>
             <div className="h-px flex-1 bg-border-default" />
           </div>
 
-          <form onSubmit={handleEmail} className="flex flex-col gap-spacing-4">
+          <form onSubmit={handleEmail} className="flex flex-col gap-4">
             <Input
               label="Email"
               type="email"
@@ -160,7 +160,7 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <div className="mt-spacing-5 text-center text-sm text-text-secondary">
+          <div className="mt-5 text-center text-sm text-text-secondary">
             {mode === "login" ? (
               <>
                 New to Duxo?{" "}
@@ -191,7 +191,7 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <p className="mt-spacing-4 text-center text-xs text-text-secondary">
+        <p className="mt-4 text-center text-xs text-text-secondary">
           By continuing you agree to our{" "}
           <Link href="/#docs" className="underline hover:text-text-primary">
             terms

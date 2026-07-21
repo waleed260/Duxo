@@ -20,25 +20,25 @@ export function Navbar({ className }: { className?: string }) {
         className,
       )}
     >
-      <nav className="mx-auto flex w-full max-w-6xl items-center justify-between px-spacing-6 py-spacing-3">
+      <nav className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-3">
         <Link
           href="/"
-          className="flex items-center gap-spacing-2 text-text-primary"
+          className="flex items-center gap-2 text-text-primary"
           aria-label="Duxo home"
         >
           <span
-            className="inline-block h-spacing-2 w-spacing-2 rounded-pill bg-accent"
+            className="inline-block h-2 w-2 rounded-pill bg-accent"
             aria-hidden="true"
           />
           <span className="text-lg font-weight-emphasis">Duxo</span>
         </Link>
 
-        <div className="flex items-center gap-spacing-5 text-sm">
+        <div className="flex items-center gap-7 text-sm">
           <NavLink href="/#features">Features</NavLink>
           <NavLink href="/#demo">How it works</NavLink>
           <NavLink href="/download">Download</NavLink>
           <NavLink href="https://github.com/duxo-org/duxo">GitHub</NavLink>
-          <Link href="/download">
+          <Link href="/download" className="ml-2">
             <Button size="md" leadingIcon={<Download className="h-4 w-4" />}>
               Download
             </Button>

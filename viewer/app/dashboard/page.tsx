@@ -77,7 +77,7 @@ export default function DashboardPage() {
     return (
       <>
         <Navbar />
-        <main className="mx-auto max-w-6xl px-spacing-6 py-spacing-8">
+        <main className="mx-auto max-w-6xl px-6 py-8">
           <p className="text-sm text-text-secondary">Loading…</p>
         </main>
       </>
@@ -87,8 +87,8 @@ export default function DashboardPage() {
   return (
     <>
       <Navbar />
-      <main className="mx-auto max-w-6xl px-spacing-6 py-spacing-8">
-        <div className="mb-spacing-6 flex flex-wrap items-center justify-between gap-spacing-4">
+      <main className="mx-auto max-w-6xl px-6 py-8">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-weight-emphasis">
               Welcome back{user?.displayName ? `, ${user.displayName}` : ""}
@@ -97,7 +97,7 @@ export default function DashboardPage() {
               Pick a path below to get started.
             </p>
           </div>
-          <div className="flex items-center gap-spacing-3">
+          <div className="flex items-center gap-3">
             <Link href="/history">
               <Button variant="ghost" leadingIcon={<History className="h-4 w-4" />}>
                 Session history
@@ -116,7 +116,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="grid gap-spacing-5 md:grid-cols-2">
+        <div className="grid gap-5 md:grid-cols-2">
           {/* PATH 1 — Connect to a device (§3.4) */}
           <Card>
             <CardIconBadge>
@@ -124,7 +124,7 @@ export default function DashboardPage() {
             </CardIconBadge>
             <div>
               <h2 className="text-lg font-weight-emphasis">Connect to a device</h2>
-              <p className="mt-spacing-1 text-sm text-text-secondary">
+              <p className="mt-1 text-sm text-text-secondary">
                 Enter the 8-digit code someone shared with you.
               </p>
             </div>
@@ -141,7 +141,7 @@ export default function DashboardPage() {
               onClick={handleConnect}
               isLoading={connecting}
               disabled={code.length !== 8}
-              className="mt-spacing-2"
+              className="mt-2"
             >
               Connect
             </Button>
@@ -156,12 +156,12 @@ export default function DashboardPage() {
               <h2 className="text-lg font-weight-emphasis">
                 Let others connect to me
               </h2>
-              <p className="mt-spacing-1 text-sm text-text-secondary">
+              <p className="mt-1 text-sm text-text-secondary">
                 Download and run the host agent on the machine you want to share.
                 It generates a code you can give out.
               </p>
             </div>
-            <Link href="/download" className="mt-spacing-2">
+            <Link href="/download" className="mt-2">
               <Button variant="secondary" className="w-full">
                 Download host agent
               </Button>

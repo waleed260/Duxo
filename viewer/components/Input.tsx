@@ -26,7 +26,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
     const hintId = `${inputId}-hint`;
 
     return (
-      <div className="flex flex-col gap-spacing-2">
+      <div className="flex flex-col gap-2">
         <label
           htmlFor={inputId}
           className="text-sm font-weight-emphasis text-text-primary"
@@ -41,7 +41,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             error ? errorId : hint ? hintId : undefined
           }
           className={cn(
-            "min-h-[40px] w-full rounded-sm border bg-surface-overlay px-spacing-3 py-spacing-2",
+            "min-h-[40px] w-full rounded-sm border bg-surface-overlay px-3 py-2",
             "text-md text-text-primary placeholder:text-text-secondary",
             "transition-colors duration-instant motion-reduce:transition-none",
             "hover:border-border-strong",

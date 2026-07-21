@@ -25,8 +25,8 @@ export const Card = React.forwardRef<HTMLElement, CardProps>(
       <Comp
         ref={ref}
         className={cn(
-          "flex flex-col gap-spacing-4 rounded-md bg-surface-raised border border-border-default",
-          "p-spacing-6 transition-colors duration-instant motion-reduce:transition-none",
+          "flex flex-col gap-4 rounded-md bg-surface-raised border border-border-default",
+          "p-6 transition-colors duration-instant motion-reduce:transition-none",
           "hover:border-border-strong focus-within:border-border-strong",
           className,
         )}
@@ -50,7 +50,7 @@ export function CardIconBadge({
     <div
       className={cn(
         // Icon badge — accent-tinted to keep the single-accent rule (§9.2).
-        "flex h-spacing-7 w-spacing-7 items-center justify-center rounded-sm",
+        "flex h-7 w-7 items-center justify-center rounded-sm",
         "bg-surface-overlay text-accent",
         className,
       )}

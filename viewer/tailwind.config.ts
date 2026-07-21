@@ -25,7 +25,7 @@ const config: Config = {
       colors: {
         // §9.2 — Surface progression (replaces shadows).
         surface: {
-          base: "#000000",     // app background
+          base: "#0a0a0a",     // app background
           raised: "#141414",   // cards, dashboard action cards
           overlay: "#1c1c1c",  // modals, panels, inputs (raised surface)
         },

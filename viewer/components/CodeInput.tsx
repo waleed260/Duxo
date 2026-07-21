@@ -42,7 +42,7 @@ export function CodeInput({
   const grouped = value.length > 4 ? `${value.slice(0, 4)} ${value.slice(4)}` : value;
 
   return (
-    <div className="flex flex-col gap-spacing-2">
+    <div className="flex flex-col gap-2">
       <label
         htmlFor={reactId}
         className="text-sm font-weight-emphasis text-text-primary"
@@ -64,7 +64,7 @@ export function CodeInput({
         placeholder="0000 0000"
         className={cn(
           // Tabular-figures font keeps digits aligned in the grouped display.
-          "min-h-[48px] w-full rounded-sm border bg-surface-overlay px-spacing-4 py-spacing-3",
+          "min-h-[48px] w-full rounded-sm border bg-surface-overlay px-4 py-3",
           "font-mono text-2xl tabular-nums tracking-[0.2em] text-text-primary",
           "placeholder:text-text-secondary placeholder:tracking-[0.2em]",
           "transition-colors duration-instant motion-reduce:transition-none",

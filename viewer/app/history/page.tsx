@@ -64,7 +64,7 @@ export default function HistoryPage() {
     return (
       <>
         <Navbar />
-        <main className="mx-auto max-w-4xl px-spacing-6 py-spacing-8">
+        <main className="mx-auto max-w-4xl px-6 py-8">
           <p className="text-sm text-text-secondary">Loading…</p>
         </main>
       </>
@@ -74,26 +74,26 @@ export default function HistoryPage() {
   return (
     <>
       <Navbar />
-      <main className="mx-auto max-w-4xl px-spacing-6 py-spacing-8">
+      <main className="mx-auto max-w-4xl px-6 py-8">
         <h1 className="text-2xl font-weight-emphasis">Session history</h1>
-        <p className="mt-spacing-2 text-sm text-text-secondary">
+        <p className="mt-2 text-sm text-text-secondary">
           Sessions you hosted. Duxo never records screen content — only
           metadata (who, when, how long).
         </p>
 
         {records.length === 0 ? (
-          <div className="mt-spacing-6 rounded-md border border-border-default bg-surface-raised p-spacing-7 text-center">
+          <div className="mt-6 rounded-md border border-border-default bg-surface-raised p-7 text-center">
             <p className="text-md text-text-secondary">No sessions yet.</p>
-            <Link href="/dashboard" className="mt-spacing-4 inline-block">
+            <Link href="/dashboard" className="mt-4 inline-block">
               <Button>Start your first session</Button>
             </Link>
           </div>
         ) : (
-          <ul className="mt-spacing-5 flex flex-col gap-spacing-3">
+          <ul className="mt-5 flex flex-col gap-3">
             {records.map((r) => (
               <li
                 key={r.id}
-                className="flex items-center justify-between rounded-md border border-border-default bg-surface-raised p-spacing-4"
+                className="flex items-center justify-between rounded-md border border-border-default bg-surface-raised p-4"
               >
                 <div>
                   <p className="text-sm font-weight-emphasis">
@@ -105,7 +105,7 @@ export default function HistoryPage() {
                   </p>
                 </div>
                 <span
-                  className="rounded-pill border border-border-default px-spacing-3 py-spacing-1 text-xs text-text-secondary"
+                  className="rounded-pill border border-border-default px-3 py-1 text-xs text-text-secondary"
                   aria-label={`Ended because ${r.endReason}`}
                 >
                   {r.endReason.replace("_", " ")}
