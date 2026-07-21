@@ -13,6 +13,7 @@ import {
   Code,
   EyeOff,
   Layers,
+  Terminal,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
@@ -76,6 +77,17 @@ function Hero() {
           </p>
         </div>
 
+        <div className="mt-spacing-5 flex flex-wrap items-center justify-center gap-spacing-2">
+          {["E2E encrypted", "Cross-platform", "Permission gate", "Open source", "Zero cost"].map((tag) => (
+            <span
+              key={tag}
+              className="rounded-pill border border-border-default bg-surface-raised px-spacing-3 py-spacing-1 text-xs text-text-secondary"
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+
         <div className="mt-spacing-6 flex flex-wrap items-center justify-center gap-spacing-4">
           <Link href="/download">
             <Button size="lg" leadingIcon={<Download className="h-5 w-5" />}>
@@ -93,7 +105,7 @@ function Hero() {
           <div className="animate-glow-pulse rounded-md border border-border-default bg-surface-raised">
             <div className="flex items-center justify-between border-b border-border-default px-spacing-4 py-spacing-2">
               <div className="flex items-center gap-spacing-2 text-xs text-text-secondary">
-                <MonitorSmartphone className="h-3 w-3" />
+                <Terminal className="h-3 w-3 text-accent" />
                 duxo session — live preview
               </div>
               <div className="flex gap-spacing-1">
