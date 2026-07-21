@@ -1,6 +1,16 @@
 import Link from "next/link";
 import ImageWithBasePath from "@/components/ImageWithBasePath";
-import { Download, Shield, Terminal, MonitorSmartphone, ArrowRight, Github, Lock, Users, Globe } from "lucide-react";
+import {
+  Download,
+  Github,
+  Shield,
+  MonitorSmartphone,
+  Lock,
+  Fingerprint,
+  ArrowRight,
+  Globe,
+  CheckCircle,
+} from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/Button";
@@ -96,7 +106,7 @@ function Hero() {
                     <div className="h-0.5 w-12 bg-accent/40 animate-connection-pulse" style={{ animationDelay: "0.5s" }} />
                   </div>
                   <div className="flex h-16 w-16 items-center justify-center rounded-md border border-border-strong bg-surface-base/60 backdrop-blur">
-                    <Terminal className="h-8 w-8 text-text-primary" />
+                    <Shield className="h-8 w-8 text-text-primary" />
                   </div>
                 </div>
               </div>
@@ -107,6 +117,27 @@ function Hero() {
     </section>
   );
 }
+
+const features = [
+  {
+    icon: Lock,
+    title: "End-to-end encrypted",
+    body: "DTLS-SRTP over WebRTC. Even TURN relays can't decrypt your traffic. Your session, your data.",
+    accent: "bg-accent/10 text-accent",
+  },
+  {
+    icon: MonitorSmartphone,
+    title: "Cross-platform",
+    body: "Full control on Windows and Linux X11. Wayland ships view-only, honestly scoped. One binary, any machine.",
+    accent: "bg-[#2563eb]/10 text-[#2563eb]",
+  },
+  {
+    icon: Fingerprint,
+    title: "Host permission gate",
+    body: "Every connection requires an explicit Allow click from the host. No silent takeovers, no backdoors.",
+    accent: "bg-[#7c3aed]/10 text-[#7c3aed]",
+  },
+];
 
 function Features() {
   return (
@@ -119,59 +150,20 @@ function Features() {
       </div>
 
       <div className="grid gap-spacing-5 sm:grid-cols-3">
-        <FeatureCard
-          icon={<Lock className="h-5 w-5" />}
-          title="End-to-end encrypted"
-          body="DTLS-SRTP over WebRTC. Even TURN relays can't decrypt your traffic. Your session, your data."
-          imageSrc="/images/security.jpg"
-        />
-        <FeatureCard
-          icon={<MonitorSmartphone className="h-5 w-5" />}
-          title="Cross-platform"
-          body="Full control on Windows and Linux X11. Wayland ships view-only, honestly scoped. One binary, any machine."
-          imageSrc="/images/devices.jpg"
-        />
-        <FeatureCard
-          icon={<Shield className="h-5 w-5" />}
-          title="Host permission gate"
-          body="Every connection requires an explicit Allow click from the host. No silent takeovers, no backdoors."
-          imageSrc="/images/network.jpg"
-        />
+        {features.map((f) => (
+          <div
+            key={f.title}
+            className="flex flex-col gap-spacing-4 rounded-md border border-border-default bg-surface-raised p-spacing-6 transition-colors duration-fast hover:border-border-strong"
+          >
+            <div className={`flex h-10 w-10 items-center justify-center rounded-sm ${f.accent}`}>
+              <f.icon className="h-5 w-5" />
+            </div>
+            <h3 className="text-md font-weight-emphasis">{f.title}</h3>
+            <p className="text-sm text-text-secondary">{f.body}</p>
+          </div>
+        ))}
       </div>
     </section>
-  );
-}
-
-function FeatureCard({
-  icon,
-  title,
-  body,
-  imageSrc,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  body: string;
-  imageSrc: string;
-}) {
-  return (
-    <div className="group relative flex flex-col overflow-hidden rounded-md border border-border-default bg-surface-raised transition-colors duration-fast hover:border-border-strong">
-      <div className="relative h-40 overflow-hidden">
-        <ImageWithBasePath
-          src={imageSrc}
-          alt=""
-          fill
-          className="object-cover opacity-40 transition-opacity duration-fast group-hover:opacity-60"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-surface-raised via-surface-raised/60 to-transparent" />
-      </div>
-      <div className="flex flex-col gap-spacing-3 p-spacing-5">
-        <div className="flex h-spacing-6 w-spacing-6 items-center justify-center rounded-sm bg-surface-overlay text-accent">
-          {icon}
-        </div>
-        <h3 className="text-md font-weight-emphasis">{title}</h3>
-        <p className="text-sm text-text-secondary">{body}</p>
-      </div>
-    </div>
   );
 }
 
@@ -243,32 +235,30 @@ function DemoSection() {
             file transfer, and adaptive quality. Everything is encrypted end-to-end.
           </p>
           <div className="relative aspect-video w-full overflow-hidden rounded-sm bg-surface-overlay">
-            <ImageWithBasePath
-              src="/images/hero-bg.jpg"
-              alt="Duxo remote desktop session demonstration"
-              fill
-              className="object-cover opacity-30"
-            />
             <div className="absolute inset-0 flex items-center justify-center">
-              <div className="flex items-center gap-spacing-6">
+              <div className="flex items-center gap-spacing-8">
                 <div className="flex flex-col items-center gap-spacing-2">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-md border border-accent/30 bg-surface-base/60 backdrop-blur">
-                    <MonitorSmartphone className="h-6 w-6 text-accent" />
+                  <div className="flex h-14 w-14 items-center justify-center rounded-md border border-accent/30 bg-surface-base/60 backdrop-blur">
+                    <MonitorSmartphone className="h-7 w-7 text-accent" />
                   </div>
-                  <span className="text-[10px] text-text-secondary">Viewer</span>
+                  <span className="text-xs text-text-secondary">Viewer</span>
                 </div>
-                <div className="flex flex-col items-center">
+                <div className="flex flex-col items-center gap-spacing-2">
                   <div className="flex items-center gap-spacing-2 text-xs text-text-secondary">
                     <Lock className="h-3 w-3 text-accent" />
                     <span>DTLS-SRTP</span>
                   </div>
-                  <div className="mt-spacing-1 h-0.5 w-20 bg-accent/60 animate-connection-pulse" />
+                  <div className="h-0.5 w-24 bg-accent/60 animate-connection-pulse" />
+                  <div className="flex items-center gap-spacing-2 text-xs text-success">
+                    <CheckCircle className="h-3 w-3" />
+                    <span>Connected</span>
+                  </div>
                 </div>
                 <div className="flex flex-col items-center gap-spacing-2">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-md border border-border-strong bg-surface-base/60 backdrop-blur">
-                    <Terminal className="h-6 w-6 text-text-primary" />
+                  <div className="flex h-14 w-14 items-center justify-center rounded-md border border-border-strong bg-surface-base/60 backdrop-blur">
+                    <Shield className="h-7 w-7 text-text-primary" />
                   </div>
-                  <span className="text-[10px] text-text-secondary">Host</span>
+                  <span className="text-xs text-text-secondary">Host</span>
                 </div>
               </div>
             </div>
@@ -313,7 +303,7 @@ function SecuritySection() {
             src="/images/security.jpg"
             alt=""
             fill
-            className="object-cover opacity-20"
+            className="object-cover opacity-15"
           />
           <div className="absolute inset-0 bg-gradient-to-r from-surface-raised via-surface-raised/80 to-transparent" />
         </div>
