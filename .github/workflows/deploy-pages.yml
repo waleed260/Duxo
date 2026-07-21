@@ -40,7 +40,7 @@ jobs:
         env:
           NEXT_TELEMETRY_DISABLED: 1
       - name: Add .nojekyll for GitHub Pages
-        run: touch ./viewer/out/.nojekyll
+        run: touch ./out/.nojekyll
 
       - uses: actions/upload-pages-artifact@v3
         with:
