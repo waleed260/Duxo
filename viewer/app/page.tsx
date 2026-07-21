@@ -1,5 +1,5 @@
 import Link from "next/link";
-import Image from "next/image";
+import ImageWithBasePath from "@/components/ImageWithBasePath";
 import { Download, Shield, Terminal, MonitorSmartphone, ArrowRight, Github, Lock, Users, Globe } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
@@ -26,7 +26,7 @@ function Hero() {
   return (
     <section className="relative overflow-hidden">
       <div className="absolute inset-0 z-0">
-        <Image
+        <ImageWithBasePath
           src="/images/hero-bg.jpg"
           alt=""
           fill
@@ -80,7 +80,7 @@ function Hero() {
               </span>
             </div>
             <div className="relative aspect-video w-full overflow-hidden rounded-sm bg-surface-overlay">
-              <Image
+              <ImageWithBasePath
                 src="/images/network.jpg"
                 alt="Duxo remote desktop session preview"
                 fill
@@ -156,7 +156,7 @@ function FeatureCard({
   return (
     <div className="group relative flex flex-col overflow-hidden rounded-md border border-border-default bg-surface-raised transition-colors duration-fast hover:border-border-strong">
       <div className="relative h-40 overflow-hidden">
-        <Image
+        <ImageWithBasePath
           src={imageSrc}
           alt=""
           fill
@@ -243,7 +243,7 @@ function DemoSection() {
             file transfer, and adaptive quality. Everything is encrypted end-to-end.
           </p>
           <div className="relative aspect-video w-full overflow-hidden rounded-sm bg-surface-overlay">
-            <Image
+            <ImageWithBasePath
               src="/images/hero-bg.jpg"
               alt="Duxo remote desktop session demonstration"
               fill
@@ -309,7 +309,7 @@ function SecuritySection() {
     <section id="security" className="mx-auto max-w-6xl px-spacing-6 py-spacing-8">
       <div className="relative overflow-hidden rounded-md border border-border-default bg-surface-raised">
         <div className="absolute inset-0 z-0">
-          <Image
+          <ImageWithBasePath
             src="/images/security.jpg"
             alt=""
             fill
