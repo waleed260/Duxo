@@ -12,22 +12,40 @@ import "@/styles/globals.css";
  */
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://waleed260.github.io/Duxo"),
   title: "Duxo — Remote access, built in the open",
   description:
     "Open-source, end-to-end encrypted remote desktop for Windows and Linux. Zero-budget, zero telemetry.",
   applicationName: "Duxo",
   authors: [{ name: "Duxo Contributors" }],
-  keywords: ["remote desktop", "open source", "webrtc", "windows", "linux"],
+  keywords: ["remote desktop", "open source", "webrtc", "windows", "linux", "e2ee"],
   openGraph: {
     title: "Duxo — Remote access, built in the open",
     description:
-      "Open-source, end-to-end encrypted remote desktop for Windows and Linux.",
+      "Open-source, end-to-end encrypted remote desktop for Windows and Linux. Zero-budget, zero telemetry.",
     type: "website",
+    url: "https://duxo.app",
+    siteName: "Duxo",
+    images: [
+      {
+        url: "/images/og-image.jpg",
+        width: 1200,
+        height: 630,
+        alt: "Duxo — Remote access, built in the open",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Duxo — Remote access, built in the open",
+    description:
+      "Open-source, end-to-end encrypted remote desktop for Windows and Linux.",
+    images: ["/images/og-image.jpg"],
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#000000",
+  themeColor: "#ef443b",
   width: "device-width",
   initialScale: 1,
 };

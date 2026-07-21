@@ -1,9 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // §0.3 — Vercel deploys the viewer folder. Default Next settings are fine.
+  output: "export",
+  basePath: "/Duxo",
+  assetPrefix: "/Duxo/",
+  images: {
+    unoptimized: true,
+  },
+  trailingSlash: true,
   experimental: {
-    // Improve dev performance for the data-channel code paths.
     optimizePackageImports: ["lucide-react"],
   },
 };

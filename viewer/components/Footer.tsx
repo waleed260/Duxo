@@ -26,14 +26,15 @@ export function Footer() {
         <nav className="flex flex-col gap-spacing-2 text-sm">
           <FooterLink href="/download">Download</FooterLink>
           <FooterLink href="/#features">Features</FooterLink>
-          <FooterLink href="/#docs">Docs</FooterLink>
-          <FooterLink href="/#changelog">Changelog</FooterLink>
+          <FooterLink href="/#demo">How it works</FooterLink>
+          <FooterLink href="/login">Sign in</FooterLink>
         </nav>
 
         <nav className="flex flex-col gap-spacing-2 text-sm">
           <FooterLink href="/#security">Security</FooterLink>
-          <FooterLink href="/#support">Support</FooterLink>
-          <FooterLink href="/login">Sign in</FooterLink>
+          <FooterLink href="https://github.com/duxo-org/duxo">GitHub</FooterLink>
+          <FooterLink href="https://github.com/duxo-org/duxo/blob/main/SECURITY.md">Security policy</FooterLink>
+          <FooterLink href="https://github.com/duxo-org/duxo/blob/main/CONTRIBUTING.md">Contributing</FooterLink>
         </nav>
       </div>
       <div className="border-t border-border-default px-spacing-6 py-spacing-4 text-center text-xs text-text-secondary">
@@ -50,9 +51,12 @@ function FooterLink({
   href: string;
   children: React.ReactNode;
 }) {
+  const isExternal = href.startsWith("http");
   return (
     <Link
       href={href}
+      target={isExternal ? "_blank" : undefined}
+      rel={isExternal ? "noopener noreferrer" : undefined}
       className="text-text-secondary hover:text-text-primary transition-colors duration-instant"
     >
       {children}

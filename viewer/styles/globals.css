@@ -53,6 +53,34 @@ body {
   }
 }
 
+/*
+ * Demo animation — pulsing connection line for the hero section.
+ */
+@keyframes connection-pulse {
+  0%, 100% { opacity: 0.3; transform: scaleX(1); }
+  50% { opacity: 1; transform: scaleX(1.05); }
+}
+
+@keyframes dot-float {
+  0%, 100% { transform: translateY(0); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(-60px); opacity: 0; }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(239, 68, 59, 0.3); }
+  50% { box-shadow: 0 0 40px rgba(239, 68, 59, 0.6); }
+}
+
+.animate-connection-pulse {
+  animation: connection-pulse 2s ease-in-out infinite;
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
 /* Accessible-code helper — visible only to screen readers. */
 .sr-only {
   position: absolute;

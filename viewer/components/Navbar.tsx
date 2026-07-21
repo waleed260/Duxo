@@ -35,11 +35,12 @@ export function Navbar({ className }: { className?: string }) {
 
         <div className="flex items-center gap-spacing-5 text-sm">
           <NavLink href="/#features">Features</NavLink>
+          <NavLink href="/#demo">How it works</NavLink>
           <NavLink href="/download">Download</NavLink>
-          <NavLink href="/#docs">Docs</NavLink>
-          <Link href="/login">
+          <NavLink href="https://github.com/duxo-org/duxo">GitHub</NavLink>
+          <Link href="/download">
             <Button size="md" leadingIcon={<Download className="h-4 w-4" />}>
-              Get Duxo
+              Download
             </Button>
           </Link>
         </div>
@@ -55,9 +56,12 @@ function NavLink({
   href: string;
   children: React.ReactNode;
 }) {
+  const isExternal = href.startsWith("http");
   return (
     <Link
       href={href}
+      target={isExternal ? "_blank" : undefined}
+      rel={isExternal ? "noopener noreferrer" : undefined}
       className="text-text-secondary hover:text-text-primary transition-colors duration-instant"
     >
       {children}
