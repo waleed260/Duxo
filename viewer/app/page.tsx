@@ -10,6 +10,9 @@ import {
   ArrowRight,
   Globe,
   CheckCircle,
+  Code,
+  EyeOff,
+  Layers,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
@@ -29,6 +32,14 @@ export default function LandingPage() {
       </main>
       <Footer />
     </>
+  );
+}
+
+function IconBox({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`flex h-10 w-10 items-center justify-center rounded-sm bg-accent/10 text-accent ${className}`}>
+      {children}
+    </div>
   );
 }
 
@@ -97,16 +108,22 @@ function Hero() {
                 className="object-cover opacity-60"
               />
               <div className="absolute inset-0 flex items-center justify-center">
-                <div className="flex items-center gap-spacing-4">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-md border border-accent/30 bg-surface-base/60 backdrop-blur">
-                    <MonitorSmartphone className="h-8 w-8 text-accent" />
+                <div className="flex items-center gap-spacing-6">
+                  <div className="flex flex-col items-center gap-spacing-2">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-md border border-accent/30 bg-surface-base/60 backdrop-blur">
+                      <MonitorSmartphone className="h-6 w-6 text-accent" />
+                    </div>
+                    <span className="text-xs text-text-secondary">Viewer</span>
                   </div>
                   <div className="flex flex-col items-center gap-spacing-1">
                     <div className="h-0.5 w-16 bg-accent/60 animate-connection-pulse" />
                     <div className="h-0.5 w-12 bg-accent/40 animate-connection-pulse" style={{ animationDelay: "0.5s" }} />
                   </div>
-                  <div className="flex h-16 w-16 items-center justify-center rounded-md border border-border-strong bg-surface-base/60 backdrop-blur">
-                    <Shield className="h-8 w-8 text-text-primary" />
+                  <div className="flex flex-col items-center gap-spacing-2">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-md border border-border-strong bg-surface-base/60 backdrop-blur">
+                      <Shield className="h-6 w-6 text-text-primary" />
+                    </div>
+                    <span className="text-xs text-text-secondary">Host</span>
                   </div>
                 </div>
               </div>
@@ -152,9 +169,9 @@ function Features() {
             key={f.title}
             className="flex flex-col gap-spacing-4 rounded-md border border-border-default bg-surface-raised p-spacing-6 transition-colors duration-fast hover:border-border-strong"
           >
-            <div className="flex h-10 w-10 items-center justify-center rounded-sm bg-accent/10 text-accent">
+            <IconBox>
               <f.icon className="h-5 w-5" />
-            </div>
+            </IconBox>
             <h3 className="text-md font-weight-emphasis">{f.title}</h3>
             <p className="text-sm text-text-secondary">{f.body}</p>
           </div>
@@ -235,8 +252,8 @@ function DemoSection() {
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="flex items-center gap-spacing-8">
                 <div className="flex flex-col items-center gap-spacing-2">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-md border border-accent/30 bg-surface-base/60 backdrop-blur">
-                    <MonitorSmartphone className="h-7 w-7 text-accent" />
+                  <div className="flex h-12 w-12 items-center justify-center rounded-md border border-accent/30 bg-surface-base/60 backdrop-blur">
+                    <MonitorSmartphone className="h-6 w-6 text-accent" />
                   </div>
                   <span className="text-xs text-text-secondary">Viewer</span>
                 </div>
@@ -252,8 +269,8 @@ function DemoSection() {
                   </div>
                 </div>
                 <div className="flex flex-col items-center gap-spacing-2">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-md border border-border-strong bg-surface-base/60 backdrop-blur">
-                    <Shield className="h-7 w-7 text-text-primary" />
+                  <div className="flex h-12 w-12 items-center justify-center rounded-md border border-border-strong bg-surface-base/60 backdrop-blur">
+                    <Shield className="h-6 w-6 text-text-primary" />
                   </div>
                   <span className="text-xs text-text-secondary">Host</span>
                 </div>
@@ -266,26 +283,24 @@ function DemoSection() {
   );
 }
 
+const stats = [
+  { icon: Github, value: "100%", label: "Open source" },
+  { icon: Code, value: "$0", label: "Cost to use" },
+  { icon: EyeOff, value: "0", label: "Telemetry events" },
+  { icon: Layers, value: "2", label: "Platforms supported" },
+];
+
 function StatsSection() {
   return (
     <section className="border-y border-border-default bg-surface-raised">
       <div className="mx-auto grid max-w-6xl grid-cols-2 gap-spacing-6 px-spacing-6 py-spacing-7 sm:grid-cols-4">
-        <div className="flex flex-col items-center gap-spacing-1 text-center">
-          <span className="text-2xl font-weight-emphasis text-accent">100%</span>
-          <span className="text-xs text-text-secondary">Open source</span>
-        </div>
-        <div className="flex flex-col items-center gap-spacing-1 text-center">
-          <span className="text-2xl font-weight-emphasis text-accent">$0</span>
-          <span className="text-xs text-text-secondary">Cost to use</span>
-        </div>
-        <div className="flex flex-col items-center gap-spacing-1 text-center">
-          <span className="text-2xl font-weight-emphasis text-accent">0</span>
-          <span className="text-xs text-text-secondary">Telemetry events</span>
-        </div>
-        <div className="flex flex-col items-center gap-spacing-1 text-center">
-          <span className="text-2xl font-weight-emphasis text-accent">2</span>
-          <span className="text-xs text-text-secondary">Platforms supported</span>
-        </div>
+        {stats.map((s) => (
+          <div key={s.label} className="flex flex-col items-center gap-spacing-2 text-center">
+            <s.icon className="h-4 w-4 text-accent" />
+            <span className="text-2xl font-weight-emphasis text-accent">{s.value}</span>
+            <span className="text-xs text-text-secondary">{s.label}</span>
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -305,9 +320,9 @@ function SecuritySection() {
           <div className="absolute inset-0 bg-gradient-to-r from-surface-raised via-surface-raised/80 to-transparent" />
         </div>
         <div className="relative z-10 flex flex-col gap-spacing-5 p-spacing-6 sm:max-w-xl">
-          <div className="flex h-10 w-10 items-center justify-center rounded-sm bg-accent/10 text-accent">
+          <IconBox>
             <Shield className="h-5 w-5" />
-          </div>
+          </IconBox>
           <h2 className="text-2xl font-weight-emphasis">Trust is the product</h2>
           <div className="flex flex-col gap-spacing-3 text-sm text-text-secondary">
             <p>
@@ -346,7 +361,9 @@ function CtaSection() {
   return (
     <section className="mx-auto max-w-6xl px-spacing-6 py-spacing-8 text-center">
       <div className="flex flex-col items-center gap-spacing-5 rounded-md border border-border-default bg-surface-raised p-spacing-7">
-        <Globe className="h-8 w-8 text-accent" />
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent">
+          <Globe className="h-6 w-6" />
+        </div>
         <h2 className="text-2xl font-weight-emphasis">
           Ready to connect?
         </h2>
