@@ -77,19 +77,6 @@ function Hero() {
           </p>
         </div>
 
-        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-          <Link href="/download">
-            <Button size="lg" leadingIcon={<Download className="h-5 w-5" />}>
-              Download for free
-            </Button>
-          </Link>
-          <Link href="https://github.com/duxo-org/duxo" target="_blank">
-            <Button variant="secondary" size="lg" leadingIcon={<Github className="h-5 w-5" />}>
-              View on GitHub
-            </Button>
-          </Link>
-        </div>
-
         <div className="mt-7 flex flex-wrap items-center justify-center gap-2">
           <Tag>E2E encrypted</Tag>
           <Tag>Cross-platform</Tag>
