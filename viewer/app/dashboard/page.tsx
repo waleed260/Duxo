@@ -3,11 +3,12 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { MonitorDown, Plug, History } from "lucide-react";
+import { MonitorDown, Plug, History, Shield } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { Card, CardIconBadge } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { CodeInput } from "@/components/CodeInput";
+import TOTPSetup from "@/components/TOTPSetup";
 import { getFirebase } from "@/lib/firebase";
 import { onAuthStateChanged, signOut, type User } from "firebase/auth";
 import { ref, get } from "firebase/database";
@@ -167,6 +168,15 @@ export default function DashboardPage() {
               </Button>
             </Link>
           </Card>
+        </div>
+
+        {/* Security section — §2.3 TOTP 2FA */}
+        <div className="mt-8">
+          <h2 className="text-lg font-weight-emphasis mb-4 flex items-center gap-2">
+            <Shield className="h-4 w-4 text-accent" aria-hidden="true" />
+            Security
+          </h2>
+          <TOTPSetup />
         </div>
       </main>
     </>
