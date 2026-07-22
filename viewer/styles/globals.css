@@ -9,10 +9,44 @@
  * §9.7 anti-patterns enforced here:
  *   - No color-only error/success signaling (always pair with text/icon)
  *   - No one-off spacing/typography outside the token scale (§9.2 / §9.8)
+ *
+ * Includes shadcn/ui CSS variables for component library compatibility.
  */
 
 :root {
   color-scheme: dark;
+
+  --background: 0 0% 3.9%;
+  --foreground: 0 0% 98%;
+  --card: 0 0% 7.8%;
+  --card-foreground: 0 0% 98%;
+  --popover: 0 0% 7.8%;
+  --popover-foreground: 0 0% 98%;
+  --primary: 3 88% 60%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 11%;
+  --secondary-foreground: 0 0% 75%;
+  --muted: 0 0% 11%;
+  --muted-foreground: 0 0% 60%;
+  --accent: 3 88% 60%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 20%;
+  --input: 0 0% 20%;
+  --ring: 3 88% 60%;
+  --radius: 0.5rem;
+
+  /* Chart colors */
+  --chart-1: 3 88% 60%;
+  --chart-2: 220 70% 50%;
+  --chart-3: 142 70% 45%;
+  --chart-4: 38 92% 50%;
+  --chart-5: 270 70% 55%;
+}
+
+@layer base {
+  * { @apply border-border; }
 }
 
 html,
@@ -81,45 +115,7 @@ body {
   animation: glow-pulse 2s ease-in-out infinite;
 }
 
-/*
- * Measured page — liquid-glass frosted glass effect.
- */
-.liquid-glass {
-  background: rgba(255, 255, 255, 0.01);
-  background-blend-mode: luminosity;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  border: none;
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
-  position: relative;
-  overflow: hidden;
-}
 
-.liquid-glass::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1.4px;
-  background: linear-gradient(180deg,
-    rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.15) 20%,
-    rgba(255,255,255,0) 40%, rgba(255,255,255,0) 60%,
-    rgba(255,255,255,0.15) 80%, rgba(255,255,255,0.45) 100%);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-}
-
-@keyframes measured-slideUp {
-  from { opacity: 0; transform: translateY(24px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes measured-rotateIn {
-  from { opacity: 0; transform: rotate(-90deg) scale(0.8); }
-  to { opacity: 1; transform: rotate(0deg) scale(1); }
-}
 
 /* Accessible-code helper — visible only to screen readers. */
 .sr-only {

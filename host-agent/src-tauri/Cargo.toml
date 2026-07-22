@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Duxo host agent — Tauri v2 + Rust remote desktop host"
 authors = ["Duxo Contributors"]
 license = "MIT"
-repository = "https://github.com/your-org/duxo"
+repository = "https://github.com/duxo-org/duxo"
 edition = "2021"
 
 [build-dependencies]

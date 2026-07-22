@@ -30,12 +30,12 @@ function detectOS(): DetectedOS {
 const DOWNLOADS = {
   windows: {
     label: "Windows (.exe)",
-    href: "https://github.com/your-org/duxo/releases/latest",
+    href: "https://github.com/duxo-org/duxo/releases/latest",
     note: "Portable .exe — no installer, no admin needed for basic use.",
   },
   linux: {
     label: "Linux (.AppImage)",
-    href: "https://github.com/your-org/duxo/releases/latest",
+    href: "https://github.com/duxo-org/duxo/releases/latest",
     note: "chmod +x and run. No package manager, no root needed for X11.",
   },
   mac: {
@@ -45,7 +45,7 @@ const DOWNLOADS = {
   },
   unknown: {
     label: "Choose your platform",
-    href: "https://github.com/your-org/duxo/releases/latest",
+    href: "https://github.com/duxo-org/duxo/releases/latest",
     note: "We couldn't detect your OS — pick a build below.",
   },
 };

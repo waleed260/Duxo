@@ -92,7 +92,7 @@ async fn check_for_update() -> Result<Option<GitHubRelease>, Box<dyn std::error:
         .build()?;
 
     let resp = client
-        .get("https://api.github.com/repos/your-org/duxo/releases/latest")
+        .get("https://api.github.com/repos/duxo-org/duxo/releases/latest")
         .send()
         .await?;
 
