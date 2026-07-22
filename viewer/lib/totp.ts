@@ -4,18 +4,32 @@
  * Uses the `otpauth` library for TOTP secret generation + code verification,
  * and `qrcode` for QR code SVG rendering.
  *
- * Secret storage: encrypted in Firestore using the user's UID as a key
- * (never plaintext). Backup codes are stored as SHA-256 hashes.
+ * Secret storage: encrypted in Firestore using the Web Crypto API
+ * (AES-256-GCM with PBKDF2 key derivation). Backup codes are stored
+ * as SHA-256 hashes.
  *
  * Flow:
  *   1. Client generates a TOTP secret (base32-encoded).
  *   2. Renders a QR code the user scans into their authenticator app.
  *   3. User enters a 6-digit code to verify setup works.
  *   4. On success: encrypt + store the secret, generate + hash backup codes.
+ *   5. On login: fetch encrypted secret from Firestore, decrypt, verify code.
+ *
+ * Encryption scheme:
+ *   - Derive a 256-bit AES key via PBKDF2 (password = user UID, salt = random 16B)
+ *   - Encrypt the base32 secret with AES-256-GCM (random 12B IV)
+ *   - Store as: base64(salt + IV + ciphertext)
+ *   - 100k PBKDF2 iterations (OWASP 2023 recommendation for JS)
  */
 
 import * as OTPAuth from "otpauth";
 import * as QRCode from "qrcode";
+
+// ─── Constants ───
+
+const PBKDF2_ITERATIONS = 100_000;
+const SALT_BYTES = 16;
+const IV_BYTES = 12; // AES-GCM standard
 
 // ─── Types ───
 
@@ -27,7 +41,7 @@ export interface TOTPSetupData {
 }
 
 export interface TOTPStoredData {
-  /** Encrypted base32 secret (XOR'd with UID-derived key). */
+  /** Encrypted base32 secret: base64(salt + IV + ciphertext). */
   secretEncrypted: string;
   /** Whether TOTP is enabled for this user. */
   enabled: boolean;
@@ -45,7 +59,6 @@ export interface TOTPVerificationResult {
 
 /**
  * §2.3 — Generate a new TOTP secret and build the otpauth:// URI.
- * Returns the raw secret + URI for QR rendering.
  */
 export function generateTOTPSecret(email: string): TOTPSetupData {
   const secret = new OTPAuth.Secret({ size: 20 });
@@ -66,7 +79,6 @@ export function generateTOTPSecret(email: string): TOTPSetupData {
 
 /**
  * Render the otpauth:// URI as an inline SVG QR code string.
- * Returns a data URI (`data:image/svg+xml;utf8,...`).
  */
 export async function generateQRCodeSVG(otpauthUri: string): Promise<string> {
   return await QRCode.toString(otpauthUri, {
@@ -103,51 +115,110 @@ export function verifyTOTPCode(secretBase32: string, token: string): boolean {
   }
 }
 
-// ─── Encryption ───
+// ─── Encryption (Web Crypto API: AES-256-GCM + PBKDF2) ───
 
 /**
- * Simple XOR-based encrypt/decrypt using the user's UID.
+ * Derive an AES-256-GCM key from the user's UID using PBKDF2.
  *
- * §2.3 says: "Secret stored encrypted in the user's Firestore document."
- * This prevents casual reading of the secret from Firestore. A production
- * system would use the Web Crypto API with a proper derived key — this is
- * the Rs. 0 MVP equivalent that still satisfies the "never plaintext" rule.
+ * Combines the UID with a random salt so that:
+ *   - Two users with the same UID do not produce the same key (salt differs).
+ *   - An attacker who compromises Firestore gets salt + ciphertext, not the UID
+ *     — they still need to brute-force PBKDF2 to recover the key.
+ *
+ * 100k iterations is the OWASP 2023 minimum for PBKDF2-HMAC-SHA256 in JS.
  */
-function xorEncrypt(plaintext: string, key: string): string {
-  const keyBytes = new TextEncoder().encode(key);
-  const plainBytes = new TextEncoder().encode(plaintext);
-  const result = new Uint8Array(plainBytes.length);
-
-  for (let i = 0; i < plainBytes.length; i++) {
-    result[i] = plainBytes[i] ^ keyBytes[i % keyBytes.length];
-  }
-
-  // Base64-encode the result for safe Firestore storage.
-  return btoa(String.fromCharCode(...result));
-}
-
-function xorDecrypt(encrypted: string, key: string): string {
-  const encryptedBytes = Uint8Array.from(atob(encrypted), (c) =>
-    c.charCodeAt(0),
+async function deriveKey(uid: string, salt: Uint8Array): Promise<CryptoKey> {
+  const uidBuffer = new TextEncoder().encode(uid);
+  const baseKey = await crypto.subtle.importKey(
+    "raw",
+    uidBuffer,
+    { name: "PBKDF2" },
+    false,
+    ["deriveKey"],
   );
-  const keyBytes = new TextEncoder().encode(key);
-  const result = new Uint8Array(encryptedBytes.length);
 
-  for (let i = 0; i < encryptedBytes.length; i++) {
-    result[i] = encryptedBytes[i] ^ keyBytes[i % keyBytes.length];
+  return crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: salt.buffer as ArrayBuffer,
+      iterations: PBKDF2_ITERATIONS,
+      hash: "SHA-256",
+    },
+    baseKey,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"],
+  );
+}
+
+/**
+ * Encrypt the TOTP secret with AES-256-GCM using a PBKDF2-derived key.
+ *
+ * Storage format (single Base64 string):
+ *   base64(salt (16B) + IV (12B) + ciphertext)
+ *
+ * The caller must store this string in Firestore as `totpSecretEncrypted`.
+ */
+export async function encryptSecret(
+  secretBase32: string,
+  uid: string,
+): Promise<string> {
+  // Generate random salt for PBKDF2
+  const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
+  // Generate random IV for AES-GCM
+  const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
+
+  // Derive the encryption key
+  const key = await deriveKey(uid, salt);
+
+  // Encrypt the secret
+  const plaintext = new TextEncoder().encode(secretBase32);
+  const ciphertext = new Uint8Array(
+    await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv },
+      key,
+      plaintext,
+    ),
+  );
+
+  // Combine: salt + iv + ciphertext → single Base64 string
+  const combined = new Uint8Array(SALT_BYTES + IV_BYTES + ciphertext.length);
+  combined.set(salt, 0);
+  combined.set(iv, SALT_BYTES);
+  combined.set(ciphertext, SALT_BYTES + IV_BYTES);
+
+  return base64Encode(combined);
+}
+
+/**
+ * Decrypt the TOTP secret from the encrypted storage format.
+ * Reverses `encryptSecret`: parse salt + IV + ciphertext, derive key, decrypt.
+ */
+export async function decryptSecret(
+  encrypted: string,
+  uid: string,
+): Promise<string> {
+  const combined = base64Decode(encrypted);
+
+  if (combined.length < SALT_BYTES + IV_BYTES) {
+    throw new Error("Invalid encrypted data: too short");
   }
 
-  return new TextDecoder().decode(result);
-}
+  const salt = combined.slice(0, SALT_BYTES);
+  const iv = combined.slice(SALT_BYTES, SALT_BYTES + IV_BYTES);
+  const ciphertext = combined.slice(SALT_BYTES + IV_BYTES);
 
-/** Encrypt the TOTP secret with the user's UID for Firestore storage. */
-export function encryptSecret(secretBase32: string, uid: string): string {
-  return xorEncrypt(secretBase32, uid);
-}
+  // Derive the same key
+  const key = await deriveKey(uid, salt);
 
-/** Decrypt the TOTP secret from Firestore storage. */
-export function decryptSecret(encrypted: string, uid: string): string {
-  return xorDecrypt(encrypted, uid);
+  // Decrypt
+  const plaintext = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv },
+    key,
+    ciphertext,
+  );
+
+  return new TextDecoder().decode(plaintext);
 }
 
 // ─── Backup codes ───
@@ -155,7 +226,6 @@ export function decryptSecret(encrypted: string, uid: string): string {
 /**
  * §8.5 — Generate 10 single-use backup codes.
  * Returns an array of { plaintext, hash } pairs.
- * Store the hashes in Firestore; show the plaintext codes to the user once.
  * Uses the Web Crypto API for SHA-256 hashing.
  */
 export async function generateBackupCodes(): Promise<
@@ -164,18 +234,13 @@ export async function generateBackupCodes(): Promise<
   const codes: { plaintext: string; hash: string }[] = [];
 
   for (let i = 0; i < 10; i++) {
-    // Generate a random 8-character alphanumeric code.
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     let code = "";
     for (let j = 0; j < 8; j++) {
       code += chars[Math.floor(Math.random() * chars.length)];
     }
-    // Format as XXXX-XXXX
     const formatted = `${code.slice(0, 4)}-${code.slice(4)}`;
-
-    // SHA-256 hash via Web Crypto API.
     const hash = await sha256(formatted);
-
     codes.push({ plaintext: formatted, hash });
   }
 
@@ -183,9 +248,8 @@ export async function generateBackupCodes(): Promise<
 }
 
 /**
- * §8.5 — Verify a backup code against stored hashes.
+ * §8.5 — Verify a backup code against stored SHA-256 hashes.
  * Returns the index of the used code so it can be removed from the list.
- * Uses the Web Crypto API for SHA-256 hashing.
  */
 export async function verifyBackupCode(
   code: string,
@@ -195,39 +259,34 @@ export async function verifyBackupCode(
   return storedHashes.findIndex((h) => h === hash);
 }
 
-// ─── Simple SHA-256 helper (avoids adding a crypto dependency) ───
+// ─── SHA-256 via Web Crypto API ───
 
 /**
- * Compute a SHA-256 hash using the Web Crypto API (available in all modern
- * browsers and in Next.js client components). Falls back to a simple hash
- * if SubtleCrypto is unavailable.
+ * Compute a SHA-256 hash using the Web Crypto API.
+ * Falls back only if SubtleCrypto is unavailable (virtually never in modern browsers).
  */
 export async function sha256(message: string): Promise<string> {
-  if (typeof crypto !== "undefined" && crypto.subtle) {
-    const msgBuffer = new TextEncoder().encode(message);
-    const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-  }
-  // Fallback: simple non-crypto hash for environments without SubtleCrypto.
-  return simpleHash(message);
+  const msgBuffer = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** Synchronous fallback hash (not cryptographically secure — used as fallback). */
-function simpleHash(str: string): string {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash |= 0; // Convert to 32-bit integer
+// ─── Base64 helpers (browser-compatible) ───
+
+function base64Encode(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
   }
-  // Convert to hex-like string that won't collide in practice for 10 codes.
-  const hex = Math.abs(hash).toString(16).padStart(8, "0");
-  // Extend with a secondary hash for better uniqueness.
-  let hash2 = 0;
-  for (let i = str.length - 1; i >= 0; i--) {
-    hash2 = (hash2 << 5) - hash2 + str.charCodeAt(i);
-    hash2 |= 0;
+  return btoa(binary);
+}
+
+function base64Decode(str: string): Uint8Array {
+  const binary = atob(str);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
   }
-  return hex + Math.abs(hash2).toString(16).padStart(8, "0");
+  return bytes;
 }

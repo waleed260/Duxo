@@ -105,7 +105,7 @@ export default function Verify2FAPage() {
 
       const data = userDoc.data();
       const encryptedSecret = data.totpSecretEncrypted as string;
-      const secretBase32 = decryptSecret(encryptedSecret, user.uid);
+      const secretBase32 = await decryptSecret(encryptedSecret, user.uid);
 
       const valid = verifyTOTPCode(secretBase32, code);
       if (!valid) {

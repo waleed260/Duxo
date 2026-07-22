@@ -24,9 +24,7 @@ import {
   generateQRCodeSVG,
   verifyTOTPCode,
   encryptSecret,
-  decryptSecret,
   generateBackupCodes,
-  verifyBackupCode,
 } from "@/lib/totp";
 
 /**
@@ -114,7 +112,7 @@ export default function TOTPSetup() {
       }
 
       // Encrypt and store the secret in Firestore
-      const encrypted = encryptSecret(secretBase32, user.uid);
+      const encrypted = await encryptSecret(secretBase32, user.uid);
 
       // Generate backup codes (async SHA-256 hashing)
       const codes = await generateBackupCodes();
