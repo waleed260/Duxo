@@ -23,7 +23,7 @@ webrtc = "0.11"
 
 # §2.5 — JWT verification (Firebase ID token → Google public certs)
 jsonwebtoken = "9"
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.13", features = ["json"] }
 
 # §2.6 — OS-native secure storage (Windows Credential Manager / Linux Secret Service)
 keyring = "3"
