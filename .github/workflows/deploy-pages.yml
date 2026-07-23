@@ -47,7 +47,7 @@ jobs:
       - name: Add .nojekyll for GitHub Pages
         run: touch ./out/.nojekyll
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: ./viewer/out
 
