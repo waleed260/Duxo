@@ -45,7 +45,7 @@ enigo = { version = "0.2", features = ["serde"] }
 
 # Linux X11: x11rb for X11-specific features
 [target.'cfg(target_os = "linux")'.dependencies]
-x11rb = { version = "0.13", features = ["all-extensions"], optional = true }
+x11rb = { version = "0.14", features = ["all-extensions"], optional = true }
 enigo = { version = "0.2", features = ["serde"] }
 
 # §1.6 — logging (local rotating file, no cloud logging bill)
