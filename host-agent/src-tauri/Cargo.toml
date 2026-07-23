@@ -75,7 +75,7 @@ semver = "1"
 tauri-plugin-updater = "2"
 
 # §1.6 — log directory resolution
-dirs = "5"
+dirs = "6"
 
 # §2.4 — URL encoding for Allow/Deny window query params
 urlencoding = "2"
