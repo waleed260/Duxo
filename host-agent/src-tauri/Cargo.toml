@@ -19,7 +19,7 @@ serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 
 # §0.5 — WebRTC via webrtc-rs
-webrtc = "0.11"
+webrtc = "0.17"
 
 # §2.5 — JWT verification (Firebase ID token → Google public certs)
 jsonwebtoken = "9"
