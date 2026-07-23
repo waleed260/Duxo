@@ -27,6 +27,7 @@ use crate::backend::{InputBackend, InputButton, InputState};
 use crate::types::{DuxoError, Result, SessionContext, DataChannelMessage, SessionStatus};
 #[cfg(target_os = "linux")]
 use crate::input_linux_x11::X11Input;
+#[cfg(target_os = "windows")]
 use crate::input_windows::WindowsInput;
 use crate::session;
 use serde_json::json;
@@ -71,6 +72,7 @@ pub struct HostWebRTCSession {
     session_ctx: Arc<RwLock<SessionContext>>,
     reconnect_attempts: u8,
     data_channel_open: Arc<RwLock<bool>>,
+    connection_started_at: Arc<std::sync::Mutex<std::time::Instant>>,
 }
 
 impl HostWebRTCSession {
@@ -105,6 +107,7 @@ impl HostWebRTCSession {
             session_ctx: Arc::new(RwLock::new(session_ctx)),
             reconnect_attempts: 0,
             data_channel_open: Arc::new(RwLock::new(false)),
+            connection_started_at: Arc::new(std::sync::Mutex::new(std::time::Instant::now())),
         }
     }
 
@@ -201,13 +204,21 @@ impl HostWebRTCSession {
         self.video_track = Some(video_track);
 
         let ctx = Arc::clone(&self.session_ctx);
+        let kpi_conn_start = Arc::clone(&self.connection_started_at);
         peer_connection.on_ice_connection_state_change(Box::new(move |state| {
             let ctx = ctx.clone();
+            let kpi_conn_start = Arc::clone(&kpi_conn_start);
             Box::new(async move {
                 tracing::info!(state = ?state, "ICE connection state changed");
                 match state {
                     RTCPeerConnectionState::Connected => {
-                        tracing::info!("WebRTC connection established — session ACTIVE");
+                        // §6.5 — KPI: connection establishment / reconnection time.
+                        let elapsed_ms = kpi_conn_start.lock().unwrap().elapsed().as_millis();
+                        tracing::info!(
+                            kpi = "connection_establishment",
+                            elapsed_ms = elapsed_ms,
+                            "WebRTC connection established — session ACTIVE"
+                        );
                     }
                     RTCPeerConnectionState::Failed => {
                         tracing::warn!("ICE connection failed — attempting restart");
@@ -310,7 +321,12 @@ impl HostWebRTCSession {
                 .map_err(|e| DuxoError::Firebase(format!("ICE restart local desc failed: {e}")))?;
 
             self.reconnect_attempts += 1;
-            tracing::info!(attempt = self.reconnect_attempts, "ICE restart initiated");
+            *self.connection_started_at.lock().unwrap() = std::time::Instant::now();
+            tracing::info!(
+                kpi = "ice_restart",
+                attempt = self.reconnect_attempts,
+                "ICE restart initiated"
+            );
         }
 
         Ok(())
@@ -383,7 +399,7 @@ pub async fn handle_data_channel_message(msg: DataChannelMessage, ctx: &mut Sess
         "ping" => {
             let t = msg.extra.get("t").and_then(|v| v.as_i64()).unwrap_or(0);
             let rtt = if t > 0 { chrono::Utc::now().timestamp_millis() - t } else { 0 };
-            tracing::trace!(rtt_ms = rtt, "pong sent");
+            tracing::trace!(kpi = "rtt", rtt_ms = rtt, "pong sent");
         }
 
         other => {

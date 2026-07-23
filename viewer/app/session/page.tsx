@@ -19,6 +19,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import { ref, onValue, set, push, serverTimestamp } from "firebase/database";
 import { DuxoConnection, defaultIceServers } from "@/lib/webrtc";
 import type { Session } from "@shared/types";
+import { toast } from "sonner";
 
 /**
  * Duxo in-session viewer — §3.4 + §1.6-B signaling sequence.
@@ -71,6 +72,7 @@ function SessionPage() {
   const [quality, setQuality] = React.useState<number | null>(null);
   const [hostPlatform, setHostPlatform] = React.useState<string | null>(null);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // §6.2 — Wayland hosts are view-only until Phase 5.
   const isViewOnly = hostPlatform === "linux-wayland";
@@ -192,6 +194,71 @@ function SessionPage() {
     };
   }, [sessionId, router]);
 
+  async function handleClipboardSync() {
+    if (!connRef.current) return;
+    try {
+      const text = await navigator.clipboard.readText();
+      connRef.current.send({ type: "clipboard_text", data: text });
+      toast("Clipboard sent to host", {
+        duration: 2000,
+      });
+    } catch {
+      toast.error("Could not read clipboard. Grant permission or type manually.");
+    }
+  }
+
+  async function handleFileTransfer() {
+    fileInputRef.current?.click();
+  }
+
+  function onFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !connRef.current) return;
+
+    const fileId = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+    const CHUNK_SIZE = 16 * 1024; // 16 KiB
+
+    const reader = new FileReader();
+    let offset = 0;
+    let index = 0;
+    const total = Math.ceil(file.size / CHUNK_SIZE);
+
+    reader.onload = () => {
+      const chunk = reader.result as ArrayBuffer;
+      const base64 = btoa(
+        new Uint8Array(chunk).reduce((s, b) => s + String.fromCharCode(b), ""),
+      );
+
+      connRef.current?.send({
+        type: "file_chunk",
+        fileId,
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.type,
+        index,
+        total,
+        data: base64,
+      });
+
+      index += 1;
+      offset += CHUNK_SIZE;
+
+      if (offset < file.size) {
+        readChunk();
+      } else {
+        toast.success(`File sent: ${file.name}`);
+        e.target.value = "";
+      }
+    };
+
+    const readChunk = () => {
+      const slice = file.slice(offset, offset + CHUNK_SIZE);
+      reader.readAsArrayBuffer(slice);
+    };
+
+    readChunk();
+  }
+
   async function handleEnd() {
     const { db } = getFirebase();
     if (sessionId) {
@@ -210,6 +277,12 @@ function SessionPage() {
   return (
     <>
       <Navbar />
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        onChange={onFileSelected}
+      />
       <main className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-6">
         {/* Wayland view-only banner — §3.4 persistent, non-dismissible */}
         {isViewOnly && phase === "active" && (
@@ -293,18 +366,14 @@ function SessionPage() {
                     <ToolbarButton
                       label="Clipboard sync"
                       disabled={isViewOnly}
-                      onClick={() => {
-                        /* §4 Phase 4 — clipboard sync handler */
-                      }}
+                      onClick={handleClipboardSync}
                     >
                       <Clipboard className="h-4 w-4" />
                     </ToolbarButton>
                     <ToolbarButton
                       label="File transfer"
                       disabled={isViewOnly}
-                      onClick={() => {
-                        /* §4 Phase 4 — chunked file transfer handler */
-                      }}
+                      onClick={handleFileTransfer}
                     >
                       <FileText className="h-4 w-4" />
                     </ToolbarButton>

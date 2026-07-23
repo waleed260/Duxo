@@ -71,6 +71,9 @@ thiserror = "1"
 # §1.5 — semver for version comparison in update check
 semver = "1"
 
+# §7.1 — Tauri updater for secure in-app updates
+tauri-plugin-updater = "2"
+
 # §1.6 — log directory resolution
 dirs = "5"
 

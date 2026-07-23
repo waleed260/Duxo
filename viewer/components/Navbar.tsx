@@ -2,9 +2,11 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Download, Github, Menu, X } from "lucide-react";
+import { Download, Github, Menu, X, LayoutDashboard, Settings } from "lucide-react";
 import { Button } from "./Button";
 import { cn } from "@/lib/utils";
+import { getFirebase } from "@/lib/firebase";
+import { onAuthStateChanged, type User } from "firebase/auth";
 
 /**
  * Duxo Navbar — §3.4 + §9.3 wireframe.
@@ -17,6 +19,13 @@ import { cn } from "@/lib/utils";
  */
 export function Navbar({ className }: { className?: string }) {
   const [mobileOpen, setMobileOpen] = React.useState(false);
+  const [user, setUser] = React.useState<User | null>(null);
+
+  React.useEffect(() => {
+    const { auth } = getFirebase();
+    const unsub = onAuthStateChanged(auth, (u) => setUser(u));
+    return () => unsub();
+  }, []);
 
   // Close mobile menu on route change / resize
   React.useEffect(() => {
@@ -49,9 +58,24 @@ export function Navbar({ className }: { className?: string }) {
 
         {/* Desktop nav */}
         <div className="hidden md:flex items-center gap-7 text-sm">
-          <NavLink href="/#features">Features</NavLink>
-          <NavLink href="/#demo">How it works</NavLink>
           <NavLink href="/download">Download</NavLink>
+          {user ? (
+            <>
+              <NavLink href="/dashboard">
+                <LayoutDashboard className="mr-1 inline h-3.5 w-3.5" aria-hidden="true" />
+                Dashboard
+              </NavLink>
+              <NavLink href="/settings">
+                <Settings className="mr-1 inline h-3.5 w-3.5" aria-hidden="true" />
+                Settings
+              </NavLink>
+            </>
+          ) : (
+            <>
+              <NavLink href="/#features">Features</NavLink>
+              <NavLink href="/#demo">How it works</NavLink>
+            </>
+          )}
           <NavLink
             href="https://github.com/duxo-org/duxo"
             external
@@ -59,11 +83,17 @@ export function Navbar({ className }: { className?: string }) {
             <Github className="mr-1 inline h-3.5 w-3.5" aria-hidden="true" />
             GitHub
           </NavLink>
-          <Link href="/download">
-            <Button size="md" leadingIcon={<Download className="h-4 w-4" />}>
-              Download
-            </Button>
-          </Link>
+          {user ? (
+            <Link href="/dashboard">
+              <Button size="md">Dashboard</Button>
+            </Link>
+          ) : (
+            <Link href="/download">
+              <Button size="md" leadingIcon={<Download className="h-4 w-4" />}>
+                Get Duxo
+              </Button>
+            </Link>
+          )}
         </div>
 
         {/* Mobile hamburger */}
@@ -82,15 +112,30 @@ export function Navbar({ className }: { className?: string }) {
       {mobileOpen && (
         <div className="md:hidden border-t border-border-default bg-surface-base">
           <div className="flex flex-col gap-1 px-6 py-4">
-            <MobileNavLink href="/#features" onClick={() => setMobileOpen(false)}>
-              Features
-            </MobileNavLink>
-            <MobileNavLink href="/#demo" onClick={() => setMobileOpen(false)}>
-              How it works
-            </MobileNavLink>
             <MobileNavLink href="/download" onClick={() => setMobileOpen(false)}>
               Download
             </MobileNavLink>
+            {user ? (
+              <>
+                <MobileNavLink href="/dashboard" onClick={() => setMobileOpen(false)}>
+                  <LayoutDashboard className="mr-1.5 inline h-3.5 w-3.5" aria-hidden="true" />
+                  Dashboard
+                </MobileNavLink>
+                <MobileNavLink href="/settings" onClick={() => setMobileOpen(false)}>
+                  <Settings className="mr-1.5 inline h-3.5 w-3.5" aria-hidden="true" />
+                  Settings
+                </MobileNavLink>
+              </>
+            ) : (
+              <>
+                <MobileNavLink href="/#features" onClick={() => setMobileOpen(false)}>
+                  Features
+                </MobileNavLink>
+                <MobileNavLink href="/#demo" onClick={() => setMobileOpen(false)}>
+                  How it works
+                </MobileNavLink>
+              </>
+            )}
             <MobileNavLink
               href="https://github.com/duxo-org/duxo"
               external
@@ -100,11 +145,17 @@ export function Navbar({ className }: { className?: string }) {
               GitHub
             </MobileNavLink>
             <div className="mt-3">
-              <Link href="/download" onClick={() => setMobileOpen(false)}>
-                <Button className="w-full" leadingIcon={<Download className="h-4 w-4" />}>
-                  Download
-                </Button>
-              </Link>
+              {user ? (
+                <Link href="/dashboard" onClick={() => setMobileOpen(false)}>
+                  <Button className="w-full">Dashboard</Button>
+                </Link>
+              ) : (
+                <Link href="/download" onClick={() => setMobileOpen(false)}>
+                  <Button className="w-full" leadingIcon={<Download className="h-4 w-4" />}>
+                    Get Duxo
+                  </Button>
+                </Link>
+              )}
             </div>
           </div>
         </div>

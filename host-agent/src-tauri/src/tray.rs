@@ -536,6 +536,9 @@ pub async fn end_session(app: AppHandle) -> Result<(), String> {
         ctx.zeroize();
     }
 
+    // §6.2 — clear crash marker on clean shutdown.
+    crate::crash_recovery::clear_marker();
+
     tracing::info!("session ended by host");
     Ok(())
 }

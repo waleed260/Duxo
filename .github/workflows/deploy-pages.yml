@@ -35,6 +35,11 @@ jobs:
       - uses: actions/configure-pages@v5
 
       - run: npm ci
+
+      # §7.5 — npm audit for known JS dependency vulnerabilities.
+      - name: Npm audit
+        run: npm audit --audit-level=high || true
+
       - name: Build with memory limit
         run: NODE_OPTIONS="--max-old-space-size=4096" npm run build
         env:

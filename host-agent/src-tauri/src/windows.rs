@@ -187,11 +187,23 @@ async fn run_capture_pipeline(
         return;
     }
 
+    // §6.2 — write crash marker so a crashed session can be detected on restart.
+    let marker = crate::crash_recovery::CrashMarker {
+        session_id: session_id.to_string(),
+        started_at: chrono::Utc::now().timestamp_millis(),
+        host_platform: std::env::consts::OS.to_string(),
+    };
+    if let Err(e) = crate::crash_recovery::write_marker(&marker) {
+        tracing::warn!(error = %e, "failed to write crash marker");
+    }
+
     tracing::info!("capture pipeline started — streaming video");
 
     // §6.5 — target: 15–20 fps @ 1280×720.
     let frame_interval = std::time::Duration::from_millis(50);
     let mut frame_count: u64 = 0;
+    let mut kpi_fps_start = std::time::Instant::now();
+    let mut kpi_fps_frame_count: u64 = 0;
 
     loop {
         let start = std::time::Instant::now();
@@ -218,7 +230,16 @@ async fn run_capture_pipeline(
                 frame_count += 1;
 
                 if frame_count % 100 == 0 {
-                    tracing::info!(frame = frame_count, "capture pipeline running");
+                    // §6.5 — KPI: frames per second and average frame interval.
+                    let elapsed_s = kpi_fps_start.elapsed().as_secs_f64();
+                    let fps = 100.0 / elapsed_s.max(0.001);
+                    tracing::info!(
+                        frame = frame_count,
+                        fps = format!("{:.1}", fps),
+                        avg_frame_interval_ms = format!("{:.1}", elapsed_s * 10.0),
+                        "capture pipeline running"
+                    );
+                    kpi_fps_start = std::time::Instant::now();
                 }
             }
             Err(e) => {
@@ -232,6 +253,9 @@ async fn run_capture_pipeline(
             tokio::time::sleep(frame_interval - elapsed).await;
         }
     }
+
+    // §6.2 — clear crash marker on clean pipeline stop (not a crash).
+    crate::crash_recovery::clear_marker();
 
     let _ = capture.stop();
     webrtc_session.close().await;

@@ -82,6 +82,13 @@ jobs:
         working-directory: host-agent/src-tauri
         run: cargo test --target ${{ matrix.target }}
 
+      # §7.5 — cargo audit for known Rust dependency vulnerabilities.
+      - name: Cargo audit
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cargo install cargo-audit --locked || true
+          cargo audit
+
       # §10.5 — clippy with -D warnings in CI to fail on any lint.
       - name: Clippy lint
         working-directory: host-agent/src-tauri

@@ -15,11 +15,17 @@ service cloud.firestore {
     }
 
     // §6.3, §8.2 — device registry. Revoke = delete + force token refresh fail.
+    // §8.1 — WebAuthn credentials subcollection — only the owner.
+    match /users/{uid}/webauthn/{credentialId} {
+      allow read, delete: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null && request.auth.uid == uid;
+      allow update: if request.auth != null && request.auth.uid == uid;
+    }
+
     match /devices/{deviceId} {
       allow read, delete: if request.auth != null && resource.data.ownerUid == request.auth.uid;
       allow create: if request.auth != null && request.resource.data.ownerUid == request.auth.uid;
-      // Devices are recreated on re-registration, never mutated.
-      allow update: if false;
+      allow update: if false;  // Devices are recreated on re-registration
     }
 
     // §6.3 — post-session record. Metadata only (timestamp/duration/platform),

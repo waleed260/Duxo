@@ -1,0 +1,92 @@
+# §10.6 — Scheduled Firestore backup: export, encrypt, upload.
+#
+# Runs weekly (Sunday 03:00 UTC) to create a Firestore export via
+# `firebase firestore:export`, encrypts it with a GPG key, and uploads
+# the encrypted archive as a workflow artifact.
+#
+# The backup can also be triggered manually via workflow_dispatch.
+#
+# Prerequisites:
+#   1. Firebase Project with Blaze plan (Spark does not support gcloud firestore export).
+#   2. GCP Service Account with roles/datastore.importExportAdmin, stored as
+#      FIREBASE_SERVICE_ACCOUNT secret (base64-encoded JSON key).
+#   3. GPG public key stored as BACKUP_GPG_PUBKEY secret.
+#
+# Restore: decrypt the archive and use `gcloud firestore import` or
+#          the Firebase Console.
+
+name: Firestore Backup
+
+on:
+  schedule:
+    # Every Sunday at 03:00 UTC.
+    - cron: "0 3 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write # needed to upload backup artifact
+
+env:
+  BACKUP_DIR: firestore-backup
+  ARCHIVE_NAME: duxo-firestore-backup
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: Authenticate to GCP
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          echo "$FIREBASE_SERVICE_ACCOUNT" | base64 -d > /tmp/gcp-key.json
+          gcloud auth activate-service-account --key-file=/tmp/gcp-key.json
+
+      - name: Export Firestore
+        run: |
+          TIMESTAMP=$(date -u +%Y%m%d-%H%M%S)
+          gcloud firestore export \
+            "gs://${{ secrets.FIREBASE_STORAGE_BUCKET }}/backups/${TIMESTAMP}" \
+            --project="${{ secrets.FIREBASE_PROJECT_ID }}"
+
+      - name: Download export
+        run: |
+          TIMESTAMP=$(date -u +%Y%m%d-%H%M%S)
+          mkdir -p "${BACKUP_DIR}"
+          gsutil -m cp -r \
+            "gs://${{ secrets.FIREBASE_STORAGE_BUCKET }}/backups/${TIMESTAMP}" \
+            "${BACKUP_DIR}/"
+
+      - name: Encrypt backup
+        env:
+          GPG_PUBKEY: ${{ secrets.BACKUP_GPG_PUBKEY }}
+        run: |
+          echo "$GPG_PUBKEY" | gpg --import --no-tty
+          tar czf "${ARCHIVE_NAME}.tar.gz" "${BACKUP_DIR}"
+          gpg --encrypt \
+            --recipient "duxo-backup" \
+            --trust-model always \
+            --output "${ARCHIVE_NAME}.tar.gz.gpg" \
+            "${ARCHIVE_NAME}.tar.gz"
+
+      - name: Upload encrypted backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARCHIVE_NAME }}-${{ github.run_id }}
+          path: ${{ env.ARCHIVE_NAME }}.tar.gz.gpg
+          retention-days: 90
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf "${BACKUP_DIR}" "${ARCHIVE_NAME}.tar.gz" "${ARCHIVE_NAME}.tar.gz.gpg" /tmp/gcp-key.json

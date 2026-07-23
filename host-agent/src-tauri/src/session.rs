@@ -41,7 +41,6 @@ pub fn transition(current: SessionStatus, next: SessionStatus) -> Result<Session
         | (SessionStatus::Requested, SessionStatus::Denied)
         | (SessionStatus::Allowed, SessionStatus::Connecting)
         | (SessionStatus::Connecting, SessionStatus::Active)
-        | (SessionStatus::Active, SessionStatus::Ended)
         | (SessionStatus::Denied, SessionStatus::Ended)
         | (SessionStatus::Ended, SessionStatus::Ended)
         | (SessionStatus::Ended, SessionStatus::Waiting) => {

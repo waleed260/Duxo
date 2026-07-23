@@ -14,6 +14,11 @@ import {
   decryptSecret,
   verifyBackupCode,
 } from "@/lib/totp";
+import {
+  authenticateWithPasskey,
+  loadCredentials,
+  updateCredentialCounter,
+} from "@/lib/webauthn";
 
 /**
  * TOTP Verification — §2.3.
@@ -37,8 +42,9 @@ export default function Verify2FAPage() {
   const [code, setCode] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [verifying, setVerifying] = React.useState(false);
-  const [mode, setMode] = React.useState<"totp" | "backup">("totp");
+  const [mode, setMode] = React.useState<"totp" | "backup" | "webauthn">("totp");
   const [backupCode, setBackupCode] = React.useState("");
+  const [hasPasskey, setHasPasskey] = React.useState(false);
 
   React.useEffect(() => {
     const { auth, firestore } = getFirebase();
@@ -76,6 +82,15 @@ export default function Verify2FAPage() {
 
         // TOTP is required — show the verification form.
         setTotpRequired(true);
+
+        // §8.1 — Check if user has WebAuthn passkeys registered.
+        try {
+          const creds = await loadCredentials(u.uid);
+          setHasPasskey(creds.length > 0);
+          if (creds.length > 0) setMode("webauthn");
+        } catch {
+          // Non-fatal — may not have webauthn subcollection.
+        }
       } catch (e) {
         console.error("TOTP check failed:", e);
         // If we can't check (e.g., offline), allow through to avoid lockout.
@@ -167,6 +182,33 @@ export default function Verify2FAPage() {
     }
   }
 
+  async function handlePasskeyLogin() {
+    if (!user) return;
+    setError(null);
+    setVerifying(true);
+
+    try {
+      const creds = await loadCredentials(user.uid);
+      if (creds.length === 0) {
+        setError("No passkeys registered. Use a TOTP code or backup code instead.");
+        setVerifying(false);
+        return;
+      }
+
+      const result = await authenticateWithPasskey(creds);
+
+      // Update the counter to detect cloned authenticators.
+      await updateCredentialCounter(user.uid, result.credentialId, 0);
+
+      totpSessionFlag.verified = true;
+      router.replace("/dashboard");
+    } catch (e) {
+      console.error("WebAuthn verify failed:", e);
+      setError("Passkey authentication failed. Try again or use a code.");
+      setVerifying(false);
+    }
+  }
+
   // If not checked yet or no TOTP required, show minimal loading state.
   if (!checked || !totpRequired) {
     return (
@@ -201,7 +243,44 @@ export default function Verify2FAPage() {
             </div>
           </div>
 
-          {mode === "totp" ? (
+          {mode === "webauthn" && (
+            <div className="flex flex-col gap-4">
+              <p className="text-sm text-text-secondary">
+                Use your passkey (fingerprint, Face ID, Windows Hello, or
+                security key) to verify your identity.
+              </p>
+
+              <Button
+                onClick={handlePasskeyLogin}
+                isLoading={verifying}
+                size="lg"
+                className="w-full"
+              >
+                Sign in with Passkey
+              </Button>
+
+              <div className="flex flex-col items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setMode("totp"); setError(null); }}
+                  className="text-xs text-text-secondary underline hover:text-text-primary transition-colors duration-instant"
+                >
+                  Use authenticator code instead
+                </button>
+                {hasPasskey && (
+                  <button
+                    type="button"
+                    onClick={() => { setMode("backup"); setError(null); }}
+                    className="text-xs text-text-secondary underline hover:text-text-primary transition-colors duration-instant"
+                  >
+                    Use a backup code instead
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {mode === "totp" && (
             <div className="flex flex-col gap-4">
               <p className="text-sm text-text-secondary">
                 Enter the 6-digit code from your authenticator app to continue.
@@ -233,20 +312,28 @@ export default function Verify2FAPage() {
                 Verify
               </Button>
 
-              <div className="text-center">
+              <div className="flex flex-col items-center gap-2">
+                {hasPasskey && (
+                  <button
+                    type="button"
+                    onClick={() => { setMode("webauthn"); setError(null); }}
+                    className="text-xs text-text-secondary underline hover:text-text-primary transition-colors duration-instant"
+                  >
+                    Use passkey instead
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => {
-                    setMode("backup");
-                    setError(null);
-                  }}
+                  onClick={() => { setMode("backup"); setError(null); }}
                   className="text-xs text-text-secondary underline hover:text-text-primary transition-colors duration-instant"
                 >
                   Use a backup code instead
                 </button>
               </div>
             </div>
-          ) : (
+          )}
+
+          {mode === "backup" && (
             <div className="flex flex-col gap-4">
               <div className="flex items-start gap-3 rounded-sm border border-accent/30 bg-accent/5 px-4 py-3 text-sm">
                 <KeyRound className="h-4 w-4 text-accent flex-shrink-0 mt-0.5" aria-hidden="true" />
@@ -278,13 +365,19 @@ export default function Verify2FAPage() {
                 Verify backup code
               </Button>
 
-              <div className="text-center">
+              <div className="flex flex-col items-center gap-2">
+                {hasPasskey && (
+                  <button
+                    type="button"
+                    onClick={() => { setMode("webauthn"); setError(null); }}
+                    className="text-xs text-text-secondary underline hover:text-text-primary transition-colors duration-instant"
+                  >
+                    Use passkey instead
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => {
-                    setMode("totp");
-                    setError(null);
-                  }}
+                  onClick={() => { setMode("totp"); setError(null); }}
                   className="text-xs text-text-secondary underline hover:text-text-primary transition-colors duration-instant"
                 >
                   Use authenticator app instead

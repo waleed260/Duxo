@@ -46,5 +46,13 @@
       "wix": null,
       "nsis": null
     }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://waleed260.github.io/Duxo/update.json"
+      ],
+      "pubkey": "CHANGE_ME_TO_YOUR_ED25519_PUBKEY"
+    }
   }
 }
