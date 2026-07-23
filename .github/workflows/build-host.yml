@@ -101,14 +101,14 @@ jobs:
 
       - name: Upload Windows binary
         if: matrix.os == 'windows-latest'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: host-agent/src-tauri/target/${{ matrix.target }}/release/duxo-host.exe
 
       - name: Upload Linux binary
         if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: host-agent/src-tauri/target/${{ matrix.target }}/release/duxo-host
