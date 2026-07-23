@@ -75,7 +75,7 @@ jobs:
             libfuse2
 
       - name: Cache Rust dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/bin/
