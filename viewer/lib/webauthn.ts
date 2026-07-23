@@ -159,7 +159,7 @@ export async function storeCredential(
   uid: string,
   credential: WebAuthnCredential
 ): Promise<void> {
-  const { firestore } = getFirebase();
+  const fb = getFirebase(); if (!fb) return; const { firestore } = fb;
   const ref = doc(firestore, "users", uid, "webauthn", credential.id);
   await setDoc(ref, credential);
 }
@@ -167,7 +167,7 @@ export async function storeCredential(
 export async function loadCredentials(
   uid: string
 ): Promise<WebAuthnCredential[]> {
-  const { firestore } = getFirebase();
+  const fb = getFirebase(); if (!fb) return []; const { firestore } = fb;
   const ref = collection(firestore, "users", uid, "webauthn");
   const snapshot = await getDocs(ref);
   return snapshot.docs.map((d) => d.data() as WebAuthnCredential);
@@ -177,7 +177,7 @@ export async function deleteCredential(
   uid: string,
   credentialId: string
 ): Promise<void> {
-  const { firestore } = getFirebase();
+  const fb = getFirebase(); if (!fb) return; const { firestore } = fb;
   const ref = doc(firestore, "users", uid, "webauthn", credentialId);
   await deleteDoc(ref);
 }
@@ -187,7 +187,7 @@ export async function updateCredentialCounter(
   credentialId: string,
   _newCounter: number
 ): Promise<void> {
-  const { firestore } = getFirebase();
+  const fb = getFirebase(); if (!fb) return; const { firestore } = fb;
   const ref = doc(firestore, "users", uid, "webauthn", credentialId);
   await updateDoc(ref, { counter: _newCounter });
 }

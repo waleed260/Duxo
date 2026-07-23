@@ -1,0 +1,31 @@
+name: Rollback Firebase Hosting
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Git commit SHA or tag to rollback to"
+        required: true
+        type: string
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.version }}
+
+      - name: Install firebase-tools
+        run: npm install -g firebase-tools
+
+      - name: Deploy pinned version
+        run: |
+          cd viewer
+          npm ci
+          npm run build
+          cd ..
+          firebase deploy --only hosting --project "$FIREBASE_PROJECT_ID"
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          FIREBASE_PROJECT_ID: duxo-remote

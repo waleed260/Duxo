@@ -1,5 +1,8 @@
 //! Duxo WebRTC host — §1.3 connection lifecycle + §10.3b data channel dispatch.
 //!
+//! §10.3c — rate limiting: maximum 100 msgs/s per message type.
+//! Exceeding the limit drops messages silently to prevent DoS via data channel.
+//!
 //! This module owns the WebRTC peer connection on the host side.
 //! §1.2 — host agent owns screen capture, WebRTC peer, input injection, and
 //! ALL permission decisions.
@@ -31,6 +34,12 @@ use crate::input_linux_x11::X11Input;
 use crate::input_windows::WindowsInput;
 use crate::session;
 use serde_json::json;
+use std::collections::HashMap;
+use std::time::Instant;
+
+/// Rate limiter state for data channel messages (§10.3c).
+const RATE_LIMIT_WINDOW_MS: u64 = 1000;
+const RATE_LIMIT_MAX_PER_WINDOW: u32 = 100;
 
 /// Backoff delays for ICE restart (§10.3b). Matches KPI: <10s local, <15s TURN.
 const BACKOFF_DELAYS_MS: &[u64] = &[500, 1000, 2000, 4000, 8000];
@@ -160,13 +169,17 @@ impl HostWebRTCSession {
         })).await;
 
         let ctx = Arc::clone(&self.session_ctx);
+        let rate_map = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+        let rate_map_clone = Arc::clone(&rate_map);
         dc.on_message(Box::new(move |msg| {
             let ctx = ctx.clone();
+            let rate_map = Arc::clone(&rate_map_clone);
             Box::new(async move {
                 if let Ok(text) = String::from_utf8(msg.data.to_vec()) {
                     if let Ok(dm) = serde_json::from_str::<DataChannelMessage>(&text) {
                         let mut ctx_guard = ctx.write().await;
-                        handle_data_channel_message(dm, &mut ctx_guard).await;
+                        let mut rate_guard = rate_map.lock().await;
+                        handle_data_channel_message(dm, &mut ctx_guard, &mut rate_guard).await;
                     }
                 }
             })
@@ -348,8 +361,23 @@ impl HostWebRTCSession {
     }
 }
 
-/// §10.3b — Data channel message loop (host side).
-pub async fn handle_data_channel_message(msg: DataChannelMessage, ctx: &mut SessionContext) {
+/// §10.3b — Data channel message loop (host side) with rate limiting (§10.3c).
+pub async fn handle_data_channel_message(
+    msg: DataChannelMessage,
+    ctx: &mut SessionContext,
+    rate_map: &mut HashMap<String, (Instant, u32)>,
+) {
+    let now = Instant::now();
+    let entry = rate_map.entry(msg.msg_type.clone()).or_insert_with(|| (now, 0));
+    if entry.1 >= RATE_LIMIT_MAX_PER_WINDOW && now.duration_since(entry.0).as_millis() as u64 < RATE_LIMIT_WINDOW_MS {
+        tracing::warn!(msg_type = %msg.msg_type, "rate limit exceeded — dropping message");
+        return;
+    }
+    if now.duration_since(entry.0).as_millis() as u64 >= RATE_LIMIT_WINDOW_MS {
+        *entry = (now, 0);
+    }
+    entry.1 += 1;
+
     match msg.msg_type.as_str() {
         "mouse_move" => {
             let x = msg.extra.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0);

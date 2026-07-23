@@ -14,6 +14,7 @@ import { Button } from "@/components/Button";
 import { Input } from "@/components/Input";
 import { Card, CardIconBadge } from "@/components/Card";
 import { getFirebase } from "@/lib/firebase";
+import { sanitizeSvg } from "@/lib/sanitize";
 import {
   type User,
   onAuthStateChanged,
@@ -58,7 +59,7 @@ export default function TOTPSetup() {
 
   // Check current TOTP status on mount
   React.useEffect(() => {
-    const { auth, firestore } = getFirebase();
+    const fb = getFirebase(); if (!fb) return; const { auth, firestore } = fb;
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
@@ -119,7 +120,7 @@ export default function TOTPSetup() {
       const backupCodeHashes = codes.map((c) => c.hash);
 
       // Write to Firestore
-      const { firestore } = getFirebase();
+      const fb = getFirebase(); if (!fb) return; const { firestore } = fb;
       const userRef = doc(firestore, "users", user.uid);
 
       const existingDoc = await getDoc(userRef);
@@ -168,7 +169,7 @@ export default function TOTPSetup() {
   // Disable TOTP
   async function handleDisable() {
     if (!user) return;
-    const { firestore } = getFirebase();
+    const fb = getFirebase(); if (!fb) return; const { firestore } = fb;
     try {
       await updateDoc(doc(firestore, "users", user.uid), {
         totpEnabled: false,
@@ -330,7 +331,7 @@ function TOTPContent({
           {qrSvg ? (
             <div
               className="h-48 w-48 rounded-sm border border-border-default bg-black p-2"
-              dangerouslySetInnerHTML={{ __html: qrSvg }}
+              dangerouslySetInnerHTML={{ __html: sanitizeSvg(qrSvg) }}
               aria-label="QR code for authenticator app"
             />
           ) : (

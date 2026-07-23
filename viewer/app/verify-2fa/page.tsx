@@ -47,7 +47,7 @@ export default function Verify2FAPage() {
   const [hasPasskey, setHasPasskey] = React.useState(false);
 
   React.useEffect(() => {
-    const { auth, firestore } = getFirebase();
+    const fb = getFirebase(); if (!fb) return; const { auth, firestore } = fb;
 
     const unsub = onAuthStateChanged(auth, async (u) => {
       if (!u) {
@@ -110,7 +110,7 @@ export default function Verify2FAPage() {
     setVerifying(true);
 
     try {
-      const { firestore } = getFirebase();
+      const fb = getFirebase(); if (!fb) return; const { firestore } = fb;
       const userDoc = await getDoc(doc(firestore, "users", user.uid));
       if (!userDoc.exists()) {
         setError("Could not load your security settings.");
@@ -145,7 +145,7 @@ export default function Verify2FAPage() {
     setVerifying(true);
 
     try {
-      const { firestore } = getFirebase();
+      const fb = getFirebase(); if (!fb) return; const { firestore } = fb;
       const userDoc = await getDoc(doc(firestore, "users", user.uid));
       if (!userDoc.exists()) {
         setError("Could not load your security settings.");
@@ -390,7 +390,7 @@ export default function Verify2FAPage() {
             <button
               type="button"
               onClick={async () => {
-                const { auth } = getFirebase();
+                const fb = getFirebase(); if (!fb) return; const { auth } = fb;
                 await signOut(auth);
                 totpSessionFlag.verified = false;
                 router.push("/login");

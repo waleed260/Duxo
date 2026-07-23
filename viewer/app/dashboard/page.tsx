@@ -32,7 +32,7 @@ export default function DashboardPage() {
   const [connecting, setConnecting] = React.useState(false);
 
   React.useEffect(() => {
-    const { auth } = getFirebase();
+    const fb = getFirebase(); if (!fb) return; const { auth } = fb;
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setAuthChecked(true);
@@ -51,7 +51,7 @@ export default function DashboardPage() {
     setCodeError(null);
     setConnecting(true);
     try {
-      const { auth, db } = getFirebase();
+      const fb = getFirebase(); if (!fb) return; const { auth, db } = fb;
       const currentUser = auth.currentUser;
       if (!currentUser) {
         router.push("/login");
@@ -107,7 +107,7 @@ export default function DashboardPage() {
             <Button
               variant="ghost"
               onClick={async () => {
-                const { auth } = getFirebase();
+                const fb = getFirebase(); if (!fb) return; const { auth } = fb;
                 await signOut(auth);
                 router.push("/");
               }}

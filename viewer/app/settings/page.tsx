@@ -53,7 +53,7 @@ export default function SettingsPage() {
   const [revoking, setRevoking] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    const { auth } = getFirebase();
+    const fb = getFirebase(); if (!fb) return; const { auth } = fb;
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setAuthChecked(true);
@@ -65,7 +65,7 @@ export default function SettingsPage() {
 
   React.useEffect(() => {
     if (!user) return;
-    const { firestore } = getFirebase();
+    const fb = getFirebase(); if (!fb) return; const { firestore } = fb;
     const q = query(
       collection(firestore, "devices"),
       where("ownerUid", "==", user.uid),
@@ -83,7 +83,7 @@ export default function SettingsPage() {
     setSaveMessage(null);
     try {
       await updateProfile(user, { displayName });
-      const { firestore } = getFirebase();
+      const fb = getFirebase(); if (!fb) return; const { firestore } = fb;
       const userRef = doc(firestore, "users", user.uid);
       const existing = await getDoc(userRef);
       if (existing.exists()) {
@@ -109,7 +109,7 @@ export default function SettingsPage() {
   async function handleRevokeDevice(deviceId: string) {
     setRevoking(deviceId);
     try {
-      const { firestore } = getFirebase();
+      const fb = getFirebase(); if (!fb) return; const { firestore } = fb;
       await deleteDoc(doc(firestore, "devices", deviceId));
       setDevices((prev) => prev.filter((d) => d.id !== deviceId));
     } catch {
@@ -258,7 +258,7 @@ export default function SettingsPage() {
             <Button
               variant="ghost"
               onClick={async () => {
-                const { auth } = getFirebase();
+                const fb = getFirebase(); if (!fb) return; const { auth } = fb;
                 await signOut(auth);
                 router.push("/");
               }}

@@ -34,7 +34,12 @@ let _auth: Auth | null = null;
 let _db: Database | null = null;
 let _firestore: Firestore | null = null;
 
+function configMissing(): boolean {
+  return !firebaseConfig.apiKey || !firebaseConfig.projectId;
+}
+
 export function getFirebase() {
+  if (configMissing()) return null;
   if (!_app) {
     _app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
     const auth = getAuth(_app);
@@ -42,11 +47,7 @@ export function getFirebase() {
     _db = getDatabase(_app);
     _firestore = getFirestore(_app);
 
-    // §2.6 / §2.5 — tokens stay in memory only (session persistence),
-    // never persisted to localStorage where a local attacker could read them.
-    // Use session persistence so the token clears when the tab closes.
     void setPersistence(auth, browserSessionPersistence).catch(() => {
-      // Fallback to in-memory if session persistence unavailable.
       void setPersistence(auth, browserLocalPersistence);
     });
   }

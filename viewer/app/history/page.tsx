@@ -23,6 +23,8 @@ import type { SessionHistoryRecord } from "@shared/types";
  * Simple list: who/when/duration/platform. NEVER screen recordings — recording
  * someone's screen without extremely explicit consent is out of scope (§3.4).
  */
+const PAGE_SIZE = 25;
+
 export default function HistoryPage() {
   const router = useRouter();
   const [user, setUser] = React.useState<User | null>(null);
@@ -30,9 +32,10 @@ export default function HistoryPage() {
   const [records, setRecords] = React.useState<
     (SessionHistoryRecord & { id: string })[]
   >([]);
+  const [page, setPage] = React.useState(0);
 
   React.useEffect(() => {
-    const { auth } = getFirebase();
+    const fb = getFirebase(); if (!fb) return; const { auth } = fb;
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setChecked(true);
@@ -44,7 +47,6 @@ export default function HistoryPage() {
   React.useEffect(() => {
     if (!user) return;
     const firestore = getFirestore();
-    // §6.3 — sessionHistory readable by host OR viewer (firestore.rules §10.1).
     const q = query(
       collection(firestore, "sessionHistory"),
       where("hostUid", "==", user.uid),
@@ -59,6 +61,9 @@ export default function HistoryPage() {
     });
     return () => unsub();
   }, [user]);
+
+  const totalPages = Math.max(1, Math.ceil(records.length / PAGE_SIZE));
+  const paged = records.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   if (!checked) {
     return (
@@ -89,30 +94,53 @@ export default function HistoryPage() {
             </Link>
           </div>
         ) : (
-          <ul className="mt-5 flex flex-col gap-3">
-            {records.map((r) => (
-              <li
-                key={r.id}
-                className="flex items-center justify-between rounded-md border border-border-default bg-surface-raised p-4"
-              >
-                <div>
-                  <p className="text-sm font-weight-emphasis">
-                    {platformLabel(r.hostPlatform)}
-                  </p>
-                  <p className="text-xs text-text-secondary">
-                    {new Date(r.startedAt).toLocaleString()} ·{" "}
-                    {Math.round(r.durationSeconds / 60)} min
-                  </p>
-                </div>
-                <span
-                  className="rounded-pill border border-border-default px-3 py-1 text-xs text-text-secondary"
-                  aria-label={`Ended because ${r.endReason}`}
+          <>
+            <ul className="mt-5 flex flex-col gap-3">
+              {paged.map((r) => (
+                <li
+                  key={r.id}
+                  className="flex items-center justify-between rounded-md border border-border-default bg-surface-raised p-4"
                 >
-                  {r.endReason.replace("_", " ")}
+                  <div>
+                    <p className="text-sm font-weight-emphasis">
+                      {platformLabel(r.hostPlatform)}
+                    </p>
+                    <p className="text-xs text-text-secondary">
+                      {new Date(r.startedAt).toLocaleString()} ·{" "}
+                      {Math.round(r.durationSeconds / 60)} min
+                    </p>
+                  </div>
+                  <span
+                    className="rounded-pill border border-border-default px-3 py-1 text-xs text-text-secondary"
+                    aria-label={`Ended because ${r.endReason}`}
+                  >
+                    {r.endReason.replace("_", " ")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {totalPages > 1 && (
+              <div className="mt-6 flex items-center justify-center gap-4">
+                <button
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                  className="rounded-pill border border-border-default px-4 py-2 text-sm text-text-secondary disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <span className="text-xs text-text-secondary">
+                  Page {page + 1} of {totalPages}
                 </span>
-              </li>
-            ))}
-          </ul>
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                  disabled={page >= totalPages - 1}
+                  className="rounded-pill border border-border-default px-4 py-2 text-sm text-text-secondary disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </>
         )}
       </main>
     </>

@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "@/styles/globals.css";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { WebVitals } from "@/components/WebVitals";
 
 /**
  * Duxo root layout.
@@ -44,8 +46,11 @@ export const metadata: Metadata = {
   },
 };
 
+
+
 export const viewport: Viewport = {
   themeColor: "#ef443b",
+  colorScheme: "dark",
   width: "device-width",
   initialScale: 1,
 };
@@ -57,8 +62,14 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
+      <head>
+        <meta
+          httpEquiv="Content-Security-Policy"
+          content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.firebaseio.com https://*.googleapis.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.googleapis.com https://*.gstatic.com; connect-src 'self' https://*.firebaseio.com https://*.googleapis.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com; frame-src 'self' https://*.firebaseapp.com; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'"
+        />
+      </head>
       <body className="min-h-screen bg-surface-base text-text-primary antialiased">
-        {children}
+        <ErrorBoundary><WebVitals />{children}</ErrorBoundary>
       </body>
     </html>
   );

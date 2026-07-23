@@ -53,7 +53,7 @@ export default function LoginPage() {
     setError(null);
     setLoading("google");
     try {
-      const { auth } = getFirebase();
+      const fb = getFirebase(); if (!fb) return; const { auth } = fb;
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
       router.push("/dashboard");
@@ -77,7 +77,7 @@ export default function LoginPage() {
 
     setLoading("email");
     try {
-      const { auth } = getFirebase();
+      const fb = getFirebase(); if (!fb) return; const { auth } = fb;
       if (mode === "signup") {
         const cred = await createUserWithEmailAndPassword(auth, email, password);
         // §2.2 — verification required before hosting. Not blocking viewing.

@@ -36,7 +36,7 @@ import { toast } from "sonner";
  * file, fullscreen, End (danger). Wayland hosts show non-dismissible banner.
  */
 
-function Suspended() {
+const Suspended = React.memo(function Suspended() {
   return (
     <>
       <Navbar />
@@ -45,7 +45,7 @@ function Suspended() {
       </main>
     </>
   );
-}
+});
 
 export default function SessionPageWrapper() {
   // §Next 14 requirement: useSearchParams must be inside a Suspense boundary
@@ -84,7 +84,7 @@ function SessionPage() {
       setPhase("failed");
       return;
     }
-    const { auth, db } = getFirebase();
+    const fb = getFirebase(); if (!fb) return; const { auth, db } = fb;
 
     let unsub: (() => void) | undefined;
     let cancelled = false;
@@ -260,7 +260,7 @@ function SessionPage() {
   }
 
   async function handleEnd() {
-    const { db } = getFirebase();
+    const fb = getFirebase(); if (!fb) return; const { db } = fb;
     if (sessionId) {
       try {
         await set(ref(db, `sessions/${sessionId}/status`), "ended");
@@ -421,7 +421,7 @@ function SessionPage() {
   );
 }
 
-function ToolbarButton({
+const ToolbarButton = React.memo(function ToolbarButton({
   label,
   children,
   onClick,
@@ -444,13 +444,13 @@ function ToolbarButton({
       {children}
     </button>
   );
-}
+});
 
 /**
  * §9.3b #11 — Overflow menu for narrow viewports.
  * Collapses clipboard, file transfer, and fullscreen into a single dropdown.
  */
-function ToolbarOverflowMenu({
+const ToolbarOverflowMenu = React.memo(function ToolbarOverflowMenu({
   isViewOnly,
   onFullscreen,
 }: {
@@ -535,9 +535,9 @@ function ToolbarOverflowMenu({
       )}
     </div>
   );
-}
+});
 
-function OverflowMenuItem({
+const OverflowMenuItem = React.memo(function OverflowMenuItem({
   icon,
   label,
   disabled,
@@ -560,4 +560,4 @@ function OverflowMenuItem({
       {label}
     </button>
   );
-}
+});

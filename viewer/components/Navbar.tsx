@@ -17,13 +17,14 @@ import { onAuthStateChanged, type User } from "firebase/auth";
  *
  * Mobile: hamburger menu for narrow viewports (§9.3b #11).
  */
-export function Navbar({ className }: { className?: string }) {
+export const Navbar = React.memo(function Navbar({ className }: { className?: string }) {
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [user, setUser] = React.useState<User | null>(null);
 
   React.useEffect(() => {
-    const { auth } = getFirebase();
-    const unsub = onAuthStateChanged(auth, (u) => setUser(u));
+    const fb = getFirebase();
+    if (!fb) return;
+    const unsub = onAuthStateChanged(fb.auth, (u) => setUser(u));
     return () => unsub();
   }, []);
 
@@ -162,7 +163,7 @@ export function Navbar({ className }: { className?: string }) {
       )}
     </header>
   );
-}
+});
 
 function NavLink({
   href,

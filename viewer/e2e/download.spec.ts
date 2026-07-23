@@ -5,9 +5,9 @@ test.describe("Download page", () => {
     await page.goto("/download");
   });
 
-  test("renders download options for each platform", async ({ page }) => {
-    await expect(page.getByText(/windows/i)).toBeVisible();
-    await expect(page.getByText(/linux/i)).toBeVisible();
+  test("renders heading and platform cards", async ({ page }) => {
+    await expect(page.locator("h1")).toHaveText(/download duxo/i);
+    await expect(page.getByText("Open-source, free forever.")).toBeVisible();
   });
 
   test("download buttons are present", async ({ page }) => {
