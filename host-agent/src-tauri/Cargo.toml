@@ -41,12 +41,12 @@ windows = { version = "0.58", features = [
   "Win32_Graphics_Direct3D11",
   "Win32_UI_WindowsAndMessaging",
 ], optional = true }
-enigo = { version = "0.2", features = ["serde"] }
+enigo = { version = "0.6", features = ["serde"] }
 
 # Linux X11: x11rb for X11-specific features
 [target.'cfg(target_os = "linux")'.dependencies]
 x11rb = { version = "0.13", features = ["all-extensions"], optional = true }
-enigo = { version = "0.2", features = ["serde"] }
+enigo = { version = "0.6", features = ["serde"] }
 
 # §1.6 — logging (local rotating file, no cloud logging bill)
 tracing = "0.1"
