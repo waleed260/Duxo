@@ -19,6 +19,7 @@ export const metadata: Metadata = {
   title: "Duxo — Remote access, built in the open",
   description:
     "Open-source, end-to-end encrypted remote desktop for Windows and Linux. Zero-budget, zero telemetry.",
+  icons: { icon: "/favicon.svg" },
   applicationName: "Duxo",
   authors: [{ name: "Duxo Contributors" }],
   keywords: ["remote desktop", "open source", "webrtc", "windows", "linux", "e2ee"],
@@ -64,7 +65,7 @@ export default function RootLayout({
       <head>
         <meta
           httpEquiv="Content-Security-Policy"
-          content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.firebaseio.com https://*.googleapis.com https://*.clerk.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.googleapis.com https://*.gstatic.com https://*.clerk.com; connect-src 'self' https://*.firebaseio.com https://*.googleapis.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com https://*.clerk.com; frame-src 'self' https://*.firebaseapp.com https://*.clerk.com; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'"
+          content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.firebaseio.com https://*.googleapis.com https://*.clerk.com https://*.clerk.accounts.dev; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.googleapis.com https://*.gstatic.com https://*.clerk.com https://*.clerk.accounts.dev; connect-src 'self' https://*.firebaseio.com https://*.googleapis.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com https://*.clerk.com https://*.clerk.accounts.dev; frame-src 'self' https://*.firebaseapp.com https://*.clerk.com https://*.clerk.accounts.dev; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'"
         />
       </head>
       <body className="min-h-screen bg-surface-base text-text-primary antialiased">
