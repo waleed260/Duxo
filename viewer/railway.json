@@ -1,0 +1,10 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "nixpacks",
+    "buildCommand": "next build"
+  },
+  "deploy": {
+    "startCommand": "next start -p $PORT"
+  }
+}
