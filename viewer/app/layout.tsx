@@ -15,7 +15,7 @@ import { WebVitals } from "@/components/WebVitals";
  */
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://waleed260.github.io/Duxo"),
+  metadataBase: new URL("https://duxo.app"),
   title: "Duxo — Remote access, built in the open",
   description:
     "Open-source, end-to-end encrypted remote desktop for Windows and Linux. Zero-budget, zero telemetry.",

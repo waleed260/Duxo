@@ -2,7 +2,7 @@
 
 import * as React from "react";
 
-const basePath = "/Duxo";
+const basePath = "";
 
 /**
  * ImageWithBasePath — renders an <img> that resolves through the GitHub Pages
