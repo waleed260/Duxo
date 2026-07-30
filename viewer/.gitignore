@@ -40,3 +40,4 @@ yarn-error.log*
 # Playwright MCP temp files
 .playwright-mcp/
 *.png
+package-lock.json
