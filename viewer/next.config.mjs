@@ -1,7 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  output: "export",
+  // Static export disabled — API routes require a server runtime.
+  // output: "export",
   basePath: "/Duxo",
   assetPrefix: "/Duxo/",
   images: {

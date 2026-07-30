@@ -3,10 +3,9 @@
 import * as React from "react";
 import Link from "next/link";
 import { Download, Github, Menu, X, LayoutDashboard, Settings } from "lucide-react";
+import { useUser } from "@clerk/nextjs";
 import { Button } from "./Button";
 import { cn } from "@/lib/utils";
-import { getFirebase } from "@/lib/firebase";
-import { onAuthStateChanged, type User } from "firebase/auth";
 
 /**
  * Duxo Navbar — §3.4 + §9.3 wireframe.
@@ -19,14 +18,7 @@ import { onAuthStateChanged, type User } from "firebase/auth";
  */
 export const Navbar = React.memo(function Navbar({ className }: { className?: string }) {
   const [mobileOpen, setMobileOpen] = React.useState(false);
-  const [user, setUser] = React.useState<User | null>(null);
-
-  React.useEffect(() => {
-    const fb = getFirebase();
-    if (!fb) return;
-    const unsub = onAuthStateChanged(fb.auth, (u) => setUser(u));
-    return () => unsub();
-  }, []);
+  const { user, isLoaded } = useUser();
 
   // Close mobile menu on route change / resize
   React.useEffect(() => {
@@ -58,7 +50,7 @@ export const Navbar = React.memo(function Navbar({ className }: { className?: st
         </Link>
 
         {/* Desktop nav */}
-        <div className="hidden md:flex items-center gap-7 text-sm">
+        <div className="hidden md:flex items-center gap-ds-7 text-sm">
           <NavLink href="/download">Download</NavLink>
           {user ? (
             <>

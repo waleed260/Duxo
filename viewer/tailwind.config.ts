@@ -110,14 +110,16 @@ const config: Config = {
       },
       spacing: {
         // §9.2 explicit scale — components MUST use these, not one-offs (§9.8).
+        // NOTE: 7 and 8 renamed to ds-7/ds-8 to avoid collision with Tailwind defaults
+        // where w-8/h-8 = 32px. shadcn/ui components use default Tailwind values.
         1: "4px",
         2: "8px",
         3: "12px",
         4: "16px",
         5: "20px",
         6: "24px",
-        7: "32px",
-        8: "48px",
+        "ds-7": "32px",
+        "ds-8": "48px",
       },
       borderRadius: {
         sm: "6px",

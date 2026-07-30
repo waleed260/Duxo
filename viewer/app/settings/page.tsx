@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useUser, useClerk } from "@clerk/nextjs";
 import {
   Settings as SettingsIcon,
   User as UserIcon,
@@ -20,13 +21,8 @@ import { Button } from "@/components/Button";
 import { Input } from "@/components/Input";
 import TOTPSetup from "@/components/TOTPSetup";
 import { WebAuthnSetup } from "@/components/WebAuthnSetup";
-import { getFirebase } from "@/lib/firebase";
-import {
-  onAuthStateChanged,
-  signOut,
-  updateProfile,
-  type User,
-} from "firebase/auth";
+import { syncFirebaseAuth, getFirebaseAuth } from "@/lib/auth-bridge";
+import { getFirebaseClient } from "@/lib/firebase-client";
 import {
   doc,
   getDoc,
@@ -42,57 +38,73 @@ import type { DeviceRecord } from "@shared/types";
 
 export default function SettingsPage() {
   const router = useRouter();
-  const [user, setUser] = React.useState<User | null>(null);
-  const [authChecked, setAuthChecked] = React.useState(false);
+  const { user, isLoaded } = useUser();
+  const { signOut: clerkSignOut } = useClerk();
 
   const [displayName, setDisplayName] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const [saveMessage, setSaveMessage] = React.useState<string | null>(null);
-
   const [devices, setDevices] = React.useState<(DeviceRecord & { id: string })[]>([]);
   const [revoking, setRevoking] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    const fb = getFirebase(); if (!fb) return; const { auth } = fb;
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      setAuthChecked(true);
-      if (!u) router.replace("/login");
-      if (u?.displayName) setDisplayName(u.displayName);
-    });
-    return () => unsub();
-  }, [router]);
+    if (!isLoaded) return;
+    if (!user) {
+      router.replace("/login");
+      return;
+    }
+    syncFirebaseAuth().catch(() => {});
+  }, [user, isLoaded, router]);
 
   React.useEffect(() => {
     if (!user) return;
-    const fb = getFirebase(); if (!fb) return; const { firestore } = fb;
+    setDisplayName(
+      user.firstName
+        ? `${user.firstName}${user.lastName ? ` ${user.lastName}` : ""}`
+        : user.emailAddresses?.[0]?.emailAddress ?? "",
+    );
+  }, [user]);
+
+  React.useEffect(() => {
+    const auth = getFirebaseAuth();
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    const client = getFirebaseClient();
+    if (!client) return;
+    const { firestore } = client;
     const q = query(
       collection(firestore, "devices"),
-      where("ownerUid", "==", user.uid),
+      where("ownerUid", "==", uid),
     );
-    getDocs(q).then((snap) => {
-      const next: (DeviceRecord & { id: string })[] = [];
-      snap.forEach((d) => next.push({ id: d.id, ...(d.data() as DeviceRecord) }));
-      setDevices(next);
-    }).catch(() => {});
+    getDocs(q)
+      .then((snap) => {
+        const next: (DeviceRecord & { id: string })[] = [];
+        snap.forEach((d) => next.push({ id: d.id, ...(d.data() as DeviceRecord) }));
+        setDevices(next);
+      })
+      .catch(() => {});
   }, [user]);
 
   async function handleSaveProfile() {
-    if (!user) return;
+    const auth = getFirebaseAuth();
+    const fbUser = auth.currentUser;
+    if (!fbUser) return;
     setSaving(true);
     setSaveMessage(null);
     try {
-      await updateProfile(user, { displayName });
-      const fb = getFirebase(); if (!fb) return; const { firestore } = fb;
-      const userRef = doc(firestore, "users", user.uid);
+      await user?.update({ firstName: displayName });
+      const client = getFirebaseClient();
+      if (!client) return;
+      const { firestore } = client;
+      const userRef = doc(firestore, "users", fbUser.uid);
       const existing = await getDoc(userRef);
       if (existing.exists()) {
         await updateDoc(userRef, { displayName });
       } else {
         await setDoc(userRef, {
-          email: user.email,
+          email: fbUser.email,
           displayName,
-          emailVerified: user.emailVerified,
+          emailVerified: fbUser.emailVerified,
           createdAt: Date.now(),
           totpEnabled: false,
           totpSecretEncrypted: null,
@@ -109,7 +121,9 @@ export default function SettingsPage() {
   async function handleRevokeDevice(deviceId: string) {
     setRevoking(deviceId);
     try {
-      const fb = getFirebase(); if (!fb) return; const { firestore } = fb;
+      const client = getFirebaseClient();
+      if (!client) return;
+      const { firestore } = client;
       await deleteDoc(doc(firestore, "devices", deviceId));
       setDevices((prev) => prev.filter((d) => d.id !== deviceId));
     } catch {
@@ -118,7 +132,7 @@ export default function SettingsPage() {
     setRevoking(null);
   }
 
-  if (!authChecked) {
+  if (!isLoaded) {
     return (
       <>
         <Navbar />
@@ -128,6 +142,8 @@ export default function SettingsPage() {
       </>
     );
   }
+
+  const uid = getFirebaseAuth().currentUser?.uid;
 
   return (
     <>
@@ -150,7 +166,6 @@ export default function SettingsPage() {
         </div>
 
         <div className="flex flex-col gap-6">
-          {/* Profile section */}
           <section className="rounded-md border border-border-default bg-surface-raised p-6">
             <h2 className="flex items-center gap-2 text-lg font-weight-emphasis mb-4">
               <UserIcon className="h-4 w-4 text-accent" aria-hidden="true" />
@@ -168,9 +183,9 @@ export default function SettingsPage() {
               />
               <div>
                 <p className="text-sm text-text-secondary">
-                  Email: {user?.email}
+                  Email: {user?.emailAddresses?.[0]?.emailAddress}
                 </p>
-                {user?.emailVerified && (
+                {user?.emailAddresses?.[0]?.verification?.status === "verified" && (
                   <p className="flex items-center gap-1 text-xs text-success mt-1">
                     <CheckCircle className="h-3 w-3" aria-hidden="true" />
                     Verified
@@ -192,7 +207,6 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          {/* Security section */}
           <section className="rounded-md border border-border-default bg-surface-raised p-6">
             <h2 className="flex items-center gap-2 text-lg font-weight-emphasis mb-4">
               <Shield className="h-4 w-4 text-accent" aria-hidden="true" />
@@ -200,11 +214,10 @@ export default function SettingsPage() {
             </h2>
             <div className="space-y-4">
               <TOTPSetup />
-              {user && <WebAuthnSetup uid={user.uid} />}
+              {uid && <WebAuthnSetup uid={uid} />}
             </div>
           </section>
 
-          {/* Devices section */}
           <section className="rounded-md border border-border-default bg-surface-raised p-6">
             <h2 className="flex items-center gap-2 text-lg font-weight-emphasis mb-4">
               <Laptop className="h-4 w-4 text-accent" aria-hidden="true" />
@@ -246,7 +259,6 @@ export default function SettingsPage() {
             )}
           </section>
 
-          {/* Sign out */}
           <div className="flex items-center justify-between rounded-md border border-border-default bg-surface-raised p-6">
             <div>
               <p className="text-sm font-weight-emphasis">Sign out</p>
@@ -258,8 +270,9 @@ export default function SettingsPage() {
             <Button
               variant="ghost"
               onClick={async () => {
-                const fb = getFirebase(); if (!fb) return; const { auth } = fb;
-                await signOut(auth);
+                const auth = getFirebaseAuth();
+                await auth.signOut();
+                await clerkSignOut();
                 router.push("/");
               }}
             >

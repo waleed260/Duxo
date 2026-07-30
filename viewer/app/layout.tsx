@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { ClerkProvider } from "@clerk/nextjs";
 import "@/styles/globals.css";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { WebVitals } from "@/components/WebVitals";
@@ -46,8 +47,6 @@ export const metadata: Metadata = {
   },
 };
 
-
-
 export const viewport: Viewport = {
   themeColor: "#ef443b",
   colorScheme: "dark",
@@ -65,11 +64,13 @@ export default function RootLayout({
       <head>
         <meta
           httpEquiv="Content-Security-Policy"
-          content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.firebaseio.com https://*.googleapis.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.googleapis.com https://*.gstatic.com; connect-src 'self' https://*.firebaseio.com https://*.googleapis.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com; frame-src 'self' https://*.firebaseapp.com; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'"
+          content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.firebaseio.com https://*.googleapis.com https://*.clerk.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.googleapis.com https://*.gstatic.com https://*.clerk.com; connect-src 'self' https://*.firebaseio.com https://*.googleapis.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com https://*.clerk.com; frame-src 'self' https://*.firebaseapp.com https://*.clerk.com; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'"
         />
       </head>
       <body className="min-h-screen bg-surface-base text-text-primary antialiased">
-        <ErrorBoundary><WebVitals />{children}</ErrorBoundary>
+        <ClerkProvider>
+          <ErrorBoundary><WebVitals />{children}</ErrorBoundary>
+        </ClerkProvider>
       </body>
     </html>
   );

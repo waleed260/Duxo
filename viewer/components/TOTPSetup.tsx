@@ -10,15 +10,13 @@ import {
   ArrowLeft,
   KeyRound,
 } from "lucide-react";
+import { useUser } from "@clerk/nextjs";
 import { Button } from "@/components/Button";
 import { Input } from "@/components/Input";
 import { Card, CardIconBadge } from "@/components/Card";
-import { getFirebase } from "@/lib/firebase";
+import { syncFirebaseAuth, getFirebaseAuth } from "@/lib/auth-bridge";
+import { getFirebaseClient } from "@/lib/firebase-client";
 import { sanitizeSvg } from "@/lib/sanitize";
-import {
-  type User,
-  onAuthStateChanged,
-} from "firebase/auth";
 import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import {
   generateTOTPSecret,
@@ -28,23 +26,10 @@ import {
   generateBackupCodes,
 } from "@/lib/totp";
 
-/**
- * TOTPSetup — §2.3 Two-Factor Authentication setup flow.
- *
- * Steps:
- *   1. Click "Enable 2FA" → generates secret + QR code.
- *   2. Scan QR with authenticator app (Google Authenticator, Authy, etc.).
- *   3. Enter a 6-digit code to verify setup works.
- *   4. Save backup codes (displayed once, never shown again).
- *
- * Design: uses the same dark design tokens as the rest of Duxo (§9.2).
- * No SMS-based verification — avoids Firebase Phone Auth billing (§2.3).
- */
-
 type SetupPhase = "idle" | "scan" | "verify" | "backup" | "done";
 
 export default function TOTPSetup() {
-  const [user, setUser] = React.useState<User | null>(null);
+  const { user, isLoaded } = useUser();
   const [phase, setPhase] = React.useState<SetupPhase>("idle");
   const [totpEnabled, setTotpEnabled] = React.useState(false);
   const [qrSvg, setQrSvg] = React.useState<string | null>(null);
@@ -57,32 +42,45 @@ export default function TOTPSetup() {
   const [codesCopied, setCodesCopied] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
 
-  // Check current TOTP status on mount
   React.useEffect(() => {
-    const fb = getFirebase(); if (!fb) return; const { auth, firestore } = fb;
-    const unsub = onAuthStateChanged(auth, async (u) => {
-      setUser(u);
-      if (u) {
-        try {
-          const userDoc = await getDoc(doc(firestore, "users", u.uid));
-          if (userDoc.exists()) {
-            const data = userDoc.data();
-            setTotpEnabled(data.totpEnabled ?? false);
-          }
-    } catch (e) {
-      console.error("TOTP status check failed:", e);
-    }
+    if (!isLoaded || !user) return;
+
+    async function init() {
+      try {
+        await syncFirebaseAuth();
+      } catch {
+        // continue
+      }
+
+      const auth = getFirebaseAuth();
+      const fbUser = auth.currentUser;
+      if (!fbUser) return;
+
+      const client = getFirebaseClient();
+      if (!client) return;
+      const { firestore } = client;
+
+      try {
+        const userDoc = await getDoc(doc(firestore, "users", fbUser.uid));
+        if (userDoc.exists()) {
+          const data = userDoc.data();
+          setTotpEnabled(data.totpEnabled ?? false);
+        }
+      } catch (e) {
+        console.error("TOTP status check failed:", e);
       }
       setLoading(false);
-    });
-    return () => unsub();
-  }, []);
+    }
 
-  // Step 1: Generate secret + QR code
+    init();
+  }, [user, isLoaded]);
+
   async function handleEnable() {
-    if (!user?.email) return;
+    if (!user?.emailAddresses?.[0]?.emailAddress) return;
 
-    const { secret, otpauthUri: uri } = generateTOTPSecret(user.email);
+    const { secret, otpauthUri: uri } = generateTOTPSecret(
+      user.emailAddresses[0].emailAddress,
+    );
     setSecretBase32(secret);
     setOtpauthUri(uri);
 
@@ -91,14 +89,14 @@ export default function TOTPSetup() {
       setQrSvg(svg);
       setPhase("scan");
     } catch {
-      // Fallback: show the URI as text
       setPhase("scan");
     }
   }
 
-  // Step 2: Verify the code the user entered from their authenticator app
   async function handleVerify() {
-    if (!user || verificationCode.length !== 6) return;
+    const auth = getFirebaseAuth();
+    const fbUser = auth.currentUser;
+    if (!fbUser || verificationCode.length !== 6) return;
 
     setVerifyError(null);
     setVerifying(true);
@@ -112,16 +110,14 @@ export default function TOTPSetup() {
         return;
       }
 
-      // Encrypt and store the secret in Firestore
-      const encrypted = await encryptSecret(secretBase32, user.uid);
-
-      // Generate backup codes (async SHA-256 hashing)
+      const encrypted = await encryptSecret(secretBase32, fbUser.uid);
       const codes = await generateBackupCodes();
       const backupCodeHashes = codes.map((c) => c.hash);
 
-      // Write to Firestore
-      const fb = getFirebase(); if (!fb) return; const { firestore } = fb;
-      const userRef = doc(firestore, "users", user.uid);
+      const client = getFirebaseClient();
+      if (!client) return;
+      const { firestore } = client;
+      const userRef = doc(firestore, "users", fbUser.uid);
 
       const existingDoc = await getDoc(userRef);
       if (existingDoc.exists()) {
@@ -132,9 +128,9 @@ export default function TOTPSetup() {
         });
       } else {
         await setDoc(userRef, {
-          email: user.email,
-          displayName: user.displayName ?? "",
-          emailVerified: user.emailVerified,
+          email: fbUser.email,
+          displayName: "",
+          emailVerified: fbUser.emailVerified,
           createdAt: Date.now(),
           totpEnabled: true,
           totpSecretEncrypted: encrypted,
@@ -142,7 +138,6 @@ export default function TOTPSetup() {
         });
       }
 
-      // Show backup codes
       setBackupCodes(codes.map((c) => c.plaintext));
       setTotpEnabled(true);
       setPhase("backup");
@@ -154,24 +149,26 @@ export default function TOTPSetup() {
     setVerifying(false);
   }
 
-  // Step 3: Handled backup codes — user confirms they saved them
-  async function handleBackupDone() {
+  function handleBackupDone() {
     setPhase("done");
   }
 
-  // Copy backup codes to clipboard
   function handleCopyCodes() {
     navigator.clipboard.writeText(backupCodes.join("\n")).catch(() => {});
     setCodesCopied(true);
     setTimeout(() => setCodesCopied(false), 2000);
   }
 
-  // Disable TOTP
   async function handleDisable() {
-    if (!user) return;
-    const fb = getFirebase(); if (!fb) return; const { firestore } = fb;
+    const auth = getFirebaseAuth();
+    const fbUser = auth.currentUser;
+    if (!fbUser) return;
+
+    const client = getFirebaseClient();
+    if (!client) return;
+    const { firestore } = client;
     try {
-      await updateDoc(doc(firestore, "users", user.uid), {
+      await updateDoc(doc(firestore, "users", fbUser.uid), {
         totpEnabled: false,
         totpSecretEncrypted: null,
         backupCodeHashes: [],
@@ -233,8 +230,6 @@ export default function TOTPSetup() {
   );
 }
 
-// ─── Inner content ───
-
 function TOTPContent({
   phase,
   totpEnabled,
@@ -272,7 +267,6 @@ function TOTPContent({
   onGoToVerify: () => void;
   onGoToScan: () => void;
 }) {
-  // Done — show success state
   if (phase === "done") {
     return (
       <div className="flex flex-col gap-4 pt-2">
@@ -290,7 +284,6 @@ function TOTPContent({
     );
   }
 
-  // Enabled already — show disable option
   if (totpEnabled) {
     return (
       <div className="flex flex-col gap-4 pt-2">
@@ -307,7 +300,6 @@ function TOTPContent({
     );
   }
 
-  // Idle — show enable button
   if (phase === "idle") {
     return (
       <div className="pt-2">
@@ -318,7 +310,6 @@ function TOTPContent({
     );
   }
 
-  // Scan — show QR code
   if (phase === "scan") {
     return (
       <div className="flex flex-col gap-4 pt-2">
@@ -326,7 +317,6 @@ function TOTPContent({
           Scan this QR code with your authenticator app (Google Authenticator,
           Authy, 1Password, or any TOTP-compatible app).
         </p>
-
         <div className="flex flex-col items-center gap-3 py-3">
           {qrSvg ? (
             <div
@@ -342,12 +332,10 @@ function TOTPContent({
             </div>
           )}
         </div>
-
         <p className="text-xs text-text-secondary text-center">
           Can&apos;t scan? Manually enter the key in your app using the option
           to add a setup key.
         </p>
-
         <Button size="md" onClick={onGoToVerify}>
           I&apos;ve scanned the code
         </Button>
@@ -355,7 +343,6 @@ function TOTPContent({
     );
   }
 
-  // Verify — enter 6-digit code
   if (phase === "verify") {
     return (
       <div className="flex flex-col gap-4 pt-2">
@@ -367,7 +354,6 @@ function TOTPContent({
           />
           <span>Enter the 6-digit code from your authenticator app.</span>
         </div>
-
         <div className="flex flex-col gap-3">
           <Input
             label="Verification code"
@@ -395,7 +381,6 @@ function TOTPContent({
     );
   }
 
-  // Backup — show backup codes
   if (phase === "backup") {
     return (
       <div className="flex flex-col gap-4 pt-2">
@@ -411,7 +396,6 @@ function TOTPContent({
             </p>
           </div>
         </div>
-
         <div className="grid grid-cols-2 gap-2 rounded-sm border border-border-default bg-surface-overlay p-4 font-mono text-sm tracking-wider">
           {backupCodes.map((code) => (
             <div key={code} className="flex items-center gap-2 text-text-primary">
@@ -420,7 +404,6 @@ function TOTPContent({
             </div>
           ))}
         </div>
-
         <div className="flex flex-wrap gap-2">
           <Button
             variant="secondary"

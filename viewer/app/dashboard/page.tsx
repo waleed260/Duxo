@@ -3,46 +3,37 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useUser } from "@clerk/nextjs";
 import { MonitorDown, Plug, History, Shield } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { Card, CardIconBadge } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { CodeInput } from "@/components/CodeInput";
 import TOTPSetup from "@/components/TOTPSetup";
-import { getFirebase } from "@/lib/firebase";
-import { onAuthStateChanged, signOut, type User } from "firebase/auth";
+import { syncFirebaseAuth, getFirebaseAuth } from "@/lib/auth-bridge";
+import { getFirebaseClient } from "@/lib/firebase-client";
 import { ref, get } from "firebase/database";
 
-/**
- * Duxo dashboard — §3.4.
- *
- * Two clear paths, visually separated:
- *   1. Connect to a device (code entry) → /session
- *   2. Let others connect to me (download + code display, or deep-link launch)
- *
- * Also: session history list link.
- */
 export default function DashboardPage() {
   const router = useRouter();
-  const [user, setUser] = React.useState<User | null>(null);
-  const [authChecked, setAuthChecked] = React.useState(false);
+  const { user, isLoaded } = useUser();
 
   const [code, setCode] = React.useState("");
   const [codeError, setCodeError] = React.useState<string | null>(null);
   const [connecting, setConnecting] = React.useState(false);
+  const [authReady, setAuthReady] = React.useState(false);
 
   React.useEffect(() => {
-    const fb = getFirebase(); if (!fb) return; const { auth } = fb;
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      setAuthChecked(true);
-      if (!u) router.replace("/login");
-    });
-    return () => unsub();
-  }, [router]);
+    if (!isLoaded) return;
+    if (!user) {
+      router.replace("/login");
+      return;
+    }
+    syncFirebaseAuth()
+      .then(() => setAuthReady(true))
+      .catch(() => setAuthReady(true));
+  }, [user, isLoaded, router]);
 
-  // §3.4 — Connect path: look up the 8-digit code in RTDB, navigate to /session
-  // with the resolved sessionId. The actual WebRTC negotiation happens there.
   async function handleConnect() {
     if (code.length !== 8) {
       setCodeError("Codes are 8 digits — check and try again.");
@@ -51,16 +42,21 @@ export default function DashboardPage() {
     setCodeError(null);
     setConnecting(true);
     try {
-      const fb = getFirebase(); if (!fb) return; const { auth, db } = fb;
+      const client = getFirebaseClient();
+      if (!client) {
+        setCodeError("Firebase not configured.");
+        setConnecting(false);
+        return;
+      }
+      const { db } = client;
+      const auth = getFirebaseAuth();
       const currentUser = auth.currentUser;
       if (!currentUser) {
         router.push("/login");
         return;
       }
-      // §0.6 — codes/{8-digit-code} → sessionId
       const snapshot = await get(ref(db, `codes/${code}`));
       if (!snapshot.exists()) {
-        // §4.4 DoD: wrong code is rejected. Don't pretend it's "connecting".
         setCodeError("That code isn't valid. Check with the person who shared it.");
         setConnecting(false);
         return;
@@ -68,13 +64,12 @@ export default function DashboardPage() {
       const sessionId = snapshot.val() as string;
       router.push(`/session?id=${encodeURIComponent(sessionId)}`);
     } catch {
-      // §9.6 — plain-language error, never raw stack.
       setCodeError("Couldn't look up that code. Check your connection and try again.");
       setConnecting(false);
     }
   }
 
-  if (!authChecked) {
+  if (!isLoaded || !authReady) {
     return (
       <>
         <Navbar />
@@ -85,6 +80,10 @@ export default function DashboardPage() {
     );
   }
 
+  const displayName = user?.firstName
+    ? `${user.firstName}${user.lastName ? ` ${user.lastName}` : ""}`
+    : user?.emailAddresses?.[0]?.emailAddress;
+
   return (
     <>
       <Navbar />
@@ -92,7 +91,7 @@ export default function DashboardPage() {
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-weight-emphasis">
-              Welcome back{user?.displayName ? `, ${user.displayName}` : ""}
+              Welcome back{displayName ? `, ${displayName}` : ""}
             </h1>
             <p className="text-sm text-text-secondary">
               Pick a path below to get started.
@@ -104,21 +103,10 @@ export default function DashboardPage() {
                 Session history
               </Button>
             </Link>
-            <Button
-              variant="ghost"
-              onClick={async () => {
-                const fb = getFirebase(); if (!fb) return; const { auth } = fb;
-                await signOut(auth);
-                router.push("/");
-              }}
-            >
-              Sign out
-            </Button>
           </div>
         </div>
 
         <div className="grid gap-5 md:grid-cols-2">
-          {/* PATH 1 — Connect to a device (§3.4) */}
           <Card>
             <CardIconBadge>
               <Plug className="h-5 w-5" />
@@ -148,7 +136,6 @@ export default function DashboardPage() {
             </Button>
           </Card>
 
-          {/* PATH 2 — Let others connect to me (§3.4) */}
           <Card>
             <CardIconBadge>
               <MonitorDown className="h-5 w-5" />
@@ -170,7 +157,6 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        {/* Security section — §2.3 TOTP 2FA */}
         <div className="mt-8">
           <h2 className="text-lg font-weight-emphasis mb-4 flex items-center gap-2">
             <Shield className="h-4 w-4 text-accent" aria-hidden="true" />

@@ -3,10 +3,11 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useUser } from "@clerk/nextjs";
 import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/Button";
-import { getFirebase } from "@/lib/firebase";
-import { onAuthStateChanged, type User } from "firebase/auth";
+import { syncFirebaseAuth, getFirebaseAuth } from "@/lib/auth-bridge";
+import { getFirebaseClient } from "@/lib/firebase-client";
 import {
   collection,
   query,
@@ -17,17 +18,11 @@ import {
 } from "firebase/firestore";
 import type { SessionHistoryRecord } from "@shared/types";
 
-/**
- * Duxo session history — §3.4 + §6.3.
- *
- * Simple list: who/when/duration/platform. NEVER screen recordings — recording
- * someone's screen without extremely explicit consent is out of scope (§3.4).
- */
 const PAGE_SIZE = 25;
 
 export default function HistoryPage() {
   const router = useRouter();
-  const [user, setUser] = React.useState<User | null>(null);
+  const { user, isLoaded } = useUser();
   const [checked, setChecked] = React.useState(false);
   const [records, setRecords] = React.useState<
     (SessionHistoryRecord & { id: string })[]
@@ -35,21 +30,24 @@ export default function HistoryPage() {
   const [page, setPage] = React.useState(0);
 
   React.useEffect(() => {
-    const fb = getFirebase(); if (!fb) return; const { auth } = fb;
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      setChecked(true);
-      if (!u) router.replace("/login");
-    });
-    return () => unsub();
-  }, [router]);
+    if (!isLoaded) return;
+    if (!user) {
+      router.replace("/login");
+      return;
+    }
+    syncFirebaseAuth()
+      .then(() => setChecked(true))
+      .catch(() => setChecked(true));
+  }, [user, isLoaded, router]);
 
   React.useEffect(() => {
-    if (!user) return;
+    const auth = getFirebaseAuth();
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
     const firestore = getFirestore();
     const q = query(
       collection(firestore, "sessionHistory"),
-      where("hostUid", "==", user.uid),
+      where("hostUid", "==", uid),
       orderBy("startedAt", "desc"),
     );
     const unsub = onSnapshot(q, (snap) => {
@@ -65,7 +63,7 @@ export default function HistoryPage() {
   const totalPages = Math.max(1, Math.ceil(records.length / PAGE_SIZE));
   const paged = records.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
-  if (!checked) {
+  if (!isLoaded || !checked) {
     return (
       <>
         <Navbar />

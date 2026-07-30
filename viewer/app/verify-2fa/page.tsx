@@ -2,12 +2,13 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { useUser } from "@clerk/nextjs";
 import { Shield, AlertTriangle, KeyRound } from "lucide-react";
 import { Button } from "@/components/Button";
 import { Input } from "@/components/Input";
 import { Navbar } from "@/components/Navbar";
-import { getFirebase } from "@/lib/firebase";
-import { onAuthStateChanged, signOut, type User } from "firebase/auth";
+import { syncFirebaseAuth, getFirebaseAuth } from "@/lib/auth-bridge";
+import { getFirebaseClient } from "@/lib/firebase-client";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import {
   verifyTOTPCode,
@@ -20,23 +21,11 @@ import {
   updateCredentialCounter,
 } from "@/lib/webauthn";
 
-/**
- * TOTP Verification — §2.3.
- *
- * After a successful login (email/password or Google), if the user has
- * TOTP enabled, they are redirected here to enter a verification code.
- *
- * The verification status is stored as an in-memory session flag so the
- * user is only prompted once per browser session. On page close or logout,
- * the flag is cleared.
- */
-
-// In-memory session flag — survives client-side navigation but not page reload.
 const totpSessionFlag = { verified: false };
 
 export default function Verify2FAPage() {
   const router = useRouter();
-  const [user, setUser] = React.useState<User | null>(null);
+  const { user, isLoaded } = useUser();
   const [checked, setChecked] = React.useState(false);
   const [totpRequired, setTotpRequired] = React.useState(false);
   const [code, setCode] = React.useState("");
@@ -47,26 +36,35 @@ export default function Verify2FAPage() {
   const [hasPasskey, setHasPasskey] = React.useState(false);
 
   React.useEffect(() => {
-    const fb = getFirebase(); if (!fb) return; const { auth, firestore } = fb;
+    if (!isLoaded) return;
+    if (!user) {
+      router.replace("/login");
+      return;
+    }
 
-    const unsub = onAuthStateChanged(auth, async (u) => {
-      if (!u) {
-        router.replace("/login");
-        return;
+    async function check() {
+      try {
+        await syncFirebaseAuth();
+      } catch {
+        // continue
       }
 
-      setUser(u);
+      const auth = getFirebaseAuth();
+      const fbUser = auth.currentUser;
+      if (!fbUser) return;
 
-      // If already verified this session, skip straight to dashboard.
       if (totpSessionFlag.verified) {
         router.replace("/dashboard");
         return;
       }
 
+      const client = getFirebaseClient();
+      if (!client) return;
+      const { firestore } = client;
+
       try {
-        const userDoc = await getDoc(doc(firestore, "users", u.uid));
+        const userDoc = await getDoc(doc(firestore, "users", fbUser.uid));
         if (!userDoc.exists()) {
-          // No user doc — no TOTP settings, skip verification.
           totpSessionFlag.verified = true;
           router.replace("/dashboard");
           return;
@@ -74,44 +72,44 @@ export default function Verify2FAPage() {
 
         const data = userDoc.data();
         if (!data.totpEnabled || !data.totpSecretEncrypted) {
-          // TOTP not enabled — skip verification.
           totpSessionFlag.verified = true;
           router.replace("/dashboard");
           return;
         }
 
-        // TOTP is required — show the verification form.
         setTotpRequired(true);
 
-        // §8.1 — Check if user has WebAuthn passkeys registered.
         try {
-          const creds = await loadCredentials(u.uid);
+          const creds = await loadCredentials(fbUser.uid);
           setHasPasskey(creds.length > 0);
           if (creds.length > 0) setMode("webauthn");
         } catch {
-          // Non-fatal — may not have webauthn subcollection.
+          // non-fatal
         }
       } catch (e) {
         console.error("TOTP check failed:", e);
-        // If we can't check (e.g., offline), allow through to avoid lockout.
         totpSessionFlag.verified = true;
         router.replace("/dashboard");
       }
 
       setChecked(true);
-    });
+    }
 
-    return () => unsub();
-  }, [router]);
+    check();
+  }, [user, isLoaded, router]);
 
   async function handleVerify() {
-    if (!user || code.length !== 6) return;
+    const auth = getFirebaseAuth();
+    const fbUser = auth.currentUser;
+    if (!fbUser || code.length !== 6) return;
     setError(null);
     setVerifying(true);
 
     try {
-      const fb = getFirebase(); if (!fb) return; const { firestore } = fb;
-      const userDoc = await getDoc(doc(firestore, "users", user.uid));
+      const client = getFirebaseClient();
+      if (!client) return;
+      const { firestore } = client;
+      const userDoc = await getDoc(doc(firestore, "users", fbUser.uid));
       if (!userDoc.exists()) {
         setError("Could not load your security settings.");
         setVerifying(false);
@@ -120,7 +118,7 @@ export default function Verify2FAPage() {
 
       const data = userDoc.data();
       const encryptedSecret = data.totpSecretEncrypted as string;
-      const secretBase32 = await decryptSecret(encryptedSecret, user.uid);
+      const secretBase32 = await decryptSecret(encryptedSecret, fbUser.uid);
 
       const valid = verifyTOTPCode(secretBase32, code);
       if (!valid) {
@@ -129,7 +127,6 @@ export default function Verify2FAPage() {
         return;
       }
 
-      // Mark as verified for this session.
       totpSessionFlag.verified = true;
       router.replace("/dashboard");
     } catch (e) {
@@ -140,13 +137,17 @@ export default function Verify2FAPage() {
   }
 
   async function handleBackup() {
-    if (!user || backupCode.length < 8) return;
+    const auth = getFirebaseAuth();
+    const fbUser = auth.currentUser;
+    if (!fbUser || backupCode.length < 8) return;
     setError(null);
     setVerifying(true);
 
     try {
-      const fb = getFirebase(); if (!fb) return; const { firestore } = fb;
-      const userDoc = await getDoc(doc(firestore, "users", user.uid));
+      const client = getFirebaseClient();
+      if (!client) return;
+      const { firestore } = client;
+      const userDoc = await getDoc(doc(firestore, "users", fbUser.uid));
       if (!userDoc.exists()) {
         setError("Could not load your security settings.");
         setVerifying(false);
@@ -165,11 +166,10 @@ export default function Verify2FAPage() {
         return;
       }
 
-      // Remove the used backup code from Firestore.
       const newHashes = [...hashes];
       newHashes.splice(idx, 1);
 
-      await updateDoc(doc(firestore, "users", user.uid), {
+      await updateDoc(doc(firestore, "users", fbUser.uid), {
         backupCodeHashes: newHashes,
       });
 
@@ -183,12 +183,14 @@ export default function Verify2FAPage() {
   }
 
   async function handlePasskeyLogin() {
-    if (!user) return;
+    const auth = getFirebaseAuth();
+    const fbUser = auth.currentUser;
+    if (!fbUser) return;
     setError(null);
     setVerifying(true);
 
     try {
-      const creds = await loadCredentials(user.uid);
+      const creds = await loadCredentials(fbUser.uid);
       if (creds.length === 0) {
         setError("No passkeys registered. Use a TOTP code or backup code instead.");
         setVerifying(false);
@@ -196,9 +198,7 @@ export default function Verify2FAPage() {
       }
 
       const result = await authenticateWithPasskey(creds);
-
-      // Update the counter to detect cloned authenticators.
-      await updateCredentialCounter(user.uid, result.credentialId, 0);
+      await updateCredentialCounter(fbUser.uid, result.credentialId, 0);
 
       totpSessionFlag.verified = true;
       router.replace("/dashboard");
@@ -209,8 +209,7 @@ export default function Verify2FAPage() {
     }
   }
 
-  // If not checked yet or no TOTP required, show minimal loading state.
-  if (!checked || !totpRequired) {
+  if (!isLoaded || !checked || !totpRequired) {
     return (
       <>
         <Navbar />
@@ -238,7 +237,7 @@ export default function Verify2FAPage() {
                 Two-factor authentication
               </h1>
               <p className="text-sm text-text-secondary">
-                {user?.email}
+                {user?.emailAddresses?.[0]?.emailAddress}
               </p>
             </div>
           </div>
@@ -249,7 +248,6 @@ export default function Verify2FAPage() {
                 Use your passkey (fingerprint, Face ID, Windows Hello, or
                 security key) to verify your identity.
               </p>
-
               <Button
                 onClick={handlePasskeyLogin}
                 isLoading={verifying}
@@ -258,7 +256,6 @@ export default function Verify2FAPage() {
               >
                 Sign in with Passkey
               </Button>
-
               <div className="flex flex-col items-center gap-2">
                 <button
                   type="button"
@@ -285,7 +282,6 @@ export default function Verify2FAPage() {
               <p className="text-sm text-text-secondary">
                 Enter the 6-digit code from your authenticator app to continue.
               </p>
-
               <Input
                 label="Authentication code"
                 type="text"
@@ -301,7 +297,6 @@ export default function Verify2FAPage() {
                 }}
                 error={error ?? undefined}
               />
-
               <Button
                 onClick={handleVerify}
                 isLoading={verifying}
@@ -311,7 +306,6 @@ export default function Verify2FAPage() {
               >
                 Verify
               </Button>
-
               <div className="flex flex-col items-center gap-2">
                 {hasPasskey && (
                   <button
@@ -341,7 +335,6 @@ export default function Verify2FAPage() {
                   Enter one of your backup codes. Each code can be used once.
                 </span>
               </div>
-
               <Input
                 label="Backup code"
                 type="text"
@@ -354,7 +347,6 @@ export default function Verify2FAPage() {
                 }}
                 error={error ?? undefined}
               />
-
               <Button
                 onClick={handleBackup}
                 isLoading={verifying}
@@ -364,7 +356,6 @@ export default function Verify2FAPage() {
               >
                 Verify backup code
               </Button>
-
               <div className="flex flex-col items-center gap-2">
                 {hasPasskey && (
                   <button
@@ -387,18 +378,14 @@ export default function Verify2FAPage() {
           )}
 
           <div className="mt-5 text-center">
-            <button
-              type="button"
-              onClick={async () => {
-                const fb = getFirebase(); if (!fb) return; const { auth } = fb;
-                await signOut(auth);
-                totpSessionFlag.verified = false;
-                router.push("/login");
-              }}
-              className="text-xs text-text-secondary underline hover:text-text-primary transition-colors duration-instant"
-            >
-              Sign out and try a different account
-            </button>
+            <span className="text-xs text-text-secondary">
+              Two-factor authentication is managed by Duxo&apos;s built-in
+              security layer. For account-level 2FA, visit your{" "}
+              <a href="https://clerk.com" className="underline hover:text-text-primary">
+                Clerk dashboard
+              </a>
+              .
+            </span>
           </div>
         </div>
       </main>

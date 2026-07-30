@@ -25,6 +25,16 @@ export function useScrollReveal<T extends HTMLElement = HTMLDivElement>(
     const el = ref.current;
     if (!el || revealedRef.current) return;
 
+    // FIX: If already in viewport on mount, reveal immediately
+    // Prevents race where a screenshot is taken before the observer callback fires.
+    const rect = el.getBoundingClientRect();
+    const isInViewport = rect.top < window.innerHeight && rect.bottom > 0;
+    if (isInViewport) {
+      el.dataset.revealed = "true";
+      revealedRef.current = true;
+      return;
+    }
+
     // Skip animation if user prefers reduced motion
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
     if (mq.matches) {

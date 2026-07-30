@@ -1,15 +1,15 @@
 "use client";
 
-import { SignIn } from "@clerk/nextjs";
+import { SignUp } from "@clerk/nextjs";
 import { Navbar } from "@/components/Navbar";
 
-export default function LoginPage() {
+export default function SignUpPage() {
   return (
     <>
       <Navbar />
       <main className="mx-auto flex min-h-[calc(100vh-60px)] w-full max-w-md flex-col justify-center px-6 py-8">
         <div className="w-full max-w-md">
-          <SignIn
+          <SignUp
             appearance={{
               elements: {
                 rootBox: "mx-auto",

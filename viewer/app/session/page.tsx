@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
+import { useUser } from "@clerk/nextjs";
 import {
   Clipboard,
   FileText,
@@ -14,27 +15,12 @@ import {
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/Button";
-import { getFirebase } from "@/lib/firebase";
-import { onAuthStateChanged } from "firebase/auth";
+import { syncFirebaseAuth, getFirebaseAuth } from "@/lib/auth-bridge";
+import { getFirebaseClient } from "@/lib/firebase-client";
 import { ref, onValue, set, push, serverTimestamp } from "firebase/database";
 import { DuxoConnection, defaultIceServers } from "@/lib/webrtc";
 import type { Session } from "@shared/types";
 import { toast } from "sonner";
-
-/**
- * Duxo in-session viewer — §3.4 + §1.6-B signaling sequence.
- *
- * Lifecycle:
- *   1. Read sessionId from query.
- *   2. Attach RTDB listener for host's status / answer / candidates.
- *   3. Attach viewerId + ID token (§2.5 — host verifies JWT signature).
- *   4. Create offer, write to RTDB.
- *   5. Host writes answer + candidates.
- *   6. onTrack renders remote <video>; data channel carries input.
- *
- * Toolbar (§3.4): connection quality (from ping/pong RTT, §1.4), clipboard,
- * file, fullscreen, End (danger). Wayland hosts show non-dismissible banner.
- */
 
 const Suspended = React.memo(function Suspended() {
   return (
@@ -48,8 +34,6 @@ const Suspended = React.memo(function Suspended() {
 });
 
 export default function SessionPageWrapper() {
-  // §Next 14 requirement: useSearchParams must be inside a Suspense boundary
-  // so static prerender can bail out correctly.
   return (
     <Suspense fallback={<Suspended />}>
       <SessionPage />
@@ -61,6 +45,7 @@ function SessionPage() {
   const router = useRouter();
   const params = useSearchParams();
   const sessionId = params.get("id");
+  const { user, isLoaded } = useUser();
 
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const connRef = React.useRef<DuxoConnection | null>(null);
@@ -74,47 +59,54 @@ function SessionPage() {
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  // §6.2 — Wayland hosts are view-only until Phase 5.
   const isViewOnly = hostPlatform === "linux-wayland";
 
-  // Bootstrap connection once we have a user + sessionId.
   React.useEffect(() => {
     if (!sessionId) {
       setErrorMsg("No session ID provided.");
       setPhase("failed");
       return;
     }
-    const fb = getFirebase(); if (!fb) return; const { auth, db } = fb;
+    if (!isLoaded) return;
+    if (!user) {
+      router.push("/login");
+      return;
+    }
 
     let unsub: (() => void) | undefined;
     let cancelled = false;
 
-    const unsubAuth = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        router.push("/login");
-        return;
+    async function init() {
+      try {
+        await syncFirebaseAuth();
+      } catch {
+        // continue anyway
       }
-      if (cancelled || unsub) return;
 
-      // §1.6-B — viewer writes viewerId + status=REQUESTED; host sees via listener.
-      // §2.5 — viewer includes the ID token so the host can verify the JWT.
+      if (cancelled) return;
+
+      const client = getFirebaseClient();
+      if (!client) return;
+      const { db } = client;
+      const auth = getFirebaseAuth();
+      const fbUser = auth.currentUser;
+      if (!fbUser) return;
+
       const sessionRef = ref(db, `sessions/${sessionId}`);
-      const idToken = await user.getIdToken();
+      const idToken = await fbUser.getIdToken();
 
       try {
         await set(sessionRef, {
-          hostPlatform: "windows", // host will overwrite with its real value
+          hostPlatform: "windows",
           status: "requested",
-          viewerId: user.uid,
-          viewerToken: idToken, // host verifies signature locally (§2.5)
+          viewerId: fbUser.uid,
+          viewerToken: idToken,
           updatedAt: serverTimestamp(),
         });
       } catch {
-        // Likely the session doesn't exist or rules rejected us.
-        // Don't surface the raw error — §9.6.
+        // best-effort
       }
 
-      // Watch for host's answer + status transitions.
       const conn = new DuxoConnection(defaultIceServers(), {
         onStateChange: (s) => {
           if (s === "connected") setPhase("active");
@@ -143,7 +135,6 @@ function SessionPage() {
         }
         if (data.hostPlatform) setHostPlatform(data.hostPlatform);
 
-        // §2.4 — host's explicit Allow/Deny gate.
         if (data.status === "denied") {
           setPhase("denied");
           return;
@@ -153,7 +144,6 @@ function SessionPage() {
           return;
         }
 
-        // §1.6-B — host allowed. Viewer creates the offer.
         if (data.status === "allowed" && !conn.hasPeer()) {
           try {
             const offer = await conn.createOffer();
@@ -164,16 +154,14 @@ function SessionPage() {
           }
         }
 
-        // §1.6-B — host wrote the answer.
         if (data.answer && conn.needsAnswer()) {
           try {
             await conn.setRemoteAnswer(JSON.parse(data.answer));
           } catch {
-            // forward-compat — ignore if we've already applied it
+            // forward-compat
           }
         }
 
-        // §0.6 — batched host ICE candidates.
         if (data.hostCandidates && Object.keys(data.hostCandidates).length) {
           const candidates = Object.values(data.hostCandidates).map(
             (s) => JSON.parse(s) as RTCIceCandidateInit,
@@ -181,18 +169,19 @@ function SessionPage() {
           conn.addIceCandidates(candidates);
         }
       });
-    });
+    }
+
+    init();
 
     return () => {
       cancelled = true;
-      unsubAuth();
       unsub?.();
       connRef.current?.close();
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
       }
     };
-  }, [sessionId, router]);
+  }, [sessionId, user, isLoaded, router]);
 
   async function handleClipboardSync() {
     if (!connRef.current) return;
@@ -216,7 +205,7 @@ function SessionPage() {
     if (!file || !connRef.current) return;
 
     const fileId = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
-    const CHUNK_SIZE = 16 * 1024; // 16 KiB
+    const CHUNK_SIZE = 16 * 1024;
 
     const reader = new FileReader();
     let offset = 0;
@@ -260,7 +249,9 @@ function SessionPage() {
   }
 
   async function handleEnd() {
-    const fb = getFirebase(); if (!fb) return; const { db } = fb;
+    const client = getFirebaseClient();
+    if (!client) return;
+    const { db } = client;
     if (sessionId) {
       try {
         await set(ref(db, `sessions/${sessionId}/status`), "ended");
@@ -284,7 +275,6 @@ function SessionPage() {
         onChange={onFileSelected}
       />
       <main className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-6">
-        {/* Wayland view-only banner — §3.4 persistent, non-dismissible */}
         {isViewOnly && phase === "active" && (
           <div
             role="status"
@@ -296,7 +286,6 @@ function SessionPage() {
           </div>
         )}
 
-        {/* Failed / denied / ended states */}
         {phase !== "active" && phase !== "connecting" && (
           <div className="rounded-md border border-border-default bg-surface-raised p-7 text-center">
             <h2 className="text-xl font-weight-emphasis">
@@ -320,7 +309,6 @@ function SessionPage() {
           </div>
         )}
 
-        {/* Remote screen */}
         {phase !== "denied" && phase !== "ended" && (
           <div className="relative aspect-video w-full overflow-hidden rounded-md border border-border-default bg-black">
             <video
@@ -338,11 +326,8 @@ function SessionPage() {
               </div>
             )}
 
-            {/* §3.4 toolbar — slim, collapsible, never blocks primary actions */}
-            {/* §9.3b #11 — collapses secondary actions into overflow on narrow viewports */}
             {phase === "active" && (
               <div className="absolute inset-x-0 top-0 flex items-center justify-between gap-3 bg-gradient-to-b from-black/70 to-transparent px-4 py-3">
-                {/* §1.4 — ping/pong RTT doubles as quality indicator */}
                 <div className="flex items-center gap-2 text-sm text-text-primary">
                   <span
                     className={`h-2 w-2 rounded-pill ${
@@ -361,7 +346,6 @@ function SessionPage() {
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  {/* §9.3b #11 — secondary actions visible on wide viewports */}
                   <div className="hidden sm:flex items-center gap-2">
                     <ToolbarButton
                       label="Clipboard sync"
@@ -378,7 +362,6 @@ function SessionPage() {
                       <FileText className="h-4 w-4" />
                     </ToolbarButton>
                   </div>
-                  {/* §9.3b #11 — overflow menu on narrow viewports */}
                   <div className="sm:hidden">
                     <ToolbarOverflowMenu
                       isViewOnly={isViewOnly}
@@ -389,7 +372,6 @@ function SessionPage() {
                       }}
                     />
                   </div>
-                  {/* §9.3b #11 — fullscreen visible on all viewports */}
                   <div className="hidden sm:block">
                     <ToolbarButton
                       label="Fullscreen"
@@ -446,10 +428,6 @@ const ToolbarButton = React.memo(function ToolbarButton({
   );
 });
 
-/**
- * §9.3b #11 — Overflow menu for narrow viewports.
- * Collapses clipboard, file transfer, and fullscreen into a single dropdown.
- */
 const ToolbarOverflowMenu = React.memo(function ToolbarOverflowMenu({
   isViewOnly,
   onFullscreen,
@@ -460,7 +438,6 @@ const ToolbarOverflowMenu = React.memo(function ToolbarOverflowMenu({
   const [open, setOpen] = React.useState(false);
   const menuRef = React.useRef<HTMLDivElement>(null);
 
-  // Close on outside click.
   React.useEffect(() => {
     if (!open) return;
     function handleClick(e: MouseEvent) {
@@ -472,7 +449,6 @@ const ToolbarOverflowMenu = React.memo(function ToolbarOverflowMenu({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [open]);
 
-  // §9.3b — keyboard navigation: Escape closes, ArrowDown/ArrowUp navigate items.
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Escape") {
       setOpen(false);
