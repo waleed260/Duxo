@@ -104,18 +104,26 @@ impl Default for ProtocolVersion {
 
 impl ProtocolVersion {
     /// §6.1 — Parse a "major.minor.patch" string.
+    ///
+    /// A malformed version is its own failure, not a JSON failure: constructing
+    /// a `serde_json::Error` by hand needs `serde::de::Error` in scope and
+    /// mislabels the cause in every log line it reaches.
     pub fn parse(s: &str) -> Result<Self> {
         let parts: Vec<&str> = s.split('.').collect();
         if parts.len() != 3 {
-            return Err(DuxoError::Json(serde_json::Error::custom("invalid protocol version format")));
+            return Err(DuxoError::Protocol(format!(
+                "expected major.minor.patch, got {s:?}"
+            )));
         }
-        let major = parts[0].parse::<u32>()
-            .map_err(|_| DuxoError::Json(serde_json::Error::custom("invalid major version")))?;
-        let minor = parts[1].parse::<u32>()
-            .map_err(|_| DuxoError::Json(serde_json::Error::custom("invalid minor version")))?;
-        let patch = parts[2].parse::<u32>()
-            .map_err(|_| DuxoError::Json(serde_json::Error::custom("invalid patch version")))?;
-        Ok(Self { major, minor, patch })
+        let parse_part = |part: &str, which: &str| -> Result<u32> {
+            part.parse::<u32>()
+                .map_err(|_| DuxoError::Protocol(format!("invalid {which} version {part:?}")))
+        };
+        Ok(Self {
+            major: parse_part(parts[0], "major")?,
+            minor: parse_part(parts[1], "minor")?,
+            patch: parse_part(parts[2], "patch")?,
+        })
     }
 }
 
@@ -142,6 +150,10 @@ pub struct DataChannelMessage {
 #[derive(Debug, Clone)]
 pub struct SessionContext {
     pub session_id: String,
+    /// The Firebase uid this host is acting as — the `hostId` written to RTDB.
+    /// Held so a session can be matched to its owner without another keychain
+    /// read, and so §6.3's durable record has a host to attribute it to.
+    pub host_uid: String,
     pub status: SessionStatus,
     pub host_platform: HostPlatform,
     pub viewer_id: Option<String>,
@@ -215,6 +227,21 @@ pub enum DuxoError {
 
     #[error("Capture backend unavailable for this platform")]
     CaptureBackendUnavailable,
+
+    // §0.5 — webrtc-rs carries compressed media only; it does no encoding of
+    // its own, so VP8 compression is a stage the host agent owns (encoder.rs).
+    #[error("Video encoder error: {0}")]
+    Encoder(String),
+
+    #[error("WebRTC error: {0}")]
+    WebRtc(String),
+
+    #[error("Not signed in — link this device from the Duxo web app first")]
+    NotAuthenticated,
+
+    // §6.1 — protocol version parsing and capability negotiation.
+    #[error("Protocol error: {0}")]
+    Protocol(String),
 
     #[error("Firebase/RTDB error: {0}")]
     Firebase(String),

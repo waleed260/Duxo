@@ -11,7 +11,7 @@ firebase-*.json
 
 # Dependencies
 node_modules/
-.host-agent/src-tauri/node_modules/
+host-agent/src-tauri/node_modules/
 
 # Rust / Tauri
 target/
@@ -41,4 +41,17 @@ yarn-error.log*
 # Misc
 *.wasm
 .playwright-mcp/
-*.png
+
+# Screenshots and scratch captures, but never the assets the build needs:
+# tauri.conf.json -> bundle.icon requires host-agent/src-tauri/icons/*.png,
+# and viewer/public is served as-is.
+/*.png
+screenshots/
+
+# Playwright output — regenerated on every run, never reviewed in a diff.
+viewer/test-results/
+viewer/playwright-report/
+
+# Deploy debris captured while debugging Railway; not part of the project.
+railway-build-log.txt
+railway-service.txt

@@ -168,6 +168,22 @@
       to { width: 0%; }
     }
 
+    /* §2.4 — invisible, zero-size tab anchor: holds initial focus only. */
+    .focus-anchor {
+      width: 0;
+      height: 0;
+      outline: none;
+    }
+
+    /* §9.3b #7 — decision is announced as text, never colour alone. */
+    .decision {
+      font-size: 13px;
+      text-align: center;
+      min-height: 18px;
+      margin-bottom: 8px;
+      color: var(--text-secondary);
+    }
+
     .timeout-text {
       font-size: 12px;
       color: var(--text-secondary);
@@ -200,9 +216,14 @@
   </div>
   <div class="timeout-text">Auto-denies in <span id="countdown">60</span>s</div>
 
+  <!-- §2.4/§9.3b #2 — focus starts on a non-actionable anchor so a startled
+       Enter press cannot activate either button. Tab is required first. -->
+  <div class="focus-anchor" id="focus-anchor" tabindex="0" aria-hidden="true"></div>
+  <div class="decision" id="decision" role="status" aria-live="polite"></div>
+
   <div class="actions">
     <!-- §2.4 — Deny is the default/safe option -->
-    <button class="btn-deny" id="btn-deny" autofocus>
+    <button class="btn-deny" id="btn-deny">
       Deny
     </button>
     <!-- §2.4 — Allow requires deliberate action (no autofocus) -->
@@ -212,46 +233,71 @@
   </div>
 
   <script>
-    // Read the verified viewer email from URL params.
-    const params = new URLSearchParams(window.location.search);
-    const email = params.get('email') || 'Unknown';
-    document.getElementById('viewer-email').textContent = email;
+    /*
+     * Tauri v2 exposes the API on window.__TAURI__.core.invoke when
+     * `withGlobalTauri` is set. v1 exposed it as window.__TAURI__.invoke.
+     * Resolve both so the dialog keeps working across the updater boundary.
+     */
+    const invoke =
+      window.__TAURI__?.core?.invoke ??
+      window.__TAURI__?.invoke ??
+      (() => Promise.reject(new Error('Tauri IPC unavailable')));
 
-    // §2.4 — 60-second timeout → auto-Deny.
-    let seconds = 60;
+    // §2.5 — email is the VERIFIED claim from the host-side JWT check.
+    const params = new URLSearchParams(window.location.search);
+    document.getElementById('viewer-email').textContent =
+      params.get('email') || 'Unknown';
+
+    const decisionEl = document.getElementById('decision');
     const countdownEl = document.getElementById('countdown');
+    const timeoutTextEl = countdownEl.parentElement;
+
+    // §2.4 — focus the anchor, not a button: Tab is required before Enter
+    // can activate either action.
+    document.getElementById('focus-anchor').focus();
+
+    let decisionMade = false;
+
+    async function sendDecision(allowed) {
+      if (decisionMade) return;
+      decisionMade = true;
+      clearInterval(timer);
+      document.getElementById('btn-allow').disabled = true;
+      document.getElementById('btn-deny').disabled = true;
+      try {
+        await invoke(allowed ? 'handle_allow' : 'handle_deny');
+        decisionEl.textContent = allowed
+          ? '\u2713 Access granted \u2014 you may close this window'
+          : '\u2717 Access denied \u2014 you may close this window';
+      } catch (e) {
+        // §9.6 — say what happened and what to do next, in one sentence.
+        decisionEl.textContent =
+          'Could not send your decision \u2014 close this window to deny access.';
+      }
+    }
+
+    document.getElementById('btn-allow')
+      .addEventListener('click', () => sendDecision(true));
+    document.getElementById('btn-deny')
+      .addEventListener('click', () => sendDecision(false));
+
+    // §2.4 — Escape is a shortcut for Deny (the safe action), never Allow.
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') sendDecision(false);
+    });
+
+    // §2.4 — 60-second timeout ALWAYS resolves to Denied, never Allowed.
+    let seconds = 60;
     const timer = setInterval(() => {
-      seconds--;
-      countdownEl.textContent = seconds;
-      if (seconds <= 0) {
+      seconds -= 1;
+      if (seconds > 0) {
+        countdownEl.textContent = seconds;
+      } else {
         clearInterval(timer);
-        // §2.4 — timeout resolves to Denied, never Allowed.
-        deny();
+        timeoutTextEl.textContent = 'Timed out \u2014 auto-denied';
+        sendDecision(false);
       }
     }, 1000);
-
-    function deny() {
-      clearInterval(timer);
-      // In production, invoke tauri::generate_handler![handle_deny].
-      window.__TAURI__?.invoke('handle_deny');
-      window.close();
-    }
-
-    function allow() {
-      clearInterval(timer);
-      // In production, invoke tauri::generate_handler![handle_allow].
-      window.__TAURI__?.invoke('handle_allow');
-      window.close();
-    }
-
-    document.getElementById('btn-deny').addEventListener('click', deny);
-    document.getElementById('btn-allow').addEventListener('click', allow);
-
-    // §2.4 — keyboard: Enter on focused button activates it.
-    // No default focus on Allow — Tab required first.
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') deny();
-    });
   </script>
 </body>
 </html>

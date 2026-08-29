@@ -6,7 +6,7 @@
 
 use crate::backend::{InputBackend, InputButton, InputState};
 use crate::types::DuxoError;
-use enigo::{Enigo, Mouse, Keyboard};
+use enigo::{Enigo, Keyboard, Mouse, Settings};
 
 pub struct WindowsInput {
     enigo: Option<Enigo>,
@@ -28,12 +28,25 @@ impl WindowsInput {
             return Ok(());
         }
 
-        let enigo = Enigo::new()
+        let enigo = Enigo::new(&Settings::default())
             .map_err(|e| DuxoError::Firebase(format!("Failed to initialize enigo: {e}")))?;
 
-        // TODO: query Windows screen dimensions via GetSystemMetrics.
+        // §1.4 — normalized coordinates are meaningless without the real
+        // desktop size. `scrap` reports the primary display on Windows too,
+        // so the fallback 1920x1080 is only ever used if that query fails —
+        // previously it was used *always*, putting the cursor in the wrong
+        // place on every display that is not exactly 1080p.
+        if let Ok(display) = scrap::Display::primary() {
+            self.screen_width = display.width() as u32;
+            self.screen_height = display.height() as u32;
+        }
+
         self.enigo = Some(enigo);
-        tracing::info!("Windows input backend initialized");
+        tracing::info!(
+            screen_width = self.screen_width,
+            screen_height = self.screen_height,
+            "Windows input backend initialized"
+        );
         Ok(())
     }
 

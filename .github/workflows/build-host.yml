@@ -46,13 +46,34 @@ jobs:
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
             build-essential \
+            pkg-config \
             libssl-dev \
             libgtk-3-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
             patchelf \
             libfuse2 \
-            file
+            file \
+            libvpx-dev \
+            libxdo-dev \
+            libxcb1-dev \
+            libxcb-shm0-dev \
+            libxcb-randr0-dev \
+            libdbus-1-dev
+
+      # §0.5 — libvpx for VP8 encoding (encoder.rs). webrtc-rs does no encoding
+      # of its own, so this is a hard requirement, not an optimisation.
+      # Windows has no system package manager for it, so vcpkg supplies it.
+      - name: Install libvpx (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          vcpkg install libvpx:x64-windows-static-md
+          echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          echo "PKG_CONFIG_PATH=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static-md\lib\pkgconfig" >> $env:GITHUB_ENV
+
+      - name: Install pkg-config (Windows)
+        if: matrix.os == 'windows-latest'
+        run: choco install pkgconfiglite -y
 
       # §0.13 step 13 — confirm X11 via Xvfb for capture testing.
       - name: Install Xvfb (for X11 capture testing)
@@ -81,6 +102,11 @@ jobs:
       - name: Run Rust unit tests
         working-directory: host-agent/src-tauri
         run: cargo test --target ${{ matrix.target }}
+        env:
+          # The pure-logic tests (state machine, encoder colour conversion,
+          # filename sanitisation) need no display, but scrap links against X11
+          # and a missing DISPLAY makes the failure look like a test bug.
+          DISPLAY: ":99"
 
       # §7.5 — cargo audit for known Rust dependency vulnerabilities.
       - name: Cargo audit

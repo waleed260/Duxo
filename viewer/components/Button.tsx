@@ -69,7 +69,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={isDisabled}
         aria-disabled={isDisabled || undefined}
         className={cn(
-          "inline-flex items-center justify-center gap-2 font-weight-base",
+          "inline-flex items-center justify-center gap-2 font-base",
           "transition-colors duration-instant motion-reduce:transition-none",
           "focus-visible:outline focus-visible:outline-2 focus-visible:outline-text-primary focus-visible:outline-offset-2",
           variantClasses[variant],

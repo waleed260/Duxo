@@ -113,7 +113,7 @@
 <body>
   <div class="code-label">Share this code</div>
   <div class="code-display" id="code">Loading...</div>
-  <div class="status">
+  <div class="status" role="status" aria-live="polite">
     <span class="status-dot"></span>
     <span id="status-text">Waiting for connection…</span>
   </div>
@@ -123,30 +123,75 @@
   <div class="copied" id="copied-msg">Copied!</div>
 
   <script>
-    // §3.4 — read the code from the Tauri command.
-    // In production, invoke tauri::generate_handler![get_display_code].
-    // For now, read from the window title or URL params.
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get('code') || '0000 0000';
-    document.getElementById('code').textContent = code;
+    /*
+     * Tauri v2 global (withGlobalTauri) is window.__TAURI__.core.invoke;
+     * v1 exposed window.__TAURI__.invoke. Accept either.
+     */
+    const invoke =
+      window.__TAURI__?.core?.invoke ??
+      window.__TAURI__?.invoke ??
+      null;
 
-    // §3.4 — copy-to-clipboard button.
-    document.getElementById('copy-btn').addEventListener('click', async () => {
+    const codeEl = document.getElementById('code');
+    const statusEl = document.getElementById('status-text');
+    const copiedEl = document.getElementById('copied-msg');
+
+    // §3.4 — grouped as XXXX XXXX; this code gets read aloud over the phone.
+    function group(code) {
+      const digits = String(code).replace(/\D/g, '');
+      return digits.length === 8 ? `${digits.slice(0, 4)} ${digits.slice(4)}` : code;
+    }
+
+    let currentCode = group(
+      new URLSearchParams(window.location.search).get('code') || '',
+    );
+    if (currentCode) codeEl.textContent = currentCode;
+
+    const STATUS_TEXT = {
+      connecting: 'Connecting…',
+      active: 'Connected',
+      requested: 'Someone is requesting access…',
+      ended: 'Session ended — generate a new code',
+      expired: 'Code expired — generate a new code',
+    };
+
+    async function refresh() {
+      if (!invoke) return;
       try {
-        await navigator.clipboard.writeText(code.replace(/\s/g, ''));
-        const msg = document.getElementById('copied-msg');
-        msg.classList.add('show');
-        setTimeout(() => msg.classList.remove('show'), 2000);
+        const [code, status] = await Promise.all([
+          invoke('get_display_code'),
+          invoke('get_session_status'),
+        ]);
+        if (code) {
+          currentCode = group(code);
+          codeEl.textContent = currentCode;
+        }
+        statusEl.textContent = STATUS_TEXT[status] || 'Waiting for connection…';
+      } catch (e) {
+        // Host not ready yet — keep the last known state and retry.
+      }
+    }
+
+    // §3.4 — copy-to-clipboard.
+    document.getElementById('copy-btn').addEventListener('click', async () => {
+      const plain = currentCode.replace(/\s/g, '');
+      if (!plain) return;
+      try {
+        await navigator.clipboard.writeText(plain);
+        copiedEl.classList.add('show');
+        setTimeout(() => copiedEl.classList.remove('show'), 2000);
       } catch {
-        // Fallback: select the text for manual copy.
-        const el = document.getElementById('code');
+        // Clipboard blocked — select the code so it can be copied manually.
         const range = document.createRange();
-        range.selectNodeContents(el);
+        range.selectNodeContents(codeEl);
         const sel = window.getSelection();
         sel.removeAllRanges();
         sel.addRange(range);
       }
     });
+
+    refresh();
+    setInterval(refresh, 2000);
   </script>
 </body>
 </html>

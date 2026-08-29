@@ -12,7 +12,7 @@ export default function GlobalError({
     <html lang="en" className="dark">
       <body className="min-h-screen bg-surface-base text-text-primary antialiased">
         <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6">
-          <h1 className="text-xl font-weight-emphasis text-danger">
+          <h1 className="text-xl font-emphasis text-danger">
             Unexpected error
           </h1>
           <p className="max-w-md text-center text-sm text-text-secondary">

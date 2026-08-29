@@ -68,3 +68,52 @@ pub trait InputBackend: Send + Sync {
     /// Set clipboard text.
     fn set_clipboard(&mut self, text: &str) -> Result<()>;
 }
+
+/// §1.2 — construct the input backend for the machine we are running on.
+///
+/// One instance is created per session and shared for its whole life. The
+/// previous code built a fresh backend inside every dispatch function, which
+/// meant opening an X11 connection and re-querying the display geometry for
+/// every individual mouse move — at 60 moves/second that is 60 display
+/// handshakes a second to deliver 60 cursor positions.
+pub fn platform_input() -> Result<Box<dyn InputBackend>> {
+    #[cfg(target_os = "windows")]
+    {
+        Ok(Box::new(crate::input_windows::WindowsInput::new()))
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // §0.2 — Wayland has no input-injection path in the MVP. The session
+        // is still useful read-only, so we do not fail here; the host
+        // advertises `linux-wayland` and the viewer hides its input affordances.
+        Ok(Box::new(crate::input_linux_x11::X11Input::new()))
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        Err(crate::types::DuxoError::CaptureBackendUnavailable)
+    }
+}
+
+/// §1.2 — construct the screen-capture backend for this machine.
+pub fn platform_capture() -> Result<Box<dyn CaptureBackend>> {
+    #[cfg(target_os = "windows")]
+    {
+        Ok(Box::new(crate::capture_windows::WindowsCapture::new()))
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if std::env::var("WAYLAND_DISPLAY").is_ok() && std::env::var("DISPLAY").is_err() {
+            // No XWayland to fall back on: §0.2 Wayland capture is Phase 5.
+            return Err(crate::types::DuxoError::CaptureBackendUnavailable);
+        }
+        Ok(Box::new(crate::capture_linux_x11::X11Capture::new()))
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        Err(crate::types::DuxoError::CaptureBackendUnavailable)
+    }
+}

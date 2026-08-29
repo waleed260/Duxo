@@ -233,7 +233,7 @@ export default function Verify2FAPage() {
               <Shield className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-lg font-weight-emphasis">
+              <h1 className="text-lg font-emphasis">
                 Two-factor authentication
               </h1>
               <p className="text-sm text-text-secondary">

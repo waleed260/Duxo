@@ -38,7 +38,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
       return (
         <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-6">
           <AlertTriangle className="h-10 w-10 text-danger" aria-hidden="true" />
-          <h2 className="text-lg font-weight-emphasis">Something went wrong</h2>
+          <h2 className="text-lg font-emphasis">Something went wrong</h2>
           <p className="max-w-md text-center text-sm text-text-secondary">
             {this.state.error?.message ?? "An unexpected error occurred."}
           </p>

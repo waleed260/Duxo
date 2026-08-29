@@ -139,3 +139,154 @@ fn generate_session_id() -> String {
         .map(char::from)
         .collect()
 }
+
+/// §1.6-B — read the whole live session node.
+///
+/// Returns `Ok(None)` when RTDB answers `null`, which is how a deleted or
+/// never-created session reads. That is a normal end-of-session condition,
+/// not a transport error, so it must not be conflated with one.
+pub async fn read_session(
+    database_url: &str,
+    id_token: &str,
+    session_id: &str,
+) -> Result<Option<serde_json::Value>> {
+    let client = reqwest::Client::new();
+    let url = format!(
+        "{}/sessions/{}.json?auth={}",
+        database_url.trim_end_matches('/'),
+        session_id,
+        id_token
+    );
+
+    let resp = client.get(&url).send().await?;
+    if !resp.status().is_success() {
+        return Err(DuxoError::Firebase(format!(
+            "session read failed: {}",
+            resp.status()
+        )));
+    }
+
+    let value: serde_json::Value = resp.json().await?;
+    if value.is_null() {
+        return Ok(None);
+    }
+    Ok(Some(value))
+}
+
+/// §0.6 — publish one ICE candidate at an indexed slot.
+///
+/// The RTDB `.validate` rule only admits indices 0–99, so the caller keeps its
+/// own cursor; writing past 99 is refused at the rule layer rather than here.
+pub async fn write_candidate(
+    database_url: &str,
+    id_token: &str,
+    _project_id: &str,
+    session_id: &str,
+    bucket: &str,
+    index: u32,
+    candidate_json: &str,
+) -> Result<()> {
+    let client = reqwest::Client::new();
+    let url = format!(
+        "{}/sessions/{}/{}/{}.json?auth={}",
+        database_url.trim_end_matches('/'),
+        session_id,
+        bucket,
+        index,
+        id_token
+    );
+
+    client
+        .put(&url)
+        .json(&serde_json::json!(candidate_json))
+        .send()
+        .await?
+        .error_for_status()
+        .map_err(|e| DuxoError::Firebase(e.to_string()))?;
+
+    Ok(())
+}
+
+/// §1.1 — retire a code at session end.
+///
+/// Without this, a code stays redeemable for its full 24-hour life pointing at
+/// a session that has already ended, so a viewer who mistypes and lands on a
+/// stale code gets a silent hang instead of "that code isn't valid".
+pub async fn delete_code(database_url: &str, id_token: &str, code: &str) -> Result<()> {
+    // The stored code has no space; the display form ("XXXX XXXX") does.
+    let normalized: String = code.chars().filter(|c| c.is_ascii_digit()).collect();
+    if normalized.is_empty() {
+        return Ok(());
+    }
+
+    let client = reqwest::Client::new();
+    let url = format!(
+        "{}/codes/{}.json?auth={}",
+        database_url.trim_end_matches('/'),
+        normalized,
+        id_token
+    );
+
+    client
+        .delete(&url)
+        .send()
+        .await?
+        .error_for_status()
+        .map_err(|e| DuxoError::Firebase(e.to_string()))?;
+
+    Ok(())
+}
+
+/// §6.3 — write the durable session record to Firestore at session end.
+///
+/// The viewer's history page reads `sessionHistory`, and until now nothing
+/// wrote it — every completed session vanished and the page was permanently
+/// empty. Metadata only: timestamps, duration, platform. Never screen content.
+pub async fn write_session_history(
+    project_id: &str,
+    id_token: &str,
+    host_uid: &str,
+    viewer_uid: &str,
+    host_platform: &str,
+    started_at_ms: i64,
+    ended_at_ms: i64,
+    end_reason: &str,
+) -> Result<()> {
+    let client = reqwest::Client::new();
+    let url = format!(
+        "https://firestore.googleapis.com/v1/projects/{project_id}/databases/(default)/documents/sessionHistory"
+    );
+
+    let duration_seconds = ((ended_at_ms - started_at_ms) / 1000).max(0);
+
+    // Firestore's REST API wants explicitly typed field values.
+    let body = serde_json::json!({
+        "fields": {
+            "hostUid":       { "stringValue":  host_uid },
+            "viewerUid":     { "stringValue":  viewer_uid },
+            "hostPlatform":  { "stringValue":  host_platform },
+            "startedAt":     { "integerValue": started_at_ms.to_string() },
+            "endedAt":       { "integerValue": ended_at_ms.to_string() },
+            "durationSeconds": { "integerValue": duration_seconds.to_string() },
+            "endReason":     { "stringValue":  end_reason },
+        }
+    });
+
+    let resp = client
+        .post(&url)
+        .bearer_auth(id_token)
+        .json(&body)
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(DuxoError::Firebase(format!(
+            "session history write failed ({status}): {text}"
+        )));
+    }
+
+    tracing::info!(duration_seconds, end_reason, "session history recorded");
+    Ok(())
+}

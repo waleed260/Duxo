@@ -7,8 +7,10 @@
 //! "No installer" philosophy (§0.4): single binary, no admin for basic use.
 
 mod audit;
+mod auth;
 mod backend;
 mod crash_recovery;
+mod encoder;
 #[cfg(target_os = "linux")]
 mod capture_linux_x11;
 #[cfg(target_os = "windows")]
@@ -20,6 +22,7 @@ mod input_linux_x11;
 mod input_windows;
 mod security;
 mod session;
+mod signaling;
 mod tray;
 mod types;
 mod webrtc_host;
@@ -29,6 +32,12 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() {
+    // §7.6 — configuration comes from the environment. Tauri loads no .env of
+    // its own, so this is what stands between a configured host agent and one
+    // that starts up with every Firebase setting blank. A missing file is not
+    // an error: the real environment may already carry the variables.
+    load_env();
+
     // §1.6 — logging: local rotating file, no cloud logging bill.
     // Logs event types and timestamps only — never input content (keystrokes,
     // clipboard text) to avoid creating a keylogger artifact on disk.
@@ -118,6 +127,18 @@ async fn main() {
         .expect("error while running duxo-host");
 }
 
+/// §7.6 — load `.env` from beside the executable, then from the working
+/// directory, so both a bundled install and `cargo tauri dev` find their
+/// configuration.
+fn load_env() {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let _ = dotenvy::from_path(dir.join(".env"));
+        }
+    }
+    let _ = dotenvy::dotenv();
+}
+
 /// §1.5 — Manual check + notify (recommended for MVP).
 /// Calls the public, unauthenticated GitHub Releases API.
 /// 60 requests/hour/IP unauthenticated — plenty for a periodic check.
@@ -127,7 +148,7 @@ async fn check_for_update() -> Result<Option<GitHubRelease>, Box<dyn std::error:
         .build()?;
 
     let resp = client
-        .get("https://api.github.com/repos/duxo-org/duxo/releases/latest")
+        .get("https://api.github.com/repos/waleed260/Duxo/releases/latest")
         .send()
         .await?;
 

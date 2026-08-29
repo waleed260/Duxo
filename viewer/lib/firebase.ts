@@ -19,10 +19,26 @@ import {
 import { getDatabase, type Database } from "firebase/database";
 import { getFirestore, type Firestore } from "firebase/firestore";
 
+/**
+ * RTDB URL fallback.
+ *
+ * `getDatabase()` throws "Can't determine Firebase Database URL" when
+ * `databaseURL` is undefined, which takes down every page that touches
+ * signaling (§0.6). NEXT_PUBLIC_FIREBASE_DATABASE_URL stays the source of
+ * truth — required for non-default RTDB regions — but when it is absent we
+ * derive Firebase's default instance from the project id instead of crashing.
+ */
+function resolveDatabaseUrl(): string | undefined {
+  const explicit = process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL;
+  if (explicit) return explicit;
+  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+  return projectId ? `https://${projectId}-default-rtdb.firebaseio.com` : undefined;
+}
+
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
+  databaseURL: resolveDatabaseUrl(),
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,

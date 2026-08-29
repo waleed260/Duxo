@@ -81,7 +81,7 @@ function Hero() {
         <div className="flex flex-col gap-6 md:col-span-3">
           <ScrollReveal>
             <a
-              href="https://github.com/duxo-org/duxo"
+              href="https://github.com/waleed260/Duxo"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex w-fit items-center gap-2 rounded-pill border border-border-default bg-surface-raised px-4 py-2 text-xs text-text-secondary transition-colors duration-instant hover:border-border-strong hover:text-text-primary"
@@ -93,7 +93,7 @@ function Hero() {
           </ScrollReveal>
 
           <ScrollReveal delay={100}>
-            <h1 className="text-3xl font-weight-emphasis leading-tight tracking-tight text-text-primary sm:text-4xl md:text-5xl lg:text-6xl">
+            <h1 className="text-3xl font-emphasis leading-tight tracking-tight text-text-primary sm:text-4xl md:text-5xl lg:text-6xl">
               Remote access{" "}
               <span className="block text-accent">you can trust.</span>
             </h1>
@@ -164,7 +164,7 @@ function Hero() {
                 </div>
                 <div className="mt-1.5 flex items-center gap-3">
                   <span className="text-text-secondary">Code:</span>
-                  <span className="text-2xl font-weight-emphasis tracking-[0.15em] text-accent">
+                  <span className="text-2xl font-emphasis tracking-[0.15em] text-accent">
                     4A2K 9B7D
                   </span>
                 </div>
@@ -217,7 +217,7 @@ function Manifesto() {
         </ScrollReveal>
 
         <ScrollReveal delay={100}>
-          <blockquote className="max-w-3xl text-2xl font-weight-emphasis leading-snug text-text-primary sm:text-3xl md:text-4xl">
+          <blockquote className="max-w-3xl text-2xl font-emphasis leading-snug text-text-primary sm:text-3xl md:text-4xl">
             Remote access shouldn&apos;t require{" "}
             <span className="text-accent">trusting a corporation</span>
             {" "}with your screen.
@@ -322,7 +322,7 @@ function Features() {
         </ScrollReveal>
 
         <ScrollReveal delay={100}>
-          <h2 className="max-w-2xl text-2xl font-weight-emphasis sm:text-3xl md:text-4xl">
+          <h2 className="max-w-2xl text-2xl font-emphasis sm:text-3xl md:text-4xl">
             Built for the{" "}
             <span className="text-accent">edge case you didn&apos;t think of.</span>
           </h2>
@@ -350,7 +350,7 @@ function Features() {
                   <div className="flex h-9 w-9 items-center justify-center rounded-sm bg-accent/10 text-accent">
                     <f.icon className="h-4 w-4" />
                   </div>
-                  <h3 className="text-lg font-weight-emphasis">{f.title}</h3>
+                  <h3 className="text-lg font-emphasis">{f.title}</h3>
                   <p className="text-sm leading-relaxed text-text-secondary">
                     {f.body}
                   </p>
@@ -388,7 +388,7 @@ function HowItWorks() {
           {stats.map((s) => (
             <div key={s.label} className="flex flex-col items-center gap-1.5 text-center">
               <s.icon className="h-4 w-4 text-accent" aria-hidden="true" />
-              <span className="text-2xl font-weight-emphasis text-accent tabular-nums">
+              <span className="text-2xl font-emphasis text-accent tabular-nums">
                 {s.prefix || ""}<AnimatedCounter value={s.value} />{s.suffix}
               </span>
               <span className="text-xs text-text-secondary">{s.label}</span>
@@ -407,7 +407,7 @@ function HowItWorks() {
         </ScrollReveal>
 
         <ScrollReveal delay={100}>
-          <h2 className="max-w-2xl text-2xl font-weight-emphasis sm:text-3xl md:text-4xl">
+          <h2 className="max-w-2xl text-2xl font-emphasis sm:text-3xl md:text-4xl">
             Peer-to-peer by default,{" "}
             <span className="text-accent">relay when needed.</span>
           </h2>
@@ -421,7 +421,7 @@ function HowItWorks() {
                 <div className="flex h-16 w-16 items-center justify-center rounded-sm border border-accent/30 bg-surface-overlay">
                   <MonitorSmartphone className="h-8 w-8 text-accent" />
                 </div>
-                <span className="text-xs font-weight-emphasis text-text-primary">Viewer</span>
+                <span className="text-xs font-emphasis text-text-primary">Viewer</span>
                 <span className="text-[10px] text-text-secondary">Browser / Next.js</span>
               </div>
 
@@ -449,7 +449,7 @@ function HowItWorks() {
                 <div className="flex h-16 w-16 items-center justify-center rounded-sm border border-border-strong bg-surface-overlay">
                   <Server className="h-8 w-8 text-text-primary" />
                 </div>
-                <span className="text-xs font-weight-emphasis text-text-primary">Host</span>
+                <span className="text-xs font-emphasis text-text-primary">Host</span>
                 <span className="text-[10px] text-text-secondary">Tauri / Rust</span>
               </div>
             </div>
@@ -483,7 +483,7 @@ function HowItWorks() {
             <ScrollReveal key={item.step} delay={Number.parseInt(item.step) * 80}>
               <div className="flex flex-col gap-3 rounded-sm border border-border-default bg-surface-raised p-5">
                 <span className="text-xs font-mono text-accent">{item.step}</span>
-                <h3 className="text-md font-weight-emphasis">{item.title}</h3>
+                <h3 className="text-md font-emphasis">{item.title}</h3>
                 <p className="text-sm leading-relaxed text-text-secondary">{item.desc}</p>
               </div>
             </ScrollReveal>
@@ -512,7 +512,7 @@ function FinalSection() {
       <div className="relative z-10 mx-auto max-w-6xl px-6 py-16 text-center sm:py-20">
         <ScrollReveal>
           <div className="mx-auto flex max-w-xl flex-col items-center gap-5">
-            <h2 className="text-2xl font-weight-emphasis sm:text-3xl md:text-4xl">
+            <h2 className="text-2xl font-emphasis sm:text-3xl md:text-4xl">
               Start connecting.
             </h2>
             <p className="text-md leading-relaxed text-text-secondary">
@@ -534,7 +534,7 @@ function FinalSection() {
             <p className="mt-4 text-xs text-text-secondary">
               Open source (MIT) &mdash; no telemetry, no account needed.{" "}
               <a
-                href="https://github.com/duxo-org/duxo"
+                href="https://github.com/waleed260/Duxo"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="underline hover:text-text-primary transition-colors duration-instant"

@@ -90,7 +90,7 @@ export default function DashboardPage() {
       <main className="mx-auto max-w-6xl px-6 py-8">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-weight-emphasis">
+            <h1 className="text-2xl font-emphasis">
               Welcome back{displayName ? `, ${displayName}` : ""}
             </h1>
             <p className="text-sm text-text-secondary">
@@ -112,7 +112,7 @@ export default function DashboardPage() {
               <Plug className="h-5 w-5" />
             </CardIconBadge>
             <div>
-              <h2 className="text-lg font-weight-emphasis">Connect to a device</h2>
+              <h2 className="text-lg font-emphasis">Connect to a device</h2>
               <p className="mt-1 text-sm text-text-secondary">
                 Enter the 8-digit code someone shared with you.
               </p>
@@ -141,7 +141,7 @@ export default function DashboardPage() {
               <MonitorDown className="h-5 w-5" />
             </CardIconBadge>
             <div>
-              <h2 className="text-lg font-weight-emphasis">
+              <h2 className="text-lg font-emphasis">
                 Let others connect to me
               </h2>
               <p className="mt-1 text-sm text-text-secondary">
@@ -158,7 +158,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="mt-8">
-          <h2 className="text-lg font-weight-emphasis mb-4 flex items-center gap-2">
+          <h2 className="text-lg font-emphasis mb-4 flex items-center gap-2">
             <Shield className="h-4 w-4 text-accent" aria-hidden="true" />
             Security
           </h2>

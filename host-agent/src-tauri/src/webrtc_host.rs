@@ -1,52 +1,67 @@
-//! Duxo WebRTC host — §1.3 connection lifecycle + §10.3b data channel dispatch.
+//! Duxo WebRTC host peer — §1.3 lifecycle, §1.4 data channel, §10.3b dispatch.
 //!
-//! §10.3c — rate limiting: maximum 100 msgs/s per message type.
-//! Exceeding the limit drops messages silently to prevent DoS via data channel.
+//! ROLE CORRECTION. The previous version of this module had the host create
+//! the SDP offer. §1.6-B has the viewer offering and the host answering, and
+//! the browser side implements exactly that — so both peers were offering and
+//! neither could ever answer. The host is the **answerer** here.
 //!
-//! This module owns the WebRTC peer connection on the host side.
-//! §1.2 — host agent owns screen capture, WebRTC peer, input injection, and
-//! ALL permission decisions.
+//! That choice is also the right one on the merits: the browser is the peer
+//! that knows what it can decode, so letting it write the offer means codec
+//! negotiation is driven by the side with the real constraints.
 //!
-//! §0.5 — webrtc-rs handles VP8/VP9 encoding internally.
-//! §0.5 — ICE server priority: STUN → Metered TURN → Oracle Coturn (Path B).
-//! §1.3 — connection state monitoring + ICE restart with exponential backoff.
+//! §1.2 — this module owns the peer connection, the video track, and input
+//! injection. It owns no permission decisions: `input_allowed` is set by the
+//! session state machine and re-checked on every single input message, so a
+//! viewer that keeps sending after a session ends injects nothing.
+//!
+//! §10.3c — 100 messages/s/type; excess is dropped silently.
 
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use webrtc::api::APIBuilder;
-use webrtc::api::media_engine::MediaEngine;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+
+use base64::Engine as _;
+use tokio::sync::mpsc;
 use webrtc::api::interceptor_registry::register_default_interceptors;
+use webrtc::api::media_engine::MediaEngine;
+use webrtc::api::APIBuilder;
+use webrtc::data_channel::RTCDataChannel;
+use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
+use webrtc::ice_transport::ice_connection_state::RTCIceConnectionState;
 use webrtc::ice_transport::ice_server::RTCIceServer;
+use webrtc::media::Sample;
 use webrtc::peer_connection::configuration::RTCConfiguration;
 use webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
-use webrtc::data_channel::RTCDataChannel;
-use webrtc::rtp_transceiver::rtp_codec_capability::RTPCodecCapability;
-use webrtc::rtp_transceiver::rtp_transceiver_direction::RTPTransceiverDirection;
-use webrtc::track::track_local::track_local_static_rtp::TrackLocalStaticRTP;
+use webrtc::peer_connection::RTCPeerConnection;
+use webrtc::rtp_transceiver::rtp_codec::RTCRtpCodecCapability;
+use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
 use webrtc::track::track_local::TrackLocal;
 
 use crate::backend::{InputBackend, InputButton, InputState};
-use crate::types::{DuxoError, Result, SessionContext, DataChannelMessage, SessionStatus};
-#[cfg(target_os = "linux")]
-use crate::input_linux_x11::X11Input;
-#[cfg(target_os = "windows")]
-use crate::input_windows::WindowsInput;
-use crate::session;
-use serde_json::json;
-use std::collections::HashMap;
-use std::time::Instant;
+use crate::types::{DuxoError, Result};
 
-/// Rate limiter state for data channel messages (§10.3c).
-const RATE_LIMIT_WINDOW_MS: u64 = 1000;
+/// §10.3c — rate limiting: maximum 100 msgs/s per message type.
+const RATE_LIMIT_WINDOW: std::time::Duration = std::time::Duration::from_secs(1);
 const RATE_LIMIT_MAX_PER_WINDOW: u32 = 100;
 
-/// Backoff delays for ICE restart (§10.3b). Matches KPI: <10s local, <15s TURN.
-const BACKOFF_DELAYS_MS: &[u64] = &[500, 1000, 2000, 4000, 8000];
+/// §1.4 — 10MB cap. The viewer enforces this before starting a transfer; the
+/// host enforces it again because a viewer is not a trust boundary (§1.2).
+const MAX_FILE_BYTES: usize = 10 * 1024 * 1024;
+/// A transfer that stalls this long is abandoned and its partial data dropped
+/// (§6.2 — "mid-transfer data channel drop → discard, restart from scratch").
+const FILE_ASSEMBLY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
-/// Maximum number of ICE restart attempts before giving up.
-#[allow(dead_code)]
-const MAX_RECONNECT_ATTEMPTS: u8 = 5;
+/// Events the peer raises for the signaling loop to publish to RTDB (§1.6-B).
+#[derive(Debug)]
+pub enum HostSignal {
+    /// §0.6 — a locally gathered ICE candidate, already JSON-encoded.
+    Candidate(String),
+    /// §1.1 — drives WAITING→…→ACTIVE→ENDED from the host's own observation,
+    /// never from anything the viewer asserts.
+    ConnectionState(RTCPeerConnectionState),
+}
 
 /// ICE server configuration — STUN first, TURN as fallback (§0.5).
 pub struct IceConfig {
@@ -63,6 +78,7 @@ impl Default for IceConfig {
             turn_urls: std::env::var("DUXO_METERED_TURN_URLS")
                 .unwrap_or_default()
                 .split(',')
+                .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .map(String::from)
                 .collect(),
@@ -72,453 +88,649 @@ impl Default for IceConfig {
     }
 }
 
-/// The host-side WebRTC session.
-pub struct HostWebRTCSession {
-    api: Arc<webrtc::api::API>,
-    peer_connection: Option<Arc<webrtc::peer_connection::RTCPeerConnection>>,
-    data_channel: Option<Arc<RTCDataChannel>>,
-    video_track: Option<Arc<TrackLocalStaticRTP>>,
-    session_ctx: Arc<RwLock<SessionContext>>,
-    reconnect_attempts: u8,
-    data_channel_open: Arc<RwLock<bool>>,
-    connection_started_at: Arc<std::sync::Mutex<std::time::Instant>>,
+impl IceConfig {
+    fn to_servers(&self) -> Vec<RTCIceServer> {
+        let mut servers = vec![RTCIceServer {
+            urls: self.stun_urls.clone(),
+            ..Default::default()
+        }];
+
+        // §0.8 — TURN is the fallback for the ~10-15% of networks that STUN
+        // cannot traverse. Without credentials the entry is worse than
+        // useless: ICE spends its whole timeout retrying a server that will
+        // reject every allocation.
+        match (&self.turn_username, &self.turn_credential) {
+            (Some(user), Some(cred)) if !self.turn_urls.is_empty() => {
+                servers.push(RTCIceServer {
+                    urls: self.turn_urls.clone(),
+                    username: user.clone(),
+                    credential: cred.clone(),
+                    ..Default::default()
+                });
+            }
+            _ if !self.turn_urls.is_empty() => {
+                tracing::warn!(
+                    "TURN URLs configured without credentials — relay fallback disabled"
+                );
+            }
+            _ => {
+                tracing::warn!(
+                    "no TURN configured — sessions on restrictive networks (§0.8) will fail"
+                );
+            }
+        }
+
+        servers
+    }
 }
 
-impl HostWebRTCSession {
-    pub fn new(session_ctx: SessionContext) -> Self {
+/// An in-progress chunked file transfer (§1.4 D).
+struct FileAssembly {
+    file_name: String,
+    total: u64,
+    received: HashMap<u64, Vec<u8>>,
+    bytes: usize,
+    last_chunk_at: Instant,
+}
+
+/// Shared state the data-channel callbacks need. Kept in one struct so the
+/// closures capture a single Arc rather than five.
+struct ChannelContext {
+    input: Mutex<Box<dyn InputBackend>>,
+    /// §1.2/§2.4 — the gate. False until the host's own state machine says
+    /// ACTIVE; re-read per message, so revoking it takes effect immediately.
+    input_allowed: Arc<AtomicBool>,
+    rate: Mutex<HashMap<String, (Instant, u32)>>,
+    files: Mutex<HashMap<String, FileAssembly>>,
+    /// Where completed file transfers land.
+    download_dir: std::path::PathBuf,
+}
+
+pub struct HostPeer {
+    pc: Arc<RTCPeerConnection>,
+    video_track: Arc<TrackLocalStaticSample>,
+    input_allowed: Arc<AtomicBool>,
+    /// §6.5 — measures time to `connected` for the connection-establishment KPI.
+    started_at: Instant,
+}
+
+impl HostPeer {
+    /// Build the peer, register the VP8 track, and wire every callback.
+    ///
+    /// `signals` receives ICE candidates and connection-state changes for the
+    /// signaling loop to act on; nothing here touches RTDB directly.
+    pub async fn new(
+        ice: &IceConfig,
+        input: Box<dyn InputBackend>,
+        signals: mpsc::UnboundedSender<HostSignal>,
+    ) -> Result<Self> {
         let mut media_engine = MediaEngine::default();
-        let _ = media_engine.register_codec(
-            RTPCodecCapability {
-                mime_type: "video/vp8".to_string(),
-                clock_rate: 90000,
-                channels: 0,
-                sdp_fmtp_line: String::new(),
-                rtcp_feedback: vec![],
-            },
-            RTPTransceiverDirection::SendOnly,
-        );
+        media_engine
+            .register_default_codecs()
+            .map_err(|e| DuxoError::WebRtc(format!("codec registration failed: {e}")))?;
 
         let mut registry = webrtc::interceptor::registry::Registry::new();
-        if let Err(e) = register_default_interceptors(&mut media_engine, &mut registry) {
-            tracing::warn!(error = %e, "failed to register default interceptors");
-        }
+        registry = register_default_interceptors(registry, &mut media_engine)
+            .map_err(|e| DuxoError::WebRtc(format!("interceptor registration failed: {e}")))?;
 
         let api = APIBuilder::new()
             .with_media_engine(media_engine)
             .with_interceptor_registry(registry)
             .build();
 
-        Self {
-            api: Arc::new(api),
-            peer_connection: None,
-            data_channel: None,
-            video_track: None,
-            session_ctx: Arc::new(RwLock::new(session_ctx)),
-            reconnect_attempts: 0,
-            data_channel_open: Arc::new(RwLock::new(false)),
-            connection_started_at: Arc::new(std::sync::Mutex::new(std::time::Instant::now())),
-        }
-    }
+        let config = RTCConfiguration {
+            ice_servers: ice.to_servers(),
+            ..Default::default()
+        };
 
-    /// §1.6-B — create the RTCPeerConnection and generate the SDP offer.
-    pub async fn create_peer_and_offer(&mut self, ice_config: &IceConfig) -> Result<String> {
-        let mut ice_servers = vec![
-            RTCIceServer {
-                urls: ice_config.stun_urls.clone(),
+        let pc = Arc::new(
+            api.new_peer_connection(config)
+                .await
+                .map_err(|e| DuxoError::WebRtc(format!("peer connection failed: {e}")))?,
+        );
+
+        // §0.5 — the screen, as VP8. `TrackLocalStaticSample` takes encoded
+        // frames and handles RTP packetization; the encoding itself is ours
+        // (encoder.rs), because webrtc-rs does none.
+        let video_track = Arc::new(TrackLocalStaticSample::new(
+            RTCRtpCodecCapability {
+                mime_type: "video/VP8".to_owned(),
                 ..Default::default()
             },
-        ];
-
-        if !ice_config.turn_urls.is_empty() {
-            if let (Some(ref username), Some(ref credential)) =
-                (&ice_config.turn_username, &ice_config.turn_credential)
-            {
-                ice_servers.push(RTCIceServer {
-                    urls: ice_config.turn_urls.clone(),
-                    username: username.clone(),
-                    credential: credential.clone(),
-                    ..Default::default()
-                });
-            }
-        }
-
-        let config = RTCConfiguration { ice_servers, ..Default::default() };
-
-        let peer_connection = self.api.new_peer_connection(config).await
-            .map_err(|e| DuxoError::Firebase(format!("Failed to create peer connection: {e}")))?;
-
-        let dc = peer_connection.create_data_channel("duxo", None).await
-            .map_err(|e| DuxoError::Firebase(format!("Failed to create data channel: {e}")))?;
-
-        let dc_open = Arc::clone(&self.data_channel_open);
-        dc.on_open(Box::new(move || {
-            let dc_open = dc_open.clone();
-            Box::new(async move {
-                *dc_open.write().await = true;
-                tracing::info!("data channel opened");
-            })
-        })).await;
-
-        let dc_close = Arc::clone(&self.data_channel_open);
-        dc.on_close(Box::new(move || {
-            let dc_close = dc_close.clone();
-            Box::new(async move {
-                *dc_close.write().await = false;
-                tracing::info!("data channel closed");
-            })
-        })).await;
-
-        let ctx = Arc::clone(&self.session_ctx);
-        let rate_map = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
-        let rate_map_clone = Arc::clone(&rate_map);
-        dc.on_message(Box::new(move |msg| {
-            let ctx = ctx.clone();
-            let rate_map = Arc::clone(&rate_map_clone);
-            Box::new(async move {
-                if let Ok(text) = String::from_utf8(msg.data.to_vec()) {
-                    if let Ok(dm) = serde_json::from_str::<DataChannelMessage>(&text) {
-                        let mut ctx_guard = ctx.write().await;
-                        let mut rate_guard = rate_map.lock().await;
-                        handle_data_channel_message(dm, &mut ctx_guard, &mut rate_guard).await;
-                    }
-                }
-            })
-        })).await;
-
-        self.data_channel = Some(dc);
-
-        let video_track = Arc::new(TrackLocalStaticRTP::new(
-            RTPCodecCapability {
-                mime_type: "video/vp8".to_string(),
-                clock_rate: 90000,
-                channels: 0,
-                sdp_fmtp_line: String::new(),
-                rtcp_feedback: vec![],
-            },
-            "duxo-stream".to_string(),
-            "duxo-video".to_string(),
+            "duxo-video".to_owned(),
+            "duxo-stream".to_owned(),
         ));
 
-        let rtp_sender = peer_connection.add_track(
-            Arc::clone(&video_track) as Arc<dyn TrackLocal + Send + Sync>,
-        ).await
-            .map_err(|e| DuxoError::Firebase(format!("Failed to add video track: {e}")))?;
+        let sender = pc
+            .add_track(Arc::clone(&video_track) as Arc<dyn TrackLocal + Send + Sync>)
+            .await
+            .map_err(|e| DuxoError::WebRtc(format!("add_track failed: {e}")))?;
 
+        // RTCP must be drained or the sender's receive buffer fills and stalls;
+        // it also carries the receiver reports we would need for adaptive
+        // bitrate later.
         tokio::spawn(async move {
-            let mut rtcp_buf = vec![0u8; 1500];
-            loop {
-                match rtp_sender.read_rtcp(&mut rtcp_buf).await {
-                    Ok(_) => {}
-                    Err(_) => break,
-                }
-            }
+            let mut buf = vec![0u8; 1500];
+            while sender.read(&mut buf).await.is_ok() {}
         });
 
-        self.video_track = Some(video_track);
+        let input_allowed = Arc::new(AtomicBool::new(false));
 
-        let ctx = Arc::clone(&self.session_ctx);
-        let kpi_conn_start = Arc::clone(&self.connection_started_at);
-        peer_connection.on_ice_connection_state_change(Box::new(move |state| {
-            let ctx = ctx.clone();
-            let kpi_conn_start = Arc::clone(&kpi_conn_start);
-            Box::new(async move {
-                tracing::info!(state = ?state, "ICE connection state changed");
-                match state {
-                    RTCPeerConnectionState::Connected => {
-                        // §6.5 — KPI: connection establishment / reconnection time.
-                        let elapsed_ms = kpi_conn_start.lock().unwrap().elapsed().as_millis();
-                        tracing::info!(
-                            kpi = "connection_establishment",
-                            elapsed_ms = elapsed_ms,
-                            "WebRTC connection established — session ACTIVE"
-                        );
-                    }
-                    RTCPeerConnectionState::Failed => {
-                        tracing::warn!("ICE connection failed — attempting restart");
-                    }
-                    RTCPeerConnectionState::Disconnected => {
-                        tracing::info!("ICE disconnected — waiting for self-recovery");
-                    }
-                    RTCPeerConnectionState::Closed => {
-                        tracing::info!("ICE connection closed");
-                    }
-                    _ => {}
-                }
-            })
-        })).await;
+        let ctx = Arc::new(ChannelContext {
+            input: Mutex::new(input),
+            input_allowed: Arc::clone(&input_allowed),
+            rate: Mutex::new(HashMap::new()),
+            files: Mutex::new(HashMap::new()),
+            download_dir: default_download_dir(),
+        });
 
-        let offer = peer_connection.create_offer(None).await
-            .map_err(|e| DuxoError::Firebase(format!("Failed to create offer: {e}")))?;
-
-        peer_connection.set_local_description(offer.clone()).await
-            .map_err(|e| DuxoError::Firebase(format!("Failed to set local description: {e}")))?;
-
-        let candidates_buf = Arc::new(tokio::sync::Mutex::new(Vec::<String>::new()));
-        let candidates_ref = Arc::clone(&candidates_buf);
-        peer_connection.on_ice_candidate(Box::new(move |candidate| {
-            let buf = Arc::clone(&candidates_ref);
+        // §1.4 — the viewer creates the single "duxo" channel; we receive it.
+        let ctx_for_dc = Arc::clone(&ctx);
+        pc.on_data_channel(Box::new(move |dc: Arc<RTCDataChannel>| {
+            let ctx = Arc::clone(&ctx_for_dc);
             Box::pin(async move {
-                if let Some(c) = candidate {
-                    if let Ok(json) = serde_json::to_string(&c) {
-                        let mut guard = buf.lock().await;
-                        guard.push(json);
-                    }
+                let label = dc.label().to_owned();
+                tracing::info!(label = %label, "data channel offered by viewer");
+
+                let dc_for_msg = Arc::clone(&dc);
+                dc.on_message(Box::new(move |msg| {
+                    let ctx = Arc::clone(&ctx);
+                    let dc = Arc::clone(&dc_for_msg);
+                    Box::pin(async move {
+                        handle_message(&ctx, &dc, &msg.data).await;
+                    })
+                }));
+
+                dc.on_close(Box::new(move || {
+                    tracing::info!("data channel closed");
+                    Box::pin(async {})
+                }));
+            })
+        }));
+
+        // §0.6 — trickle our candidates out to the signaling loop.
+        let sig_ice = signals.clone();
+        pc.on_ice_candidate(Box::new(move |candidate| {
+            let sig = sig_ice.clone();
+            Box::pin(async move {
+                // A `None` candidate marks end-of-gathering, not a candidate.
+                let Some(candidate) = candidate else { return };
+                match candidate.to_json() {
+                    Ok(init) => match serde_json::to_string(&init) {
+                        Ok(json) => {
+                            let _ = sig.send(HostSignal::Candidate(json));
+                        }
+                        Err(e) => tracing::warn!(error = %e, "candidate serialize failed"),
+                    },
+                    Err(e) => tracing::warn!(error = %e, "candidate to_json failed"),
                 }
             })
-        })).await;
+        }));
 
-        self.peer_connection = Some(peer_connection);
-        self.reconnect_attempts = 0;
-
-        let offer_json = serde_json::to_string(&offer)
-            .map_err(|e| DuxoError::Json(e))?;
-
-        tracing::info!("SDP offer created and local description set");
-        Ok(offer_json)
-    }
-
-    pub async fn set_remote_answer(&mut self, answer_json: &str) -> Result<()> {
-        let answer: RTCSessionDescription = serde_json::from_str(answer_json)
-            .map_err(|e| DuxoError::Json(e))?;
-
-        if let Some(ref pc) = self.peer_connection {
-            pc.set_remote_description(answer).await
-                .map_err(|e| DuxoError::Firebase(format!("Failed to set remote description: {e}")))?;
-            tracing::info!("remote description (answer) applied");
-        }
-
-        Ok(())
-    }
-
-    pub async fn add_ice_candidates(&self, candidates_json: &[String]) -> Result<()> {
-        if let Some(ref pc) = self.peer_connection {
-            for json in candidates_json {
-                if let Ok(c) = serde_json::from_str::<webrtc::ice_transport::ice_candidate::RTCIceCandidateInit>(json) {
-                    let _ = pc.add_ice_candidate(c).await;
+        let sig_state = signals.clone();
+        let allowed_for_state = Arc::clone(&input_allowed);
+        pc.on_peer_connection_state_change(Box::new(move |state: RTCPeerConnectionState| {
+            let sig = sig_state.clone();
+            let allowed = Arc::clone(&allowed_for_state);
+            Box::pin(async move {
+                tracing::info!(state = ?state, "peer connection state changed");
+                // Revoke input the instant the transport is not healthy. A
+                // half-open channel must not be able to keep driving the mouse.
+                if !matches!(state, RTCPeerConnectionState::Connected) {
+                    allowed.store(false, Ordering::SeqCst);
                 }
-            }
-        }
+                let _ = sig.send(HostSignal::ConnectionState(state));
+            })
+        }));
+
+        pc.on_ice_connection_state_change(Box::new(move |state: RTCIceConnectionState| {
+            Box::pin(async move {
+                // §1.3 #3 — `disconnected` self-recovers in 10–20s; do not tear
+                // anything down here. Only `failed` is actionable, and the
+                // viewer drives the ICE restart (§1.3 #4).
+                tracing::info!(state = ?state, "ICE connection state changed");
+            })
+        }));
+
+        Ok(Self {
+            pc,
+            video_track,
+            input_allowed,
+            started_at: Instant::now(),
+        })
+    }
+
+    /// §1.6-B — apply the viewer's offer and produce the answer to publish.
+    ///
+    /// Also used for §1.3 #4 ICE restarts: the viewer republishes an offer
+    /// under the same session id and this renegotiates in place.
+    pub async fn accept_offer(&self, offer_json: &str) -> Result<String> {
+        let offer: RTCSessionDescription = serde_json::from_str(offer_json)?;
+
+        self.pc
+            .set_remote_description(offer)
+            .await
+            .map_err(|e| DuxoError::WebRtc(format!("set_remote_description failed: {e}")))?;
+
+        let answer = self
+            .pc
+            .create_answer(None)
+            .await
+            .map_err(|e| DuxoError::WebRtc(format!("create_answer failed: {e}")))?;
+
+        self.pc
+            .set_local_description(answer.clone())
+            .await
+            .map_err(|e| DuxoError::WebRtc(format!("set_local_description failed: {e}")))?;
+
+        tracing::info!("SDP answer created");
+        Ok(serde_json::to_string(&answer)?)
+    }
+
+    /// §0.6 — apply candidates the viewer published.
+    pub async fn add_ice_candidate(&self, candidate_json: &str) -> Result<()> {
+        let init: RTCIceCandidateInit = serde_json::from_str(candidate_json)?;
+        self.pc
+            .add_ice_candidate(init)
+            .await
+            .map_err(|e| DuxoError::WebRtc(format!("add_ice_candidate failed: {e}")))?;
         Ok(())
     }
 
-    pub async fn send_video_frame(&self, frame: &[u8]) -> Result<()> {
-        if let Some(ref vt) = self.video_track {
-            let _ = vt.write(frame).await;
-        }
-        Ok(())
+    /// §2.4 — open or close the input gate. Called only by the session state
+    /// machine, only after the host has confirmed ACTIVE from its own read.
+    pub fn set_input_allowed(&self, allowed: bool) {
+        self.input_allowed.store(allowed, Ordering::SeqCst);
+        tracing::info!(allowed, "input injection gate changed");
     }
 
-    pub async fn send_data_channel_message(&self, msg: &serde_json::Value) -> Result<()> {
-        if let Some(ref dc) = self.data_channel {
-            if *self.data_channel_open.read().await {
-                let text = serde_json::to_string(msg)
-                    .map_err(|e| DuxoError::Json(e))?;
-                let _ = dc.send_text(&text).await;
-            }
-        }
-        Ok(())
+    /// Push one encoded VP8 frame to the viewer.
+    pub async fn write_frame(
+        &self,
+        data: Vec<u8>,
+        duration: std::time::Duration,
+    ) -> Result<()> {
+        self.video_track
+            .write_sample(&Sample {
+                data: data.into(),
+                duration,
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| DuxoError::WebRtc(format!("write_sample failed: {e}")))
     }
 
-    pub async fn restart_ice(&mut self) -> Result<()> {
-        if self.reconnect_attempts >= MAX_RECONNECT_ATTEMPTS {
-            return Err(DuxoError::IceRestartExhausted {
-                attempts: self.reconnect_attempts,
-            });
-        }
-
-        if let Some(ref pc) = self.peer_connection {
-            let offer = pc.create_offer(None).await
-                .map_err(|e| DuxoError::Firebase(format!("ICE restart offer failed: {e}")))?;
-
-            pc.set_local_description(offer).await
-                .map_err(|e| DuxoError::Firebase(format!("ICE restart local desc failed: {e}")))?;
-
-            self.reconnect_attempts += 1;
-            *self.connection_started_at.lock().unwrap() = std::time::Instant::now();
-            tracing::info!(
-                kpi = "ice_restart",
-                attempt = self.reconnect_attempts,
-                "ICE restart initiated"
-            );
-        }
-
-        Ok(())
+    /// §6.5 — time since the peer was created, for the establishment KPI.
+    pub fn elapsed_since_start(&self) -> std::time::Duration {
+        self.started_at.elapsed()
     }
 
-    pub async fn close(&mut self) {
-        if let Some(ref pc) = self.peer_connection {
-            let _ = pc.close().await;
+    /// §1.1 — the host's own view of the transport, which is what ACTIVE is
+    /// derived from. Never the viewer's assertion.
+    pub fn connection_state(&self) -> RTCPeerConnectionState {
+        self.pc.connection_state()
+    }
+
+    pub async fn close(&self) {
+        self.input_allowed.store(false, Ordering::SeqCst);
+        if let Err(e) = self.pc.close().await {
+            tracing::warn!(error = %e, "peer connection close failed");
         }
-        self.peer_connection = None;
-        self.data_channel = None;
-        self.video_track = None;
-
-        let mut ctx = self.session_ctx.write().await;
-        let _ = session::transition(ctx.status, SessionStatus::Ended);
-        ctx.status = SessionStatus::Ended;
-
-        tracing::info!("WebRTC session closed");
+        tracing::info!("WebRTC peer closed");
     }
 }
 
-/// §10.3b — Data channel message loop (host side) with rate limiting (§10.3c).
-pub async fn handle_data_channel_message(
-    msg: DataChannelMessage,
-    ctx: &mut SessionContext,
-    rate_map: &mut HashMap<String, (Instant, u32)>,
-) {
-    let now = Instant::now();
-    let entry = rate_map.entry(msg.msg_type.clone()).or_insert_with(|| (now, 0));
-    if entry.1 >= RATE_LIMIT_MAX_PER_WINDOW && now.duration_since(entry.0).as_millis() as u64 < RATE_LIMIT_WINDOW_MS {
-        tracing::warn!(msg_type = %msg.msg_type, "rate limit exceeded — dropping message");
+/// §1.4 + §10.3b — decode one data channel message and act on it.
+async fn handle_message(ctx: &ChannelContext, dc: &Arc<RTCDataChannel>, raw: &[u8]) {
+    let Ok(text) = std::str::from_utf8(raw) else {
+        return;
+    };
+    let Ok(msg) = serde_json::from_str::<serde_json::Value>(text) else {
+        return;
+    };
+    let Some(msg_type) = msg.get("type").and_then(|v| v.as_str()) else {
+        return;
+    };
+
+    if !allow_rate(ctx, msg_type) {
         return;
     }
-    if now.duration_since(entry.0).as_millis() as u64 >= RATE_LIMIT_WINDOW_MS {
+
+    // ping is answered regardless of the input gate: it is the connection
+    // quality signal (§1.4) and carries no ability to affect the machine.
+    if msg_type == "ping" {
+        let sent_at = msg.get("t").and_then(|v| v.as_i64()).unwrap_or(0);
+        let now = chrono::Utc::now().timestamp_millis();
+        let rtt = if sent_at > 0 { now - sent_at } else { 0 };
+        let pong = serde_json::json!({ "type": "pong", "t": sent_at, "rtt_ms": rtt });
+        let _ = dc.send_text(pong.to_string()).await;
+        return;
+    }
+
+    // §1.2 — "never injects input before ACTIVE state confirmed via its own
+    // RTDB read, not the viewer's claim."
+    if !ctx.input_allowed.load(Ordering::SeqCst) {
+        tracing::warn!(msg_type, "input rejected — session is not ACTIVE");
+        return;
+    }
+
+    match msg_type {
+        "mouse_move" => {
+            let x = msg.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let y = msg.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            with_input(ctx, |i| i.mouse_move(x, y), "mouse_move");
+        }
+        "mouse_click" => {
+            let button = match msg.get("button").and_then(|v| v.as_str()) {
+                Some("right") => InputButton::Right,
+                Some("middle") => InputButton::Middle,
+                _ => InputButton::Left,
+            };
+            let state = match msg.get("state").and_then(|v| v.as_str()) {
+                Some("up") => InputState::Up,
+                _ => InputState::Down,
+            };
+            with_input(ctx, |i| i.mouse_click(button, state), "mouse_click");
+        }
+        "key_event" => {
+            let Some(code) = msg.get("code").and_then(|v| v.as_str()) else {
+                return;
+            };
+            let state = match msg.get("state").and_then(|v| v.as_str()) {
+                Some("up") => InputState::Up,
+                _ => InputState::Down,
+            };
+            // §1.7 — log the event type, never the key. A log that records
+            // which keys were pressed is a keylogger artifact on disk.
+            with_input(ctx, |i| i.key(code, state), "key_event");
+        }
+        "clipboard_text" => {
+            let Some(data) = msg.get("data").and_then(|v| v.as_str()) else {
+                return;
+            };
+            with_input(ctx, |i| i.set_clipboard(data), "clipboard_text");
+        }
+        "file_chunk" => {
+            handle_file_chunk(ctx, dc, &msg).await;
+        }
+        other => {
+            // §6.1 — forward compatibility: an unknown type from a newer
+            // viewer is ignored, never fatal.
+            tracing::debug!(msg_type = other, "unhandled message type");
+        }
+    }
+}
+
+/// Run one input operation under the backend lock.
+///
+/// The lock is a `std::sync::Mutex` and is never held across an await, so it
+/// cannot deadlock the executor. Injection is a single X11/Win32 call in the
+/// microsecond range — a tokio Mutex would add async machinery for nothing.
+fn with_input<F>(ctx: &ChannelContext, op: F, what: &str)
+where
+    F: FnOnce(&mut dyn InputBackend) -> Result<()>,
+{
+    let mut guard = match ctx.input.lock() {
+        Ok(g) => g,
+        Err(poisoned) => {
+            // A panic in a previous injection must not disable input forever.
+            tracing::warn!("input backend mutex was poisoned — recovering");
+            poisoned.into_inner()
+        }
+    };
+    if let Err(e) = op(guard.as_mut()) {
+        tracing::warn!(error = %e, operation = what, "input injection failed");
+    }
+}
+
+/// §10.3c — 100 messages per second per type; excess dropped silently.
+fn allow_rate(ctx: &ChannelContext, msg_type: &str) -> bool {
+    let mut rate = match ctx.rate.lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
+    let now = Instant::now();
+    let entry = rate
+        .entry(msg_type.to_string())
+        .or_insert((now, 0));
+
+    if now.duration_since(entry.0) >= RATE_LIMIT_WINDOW {
         *entry = (now, 0);
     }
+
+    if entry.1 >= RATE_LIMIT_MAX_PER_WINDOW {
+        return false;
+    }
+
     entry.1 += 1;
-
-    match msg.msg_type.as_str() {
-        "mouse_move" => {
-            let x = msg.extra.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let y = msg.extra.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            if !ctx.can_open_data_channel(&ctx.viewer_id.clone().unwrap_or_default()) {
-                tracing::warn!("mouse_move rejected — session not ACTIVE");
-                return;
-            }
-            dispatch_mouse_move(x, y);
-        }
-
-        "mouse_click" => {
-            let button = msg.extra.get("button").and_then(|v| v.as_str()).unwrap_or("left");
-            let state = msg.extra.get("state").and_then(|v| v.as_str()).unwrap_or("down");
-            if !ctx.can_open_data_channel(&ctx.viewer_id.clone().unwrap_or_default()) {
-                tracing::warn!("mouse_click rejected — session not ACTIVE");
-                return;
-            }
-            dispatch_mouse_click(button, state);
-        }
-
-        "key_event" => {
-            let code = msg.extra.get("code").and_then(|v| v.as_str()).unwrap_or("");
-            let state = msg.extra.get("state").and_then(|v| v.as_str()).unwrap_or("down");
-            if !ctx.can_open_data_channel(&ctx.viewer_id.clone().unwrap_or_default()) {
-                tracing::warn!("key_event rejected — session not ACTIVE");
-                return;
-            }
-            dispatch_key_event(code, state);
-        }
-
-        "clipboard_text" => {
-            let data = msg.extra.get("data").and_then(|v| v.as_str()).unwrap_or("");
-            if !ctx.can_open_data_channel(&ctx.viewer_id.clone().unwrap_or_default()) {
-                return;
-            }
-            dispatch_clipboard(data);
-        }
-
-        "file_chunk" => {
-            let file_id = msg.extra.get("fileId").and_then(|v| v.as_str()).unwrap_or("");
-            let index = msg.extra.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
-            let total = msg.extra.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
-            tracing::trace!(file_id = file_id, index = index, total = total, "file_chunk dispatched");
-        }
-
-        "ping" => {
-            let t = msg.extra.get("t").and_then(|v| v.as_i64()).unwrap_or(0);
-            let rtt = if t > 0 { chrono::Utc::now().timestamp_millis() - t } else { 0 };
-            tracing::trace!(kpi = "rtt", rtt_ms = rtt, "pong sent");
-        }
-
-        other => {
-            tracing::info!(msg_type = other, "unhandled message type (forward-compat)");
-        }
-    }
+    true
 }
 
-fn dispatch_mouse_move(x: f64, y: f64) {
-    #[cfg(target_os = "linux")]
-    {
-        let mut input = X11Input::new();
-        if let Err(e) = input.mouse_move(x, y) {
-            tracing::warn!(error = %e, "mouse_move failed on X11");
-        }
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let mut input = WindowsInput::new();
-        if let Err(e) = input.mouse_move(x, y) {
-            tracing::warn!(error = %e, "mouse_move failed on Windows");
-        }
-    }
-}
-
-fn dispatch_mouse_click(button: &str, state: &str) {
-    let btn = match button {
-        "left" => InputButton::Left,
-        "right" => InputButton::Right,
-        "middle" => InputButton::Middle,
-        _ => InputButton::Left,
+/// §1.4 D — reassemble a chunked transfer by fileId, verify the total count,
+/// then acknowledge.
+async fn handle_file_chunk(
+    ctx: &ChannelContext,
+    dc: &Arc<RTCDataChannel>,
+    msg: &serde_json::Value,
+) {
+    let Some(file_id) = msg.get("fileId").and_then(|v| v.as_str()) else {
+        return;
+    };
+    let index = msg.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
+    let total = msg.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
+    let file_name = msg
+        .get("fileName")
+        .and_then(|v| v.as_str())
+        .unwrap_or("duxo-transfer");
+    let Some(b64) = msg.get("data").and_then(|v| v.as_str()) else {
+        return;
     };
 
-    let st = match state {
-        "down" => InputState::Down,
-        "up" => InputState::Up,
-        _ => InputState::Down,
+    if total == 0 {
+        return;
+    }
+
+    let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64) else {
+        tracing::warn!(file_id, index, "file chunk was not valid base64 — dropping");
+        return;
     };
 
-    #[cfg(target_os = "linux")]
-    {
-        let mut input = X11Input::new();
-        if let Err(e) = input.mouse_click(btn, st) {
-            tracing::warn!(error = %e, "mouse_click failed on X11");
+    let completed = {
+        let mut files = match ctx.files.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+
+        // §6.2 — reap transfers whose sender went away mid-stream, so a
+        // dropped connection cannot pin megabytes of partial data forever.
+        let now = Instant::now();
+        files.retain(|id, a| {
+            let alive = now.duration_since(a.last_chunk_at) < FILE_ASSEMBLY_TIMEOUT;
+            if !alive {
+                tracing::info!(file_id = %id, "abandoned file transfer discarded");
+            }
+            alive
+        });
+
+        let assembly = files.entry(file_id.to_string()).or_insert_with(|| FileAssembly {
+            file_name: sanitize_file_name(file_name),
+            total,
+            received: HashMap::new(),
+            bytes: 0,
+            last_chunk_at: now,
+        });
+
+        assembly.last_chunk_at = now;
+        assembly.bytes += bytes.len();
+
+        // §1.4 — the 10MB cap again, on the receiving side. The viewer checks
+        // before starting; the host checks because it cannot assume the peer
+        // is the Duxo viewer at all.
+        if assembly.bytes > MAX_FILE_BYTES {
+            tracing::warn!(file_id, "file transfer exceeded 10MB cap — discarding");
+            files.remove(file_id);
+            return;
+        }
+
+        assembly.received.insert(index, bytes);
+
+        if assembly.received.len() as u64 == assembly.total {
+            files.remove(file_id)
+        } else {
+            None
+        }
+    };
+
+    let Some(assembly) = completed else { return };
+
+    // Chunks arrive in order on an ordered channel, but reassembling by index
+    // rather than by arrival means an out-of-order delivery cannot silently
+    // corrupt the file.
+    let mut out = Vec::with_capacity(assembly.bytes);
+    for i in 0..assembly.total {
+        match assembly.received.get(&i) {
+            Some(chunk) => out.extend_from_slice(chunk),
+            None => {
+                tracing::warn!(file_id, index = i, "missing chunk — discarding transfer");
+                return;
+            }
         }
     }
-    #[cfg(target_os = "windows")]
-    {
-        let mut input = WindowsInput::new();
-        if let Err(e) = input.mouse_click(btn, st) {
-            tracing::warn!(error = %e, "mouse_click failed on Windows");
+
+    let dest = unique_path(&ctx.download_dir, &assembly.file_name);
+    if let Err(e) = std::fs::create_dir_all(&ctx.download_dir) {
+        tracing::warn!(error = %e, "could not create download directory");
+        return;
+    }
+    match std::fs::write(&dest, &out) {
+        Ok(()) => {
+            tracing::info!(
+                file_id,
+                bytes = out.len(),
+                path = %dest.display(),
+                "file transfer complete"
+            );
+            let ack = serde_json::json!({
+                "type": "file_complete",
+                "fileId": file_id,
+                "bytes": out.len(),
+            });
+            let _ = dc.send_text(ack.to_string()).await;
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "could not write received file");
         }
     }
 }
 
-fn dispatch_key_event(code: &str, state: &str) {
-    let st = match state {
-        "down" => InputState::Down,
-        "up" => InputState::Up,
-        _ => InputState::Down,
-    };
+/// Strip anything that could escape the download directory.
+///
+/// A viewer supplies this name, so it is untrusted input: `../../.bashrc` and
+/// absolute paths both have to stop here, not at the filesystem.
+fn sanitize_file_name(name: &str) -> String {
+    let base = name
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or("duxo-transfer")
+        .trim()
+        .trim_start_matches('.');
 
-    #[cfg(target_os = "linux")]
-    {
-        let mut input = X11Input::new();
-        if let Err(e) = input.key(code, st) {
-            tracing::warn!(error = %e, "key_event failed on X11");
-        }
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let mut input = WindowsInput::new();
-        if let Err(e) = input.key(code, st) {
-            tracing::warn!(error = %e, "key_event failed on Windows");
-        }
+    let cleaned: String = base
+        .chars()
+        .filter(|c| !matches!(c, '\0'..='\x1f' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+        .take(200)
+        .collect();
+
+    if cleaned.is_empty() {
+        "duxo-transfer".to_string()
+    } else {
+        cleaned
     }
 }
 
-fn dispatch_clipboard(text: &str) {
-    #[cfg(target_os = "linux")]
-    {
-        let mut input = X11Input::new();
-        if let Err(e) = input.set_clipboard(text) {
-            tracing::warn!(error = %e, "clipboard_text failed on X11");
+/// Never overwrite an existing file — a transfer is not permission to clobber.
+fn unique_path(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let candidate = dir.join(name);
+    if !candidate.exists() {
+        return candidate;
+    }
+
+    let path = std::path::Path::new(name);
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
+    let ext = path.extension().and_then(|s| s.to_str());
+
+    for n in 1..1000 {
+        let next = match ext {
+            Some(e) => dir.join(format!("{stem} ({n}).{e}")),
+            None => dir.join(format!("{stem} ({n})")),
+        };
+        if !next.exists() {
+            return next;
         }
     }
-    #[cfg(target_os = "windows")]
-    {
-        let mut input = WindowsInput::new();
-        if let Err(e) = input.set_clipboard(text) {
-            tracing::warn!(error = %e, "clipboard_text failed on Windows");
-        }
+
+    dir.join(format!("{stem}-{}", chrono::Utc::now().timestamp()))
+}
+
+fn default_download_dir() -> std::path::PathBuf {
+    dirs::download_dir()
+        .or_else(dirs::home_dir)
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("Duxo")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_strips_traversal() {
+        assert_eq!(sanitize_file_name("../../etc/passwd"), "passwd");
+        assert_eq!(sanitize_file_name("/absolute/path/report.pdf"), "report.pdf");
+        assert_eq!(sanitize_file_name("C:\\Windows\\System32\\evil.dll"), "evil.dll");
+    }
+
+    #[test]
+    fn sanitize_rejects_dotfiles_and_empties() {
+        // A leading dot would let a transfer land as .bashrc or .ssh-config.
+        assert_eq!(sanitize_file_name(".bashrc"), "bashrc");
+        assert_eq!(sanitize_file_name(""), "duxo-transfer");
+        assert_eq!(sanitize_file_name("   "), "duxo-transfer");
+        assert_eq!(sanitize_file_name("/"), "duxo-transfer");
+    }
+
+    #[test]
+    fn sanitize_drops_control_and_reserved_characters() {
+        assert_eq!(sanitize_file_name("re\u{0}port:v2?.txt"), "reportv2.txt");
+    }
+
+    #[test]
+    fn sanitize_bounds_length() {
+        let long = "a".repeat(5000);
+        assert!(sanitize_file_name(&long).len() <= 200);
+    }
+
+    #[test]
+    fn ice_config_without_credentials_yields_stun_only() {
+        let cfg = IceConfig {
+            stun_urls: vec!["stun:example:3478".into()],
+            turn_urls: vec!["turn:example:3478".into()],
+            turn_username: None,
+            turn_credential: None,
+        };
+        // A credential-less TURN entry would make ICE burn its whole timeout
+        // on allocations that are always refused.
+        assert_eq!(cfg.to_servers().len(), 1);
+    }
+
+    #[test]
+    fn ice_config_with_credentials_includes_turn() {
+        let cfg = IceConfig {
+            stun_urls: vec!["stun:example:3478".into()],
+            turn_urls: vec!["turn:example:3478".into()],
+            turn_username: Some("u".into()),
+            turn_credential: Some("p".into()),
+        };
+        assert_eq!(cfg.to_servers().len(), 2);
     }
 }

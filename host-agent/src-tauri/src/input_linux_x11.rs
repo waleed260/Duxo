@@ -13,7 +13,7 @@
 
 use crate::backend::{InputBackend, InputButton, InputState};
 use crate::types::{DuxoError, Result};
-use enigo::{Enigo, Mouse, Keyboard};
+use enigo::{Enigo, Keyboard, Mouse, Settings};
 
 pub struct X11Input {
     /// enigo handle — wraps XTest extension for input injection.
@@ -38,7 +38,9 @@ impl X11Input {
             return Ok(());
         }
 
-        let enigo = Enigo::new()
+        // enigo 0.2 requires a Settings argument; the default picks the
+        // XTest/xdo backend on X11, which is what §0.2 relies on for input.
+        let enigo = Enigo::new(&Settings::default())
             .map_err(|e| DuxoError::Firebase(format!("Failed to initialize enigo: {e}")))?;
 
         if let Ok(display) = scrap::Display::primary() {

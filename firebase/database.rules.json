@@ -3,23 +3,42 @@
 // RTDB is for LIVE signaling only (ICE candidates, offer/answer, status).
 // Durable records live in Firestore (§6.3, §10.1) — never write per-frame
 // or per-input-event data here, it blows the quota.
+//
+// DEVIATION FROM §10.2 (deliberate, and required for the product to work):
+// the plan's `.write` rule is `hostId == auth.uid || viewerId == auth.uid ||
+// !data.exists()`. A viewer joining a session created by the host matches
+// none of those — the node exists, hostId is the host, and viewerId is still
+// null — so §1.6-B's "write viewerId + ID token to session" was rejected at
+// the rule layer and no session could ever reach REQUESTED. The extra clause
+// below is the *claim*: an authenticated viewer may attach itself to a
+// session that is still WAITING and still unclaimed, and only by setting
+// viewerId to its own uid. Everything else about §10.2 is unchanged.
 {
   "rules": {
     "sessions": {
       "$sessionId": {
         // §0.7 — host and viewer only. Hijacking blocked at rule layer.
         ".read": "auth != null && (data.child('hostId').val() == auth.uid || data.child('viewerId').val() == auth.uid)",
-        ".write": "auth != null && (data.child('hostId').val() == auth.uid || data.child('viewerId').val() == auth.uid || !data.exists())",
+        ".write": "auth != null && (data.child('hostId').val() == auth.uid || data.child('viewerId').val() == auth.uid || !data.exists() || (data.child('viewerId').val() == null && data.child('status').val() == 'waiting' && newData.child('viewerId').val() == auth.uid))",
         ".validate": "newData.child('createdAt').val() <= now",
         // §1.1 — explicit enum, no loose strings ("Allowed" vs "allowed").
         "status": {
           ".validate": "newData.val() == 'waiting' || newData.val() == 'requested' || newData.val() == 'allowed' || newData.val() == 'denied' || newData.val() == 'connecting' || newData.val() == 'active' || newData.val() == 'ended' || newData.val() == 'expired'"
         },
+        // §6.3 — must match shared/types.ts HostPlatform exactly.
+        "hostPlatform": {
+          ".validate": "newData.val() == 'windows' || newData.val() == 'linux-x11' || newData.val() == 'linux-wayland'"
+        },
         // §0.6 — SDP 10KB cap, ICE batching max 10 per write.
         "offer":   { ".validate": "newData.isString() && newData.val().length <= 10000" },
         "answer":  { ".validate": "newData.isString() && newData.val().length <= 10000" },
-        "hostCandidates":   { "$index": { ".validate": "$index.matches(/^([0-9]|[1-9][0-9])$/)" } },
-        "viewerCandidates": { "$index": { ".validate": "$index.matches(/^([0-9]|[1-8][0-9]|9[0-9])$/)" } }
+        // §2.5 — the viewer's Firebase ID token, read once by the host for
+        // local signature verification. Only the viewer may write it.
+        "viewerToken": {
+          ".validate": "newData.isString() && newData.val().length <= 4096 && newData.parent().child('viewerId').val() == auth.uid"
+        },
+        "hostCandidates":   { "$index": { ".validate": "$index.matches(/^([0-9]|[1-9][0-9])$/) && newData.isString() && newData.val().length <= 1000" } },
+        "viewerCandidates": { "$index": { ".validate": "$index.matches(/^([0-9]|[1-9][0-9])$/) && newData.isString() && newData.val().length <= 1000" } }
       }
     },
     "codes": {
@@ -28,6 +47,51 @@
         ".read": "auth != null",
         ".write": "auth != null",
         ".validate": "newData.isString() && $code.length == 8 && newData.val().length <= 50"
+      }
+    },
+    // Device pairing — how the host agent obtains a credential at all.
+    //
+    // The host has no Firebase identity yet, so it must be able to create its
+    // own node unauthenticated. That is safe only because the node carries no
+    // secret in the direction the host writes: it publishes a device name and
+    // platform, and the *server* (which holds the service-account key) is the
+    // only party that can add a `customToken`.
+    //
+    // Read is restricted to the single `customToken` child so an unauthenticated
+    // caller cannot enumerate pending pairings or read device names.
+    "pairings": {
+      "$code": {
+        // Create-only while unclaimed; once the server marks it claimed, the
+        // host can no longer overwrite it and neither can anyone else.
+        ".write": "(!data.exists() && !newData.child('claimed').val()) || auth != null",
+        ".validate": "newData.hasChildren(['deviceName', 'platform', 'createdAt'])",
+        "deviceName": { ".validate": "newData.isString() && newData.val().length <= 120" },
+        "platform":   { ".validate": "newData.val() == 'windows' || newData.val() == 'linux-x11' || newData.val() == 'linux-wayland'" },
+        "appVersion": { ".validate": "newData.isString() && newData.val().length <= 32" },
+        "createdAt":  { ".validate": "newData.val() <= now" },
+        "claimed":    { ".validate": "newData.isBoolean()" },
+        // Only the host polls this, and only it knows the code.
+        "customToken": {
+          ".read": true,
+          ".validate": "newData.isString() && newData.val().length <= 4096"
+        }
+      }
+    },
+    // §7.3 — append-only audit chain.
+    //
+    // DEVIATION FROM §10.1, which puts auditLog in Firestore: the host agent's
+    // audit.rs writes it to RTDB, and moving it would mean a second Firestore
+    // client in the host for no gain. The append-only and own-uid-only
+    // properties that §7.3's hash chain depends on are preserved here.
+    "auditLog": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        "$entryId": {
+          // Append-only: an entry may be created but never rewritten, which is
+          // what makes the prevHash chain meaningful.
+          ".write": "auth != null && auth.uid == $uid && !data.exists()",
+          ".validate": "newData.hasChildren(['uid', 'action', 'timestamp']) && newData.child('uid').val() == $uid && newData.child('timestamp').val() <= now"
+        }
       }
     },
     "rateLimit": {

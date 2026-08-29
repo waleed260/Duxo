@@ -45,7 +45,7 @@ export function CodeInput({
     <div className="flex flex-col gap-2">
       <label
         htmlFor={reactId}
-        className="text-sm font-weight-emphasis text-text-primary"
+        className="text-sm font-emphasis text-text-primary"
       >
         {label}
       </label>

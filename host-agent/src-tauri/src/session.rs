@@ -85,6 +85,7 @@ pub fn transition(current: SessionStatus, next: SessionStatus) -> Result<Session
 pub fn new_session(session_id: String, host_uid: &str) -> SessionContext {
     SessionContext {
         session_id,
+        host_uid: host_uid.to_string(),
         status: SessionStatus::Waiting,
         host_platform: HostPlatform::detect(),
         viewer_id: None,

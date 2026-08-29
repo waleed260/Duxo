@@ -1,544 +1,435 @@
-//! Duxo system tray + code display + Allow/Deny popup.
+//! Duxo system tray, device pairing, and the Allow/Deny bridge — §2.4, §3.4.
 //!
-//! §3.4 — host agent: tray icon → code display window → Allow/Deny popup.
-//! §2.4 — the Allow/Deny dialog is the single most important screen in the product:
-//!   - Native OS window, NOT a web-controlled overlay
-//!   - Shows VERIFIED viewer email (from JWT claims, §2.5)
-//!   - NO default button focus on Allow (startled Enter = Deny)
-//!   - NO "always allow" checkbox in MVP
-//!   - Timeout → Denied, never Allowed
+//! This module used to claim to set up a tray and did not: `setup_tray` logged
+//! a line, registered some shared state, and returned. There was no icon, no
+//! menu, and therefore no way for a user to start a session at all. It also
+//! read a Firebase token out of the keychain that nothing in the codebase ever
+//! wrote, so even reaching `generate_code` would have failed on "Not logged in".
 //!
-//! §1.1 — session state machine enforced here:
-//!   CREATED → WAITING → REQUESTED → ALLOWED/DENIED → CONNECTING → ACTIVE → ENDED
+//! What lives here now is only the UI edge: a real tray icon, the Tauri
+//! commands the two HTML windows call, and the plumbing that connects the
+//! Allow/Deny click to the session driver. The state machine itself is in
+//! `signaling.rs`, deliberately free of Tauri types.
+//!
+//! §2.4 — the Allow/Deny dialog rules are enforced across three places, and
+//! all three matter: the HTML gives Allow no autofocus, this module forwards
+//! nothing but an explicit click, and `signaling.rs` treats a timeout or a
+//! closed channel as Deny.
 
 use std::sync::Arc;
-use tauri::{AppHandle, Manager, State, command, window::WindowBuilder, WindowUrl};
-use tokio::sync::RwLock;
-use crate::firebase;
-use crate::security;
-use crate::session;
-use crate::types::{SessionContext, SessionStatus, HostPlatform, DuxoError};
+
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::TrayIconBuilder;
+use tauri::{command, AppHandle, Manager, State};
+use tokio::sync::{mpsc, Mutex, RwLock};
+
+use crate::auth::HostAuth;
+use crate::signaling::{SessionDriver, SessionEvent};
+use crate::types::{HostPlatform, SessionStatus};
+use crate::webrtc_host::IceConfig;
 use crate::windows;
 
-/// Shared application state accessible from Tauri commands.
-pub struct AppState {
-    /// The current session context, if one exists.
-    pub session: RwLock<Option<SessionContext>>,
-    /// Firebase config pulled from env.
-    pub firebase_config: FirebaseEnv,
-    /// The viewer's verified email, populated after JWT verification (§2.5).
-    pub viewer_email: RwLock<Option<String>>,
-    /// The viewer's verified UID, populated after JWT verification.
-    pub viewer_uid: RwLock<Option<String>>,
-    /// Google's public signing certs, fetched once per session.
-    pub google_certs: RwLock<Option<security::JwkSet>>,
-    /// Current 8-digit display code (formatted as "XXXX XXXX").
-    pub current_code: RwLock<Option<String>>,
-}
-
-/// Firebase configuration from environment variables.
+/// Firebase configuration, read from the environment at startup.
 pub struct FirebaseEnv {
+    /// Web API key — needed for the public token endpoints (§8.3). This is not
+    /// a secret: it is the same key shipped in every Firebase web app.
+    pub api_key: String,
     pub database_url: String,
     pub project_id: String,
+    /// Where the user goes to approve a device pairing.
+    pub web_app_url: String,
 }
 
-/// Set up the system tray icon and menu.
+impl FirebaseEnv {
+    fn from_env() -> Self {
+        Self {
+            api_key: std::env::var("DUXO_FIREBASE_API_KEY").unwrap_or_default(),
+            database_url: std::env::var("DUXO_FIREBASE_DATABASE_URL").unwrap_or_default(),
+            project_id: std::env::var("DUXO_FIREBASE_PROJECT_ID").unwrap_or_default(),
+            web_app_url: std::env::var("DUXO_WEB_APP_URL")
+                .unwrap_or_else(|_| "https://duxo.dev".to_string()),
+        }
+    }
+
+    fn is_configured(&self) -> bool {
+        !self.api_key.is_empty()
+            && !self.database_url.is_empty()
+            && !self.project_id.is_empty()
+    }
+}
+
+/// Shared application state, reachable from every Tauri command.
+pub struct AppState {
+    pub firebase_config: FirebaseEnv,
+    /// The paired Firebase session, once this device has been linked.
+    pub auth: RwLock<Option<Arc<Mutex<HostAuth>>>>,
+    /// §2.4 — the channel the Allow/Deny window's click travels down. Present
+    /// only while a decision is actually pending, so a stray `handle_allow`
+    /// from a leftover window cannot authorise anything.
+    pub decision: Mutex<Option<mpsc::Sender<bool>>>,
+    /// §3.4 — the code being displayed, formatted "XXXX XXXX".
+    pub display_code: RwLock<Option<String>>,
+    /// §2.5 — the verified viewer email, from JWT claims only.
+    pub viewer_email: RwLock<Option<String>>,
+    pub status: RwLock<SessionStatus>,
+    /// The running session task, so "End session" can stop it.
+    pub session_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
+}
+
+impl AppState {
+    fn new() -> Self {
+        Self {
+            firebase_config: FirebaseEnv::from_env(),
+            auth: RwLock::new(None),
+            decision: Mutex::new(None),
+            display_code: RwLock::new(None),
+            viewer_email: RwLock::new(None),
+            status: RwLock::new(SessionStatus::Ended),
+            session_task: Mutex::new(None),
+        }
+    }
+}
+
+/// Build the tray icon and its menu, and restore any existing pairing.
 ///
-/// §0.5 — GNOME needs a tray extension (flagged in README).
+/// §0.5 — on GNOME this needs the AppIndicator extension; that is flagged in
+/// the README because without it the icon simply does not appear and the app
+/// looks like it failed to launch.
 pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    tracing::info!("system tray initialized");
-
-    // Register the shared state so Tauri commands can access it.
-    let firebase_config = FirebaseEnv {
-        database_url: std::env::var("DUXO_FIREBASE_DATABASE_URL")
-            .unwrap_or_else(|_| "https://your-project.firebaseio.com".into()),
-        project_id: std::env::var("DUXO_FIREBASE_PROJECT_ID")
-            .unwrap_or_else(|_| "your-project-id".into()),
-    };
-
-    let state = AppState {
-        session: RwLock::new(None),
-        firebase_config,
-        viewer_email: RwLock::new(None),
-        viewer_uid: RwLock::new(None),
-        google_certs: RwLock::new(None),
-        current_code: RwLock::new(None),
-    };
+    let state = AppState::new();
+    let configured = state.firebase_config.is_configured();
     app.manage(state);
 
-    // §1.6 — on launch, check for updates (non-blocking, logged locally).
-    tracing::info!("tray setup complete — ready to accept sessions");
+    let start = MenuItem::with_id(app, "start", "Start a session", true, None::<&str>)?;
+    let end = MenuItem::with_id(app, "end", "End session", true, None::<&str>)?;
+    let link = MenuItem::with_id(app, "link", "Link this device…", true, None::<&str>)?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Duxo", true, None::<&str>)?;
 
+    let menu = Menu::with_items(app, &[&start, &end, &link, &separator, &quit])?;
+
+    let mut builder = TrayIconBuilder::with_id("duxo-tray")
+        .menu(&menu)
+        .tooltip("Duxo — Remote Desktop Host")
+        .on_menu_event(move |app, event| {
+            let app = app.clone();
+            match event.id.as_ref() {
+                "start" => {
+                    tauri::async_runtime::spawn(async move { start_session(app).await });
+                }
+                "end" => {
+                    tauri::async_runtime::spawn(async move {
+                        let _ = end_session(app).await;
+                    });
+                }
+                "link" => {
+                    tauri::async_runtime::spawn(async move { link_device(app).await });
+                }
+                "quit" => app.exit(0),
+                _ => {}
+            }
+        });
+
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+
+    builder.build(app)?;
+
+    if !configured {
+        tracing::error!(
+            "Firebase is not configured — set DUXO_FIREBASE_API_KEY, \
+             DUXO_FIREBASE_DATABASE_URL and DUXO_FIREBASE_PROJECT_ID"
+        );
+        return Ok(());
+    }
+
+    // §2.6 — restore a previous pairing from the OS keychain, if there is one.
+    let app_for_restore = app.clone();
+    tauri::async_runtime::spawn(async move {
+        restore_pairing(app_for_restore).await;
+    });
+
+    tracing::info!("system tray initialised");
     Ok(())
 }
 
-/// §0.6 — generate an 8-digit code and create an RTDB session.
-///
-/// Called from the code display window when the host clicks "Generate code".
-/// This is the CREATED → WAITING transition (§1.1).
-#[command]
-pub async fn generate_code(app: AppHandle) -> Result<String, String> {
+/// §8.2 — bring back the device's existing pairing on launch.
+async fn restore_pairing(app: AppHandle) {
     let state: State<'_, AppState> = app.state();
-    let config = &state.firebase_config;
+    let cfg = &state.firebase_config;
 
-    // §2.6 — retrieve the Firebase ID token from the OS keychain.
-    let id_token = security::get_secret("firebase_id_token")
-        .map_err(|e| format!("Failed to read auth token: {e}"))?
-        .ok_or("Not logged in — please sign in first")?;
-
-    // §1.1 — detect platform for the session metadata.
-    let platform = HostPlatform::detect();
-    let host_uid = security::get_secret("firebase_uid")
-        .map_err(|e| format!("Failed to read user ID: {e}"))?
-        .ok_or("Not logged in")?;
-
-    // §1.1 — create the RTDB session skeleton + 8-digit code.
-    let (session_id, raw_code) = firebase::create_session(
-        &config.database_url,
-        &id_token,
-        &config.project_id,
-        &host_uid,
-        &platform.to_string(),
-    )
-    .await
-    .map_err(|e| format!("Failed to create session: {e}"))?;
-
-    // §1.1 — transition CREATED → WAITING (already done by create_session writing status=waiting).
-    let new_ctx = session::new_session(session_id.clone(), &host_uid);
-    {
-        let mut session_guard = state.session.write().await;
-        *session_guard = Some(new_ctx);
+    match HostAuth::restore(&cfg.api_key, &cfg.database_url, &cfg.project_id).await {
+        Ok(Some(auth)) => {
+            tracing::info!(uid = %auth.uid(), "device already linked");
+            *state.auth.write().await = Some(Arc::new(Mutex::new(auth)));
+        }
+        Ok(None) => {
+            tracing::info!("device is not linked yet — use \"Link this device\"");
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "could not restore pairing");
+        }
     }
-
-    // Format code as XXXX XXXX for readability when read aloud over phone (§3.4).
-    let formatted = if raw_code.len() == 8 {
-        format!("{} {}", &raw_code[..4], &raw_code[4..])
-    } else {
-        raw_code.clone()
-    };
-
-    {
-        let mut code_guard = state.current_code.write().await;
-        *code_guard = Some(formatted.clone());
-    }
-
-    tracing::info!(
-        session_id = %session_id,
-        code = %raw_code,
-        platform = %platform,
-        "session created — waiting for viewer"
-    );
-
-    // §3.4 — open the code display window so the host can see/share the code.
-    if let Err(e) = windows::open_code_window(&app, &formatted) {
-        tracing::warn!(error = %e, "failed to open code display window");
-    }
-
-    // §1.6-B — spawn a background task to listen for viewer requests via RTDB.
-    let app_clone = app.clone();
-    let db_url = config.database_url.clone();
-    let proj_id = config.project_id.clone();
-    let sess_id = session_id.clone();
-
-    tokio::spawn(async move {
-        listen_for_viewer_requests(app_clone, &db_url, &proj_id, &sess_id, &id_token).await;
-    });
-
-    Ok(formatted)
 }
 
-/// §1.6-B — background listener: watches RTDB session node for REQUESTED status.
-///
-/// When a viewer writes their viewerId + ID token, the host sees the status
-/// change to REQUESTED, verifies the JWT (§2.5), then shows the Allow/Deny popup.
-async fn listen_for_viewer_requests(
-    app: AppHandle,
-    database_url: &str,
-    project_id: &str,
-    session_id: &str,
-    host_id_token: &str,
-) {
-    // §2.5 — fetch Google's public certs once for JWT verification.
-    let certs = match security::fetch_google_certs(project_id).await {
-        Ok(c) => c,
+/// Pair this device with the user's account (see `auth.rs` for the flow).
+async fn link_device(app: AppHandle) {
+    let state: State<'_, AppState> = app.state();
+    let cfg = &state.firebase_config;
+
+    let device_name = hostname();
+    let platform = HostPlatform::detect().to_string();
+
+    let pending = match crate::auth::begin_pairing(
+        &cfg.database_url,
+        &cfg.web_app_url,
+        &device_name,
+        &platform,
+    )
+    .await
+    {
+        Ok(p) => p,
         Err(e) => {
-            tracing::error!(error = %e, "failed to fetch Google certs — cannot verify viewers");
+            tracing::error!(error = %e, "could not start device pairing");
             return;
         }
     };
 
-    let state: State<'_, AppState> = app.state();
-    {
-        let mut certs_guard = state.google_certs.write().await;
-        *certs_guard = Some(certs);
+    // Reuse the code window: the pairing code is shown the same way a session
+    // code is, and the user is reading it off the screen either way.
+    if let Err(e) = windows::open_code_window(&app, &pending.code) {
+        tracing::warn!(error = %e, "could not open pairing window");
     }
-
-    // Poll RTDB for status changes (§0.6 — REST API, no Rust SDK needed).
-    let client = reqwest::Client::new();
-    let poll_url = format!(
-        "{}/sessions/{}.json?auth={}",
-        database_url.trim_end_matches('/'), session_id, host_id_token,
-    );
-
-    loop {
-        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-
-        let resp = match client.get(&poll_url).send().await {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::warn!(error = %e, "RTDB poll failed — retrying");
-                continue;
-            }
-        };
-
-        let body: serde_json::Value = match resp.json().await {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-
-        let status_str = body.get("status")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-
-        match status_str {
-            "requested" => {
-                // §1.6-B — viewer has attached their UID + token.
-                let viewer_id = body.get("viewerId")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let viewer_token = body.get("viewerToken")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-
-                if viewer_id.is_empty() || viewer_token.is_empty() {
-                    tracing::warn!("REQUESTED but missing viewerId or viewerToken — skipping");
-                    continue;
-                }
-
-                // §2.5 — verify the viewer's Firebase ID token signature locally.
-                let certs_guard = state.google_certs.read().await;
-                let certs_ref = certs_guard.as_ref().unwrap();
-
-                let verified = security::verify_viewer_token(viewer_token, certs_ref, project_id);
-                drop(certs_guard);
-
-                let claims = match verified {
-                    Ok(c) => c,
-                    Err(e) => {
-                        tracing::warn!(
-                            error = %e,
-                            viewer_id = %viewer_id,
-                            "JWT verification failed — denying"
-                        );
-                        // §2.5 — if we can't verify the token, deny the session.
-                        let _ = firebase::set_permission(
-                            database_url, host_id_token, project_id, session_id, false,
-                        ).await;
-                        continue;
-                    }
-                };
-
-                // §2.5 — verify the UID in the token matches what the viewer wrote to RTDB.
-                if claims.sub != viewer_id {
-                    tracing::warn!(
-                        token_uid = %claims.sub,
-                        rtdb_uid = %viewer_id,
-                        "UID mismatch — potential spoofing, denying"
-                    );
-                    let _ = firebase::set_permission(
-                        database_url, host_id_token, project_id, session_id, false,
-                    ).await;
-                    continue;
-                }
-
-                // Store verified viewer info.
-                {
-                    let mut email_guard = state.viewer_email.write().await;
-                    *email_guard = Some(claims.email.clone());
-                    let mut uid_guard = state.viewer_uid.write().await;
-                    *uid_guard = Some(claims.sub.clone());
-                }
-
-                tracing::info!(
-                    viewer_email = %claims.email,
-                    viewer_uid = %claims.sub,
-                    "viewer identity verified — showing Allow/Deny popup"
-                );
-
-                // §2.4 — open the native Allow/Deny popup with verified email.
-                if let Err(e) = windows::open_allow_deny_window(&app, &claims.email) {
-                    tracing::warn!(error = %e, "failed to open allow/deny window — denying");
-                    let _ = firebase::set_permission(
-                        database_url, host_id_token, project_id, session_id, false,
-                    ).await;
-                    continue;
-                }
-
-                // §1.1 — REQUESTED → ALLOWED or DENIED is gated on user click.
-                show_allow_deny_popup(&app, &claims.email).await;
-
-                break; // Session is now either ALLOWED or DENIED.
-            }
-            "ended" | "expired" => {
-                tracing::info!(status = %status_str, "session ended externally");
-                break;
-            }
-            _ => {
-                // Still waiting — continue polling.
-            }
-        }
-    }
-}
-
-/// §2.4 — show the native Allow/Deny popup.
-///
-/// Requirements:
-///   1. Native OS window, NOT a web-controlled overlay.
-///   2. Shows VERIFIED viewer email (from JWT claims, §2.5).
-///   3. NO default focus on Allow — Tab required before Enter.
-///   4. NO "always allow" checkbox in MVP.
-///   5. Timeout → Denied, never Allowed.
-async fn show_allow_deny_popup(app: &AppHandle, viewer_email: &str) {
-    // §2.4 — In a full Tauri implementation, this would open a native window.
-    // For now, we log the request and use the command handlers.
-    //
-    // The popup window would be:
-    //   - A small, focused native window (not a webview)
-    //   - Title: "Duxo — Connection Request"
-    //   - Shows the verified viewer email
-    //   - "This person is requesting full control of your screen, mouse, and keyboard."
-    //   - Two buttons: Deny (default focus) and Allow (no default focus)
-    //   - Timeout after 60s → auto-Deny
-    //
-    // §3.4 — Design spec for the Allow/Deny dialog:
-    //   ┌──────────────────────────────────────┐
-    //   │ Duxo                    – □ ✕        │
-    //   │ ⚠ sam.rivera@gmail.com              │
-    //   │     [ Requesting access ]            │
-    //   │ This person is requesting full       │
-    //   │ control of your screen, mouse        │
-    //   │ and keyboard.                        │
-    //   │ [    Deny   ]   [ Allow(●) ]        │
-    //   └──────────────────────────────────────┘
+    *state.display_code.write().await = Some(pending.code.clone());
 
     tracing::info!(
-        viewer_email = %viewer_email,
-        "Allow/Deny popup shown — waiting for host decision"
+        code = %pending.code,
+        url = %pending.verification_url,
+        "enter this code at the verification URL to link the device"
     );
 
-    // §2.4 — timeout after 60 seconds → auto-Deny (never Allow).
-    let state: State<'_, AppState> = app.state();
-    let config = &state.firebase_config;
-
-    let id_token = match security::get_secret("firebase_id_token") {
-        Ok(Some(t)) => t,
-        _ => return,
-    };
-
-    let session_guard = state.session.read().await;
-    let session_id = match session_guard.as_ref() {
-        Some(s) => s.session_id.clone(),
-        None => return,
-    };
-    drop(session_guard);
-
-    // §2.4 — 60-second timeout → deny.
-    let timeout_result = tokio::time::timeout(
-        std::time::Duration::from_secs(60),
-        wait_for_host_decision(app.clone()),
-    ).await;
-
-    let allowed = match timeout_result {
-        Ok(decision) => decision,
-        Err(_) => {
-            tracing::info!("Allow/Deny timeout — defaulting to DENY (§2.4)");
-            false
+    match crate::auth::complete_pairing(
+        &cfg.api_key,
+        &cfg.database_url,
+        &cfg.project_id,
+        &pending.code,
+    )
+    .await
+    {
+        Ok(auth) => {
+            tracing::info!(uid = %auth.uid(), "device linked");
+            *state.auth.write().await = Some(Arc::new(Mutex::new(auth)));
+            *state.display_code.write().await = None;
+            windows::close_window(&app, "code-display");
         }
-    };
-
-    // §1.1 — write ALLOWED or DENIED to RTDB.
-    let _ = firebase::set_permission(
-        &config.database_url,
-        &id_token,
-        &config.project_id,
-        &session_id,
-        allowed,
-    ).await;
-
-    // §1.1 — if allowed, transition to CONNECTING.
-    if allowed {
-        let mut session_guard = state.session.write().await;
-        if let Some(ref mut ctx) = *session_guard {
-            if let Ok(new_status) = session::transition(ctx.status, SessionStatus::Connecting) {
-                ctx.status = new_status;
-                tracing::info!("session transitioned to CONNECTING");
-            }
-        }
-    } else {
-        let mut session_guard = state.session.write().await;
-        if let Some(ref mut ctx) = *session_guard {
-            if let Ok(new_status) = session::transition(ctx.status, SessionStatus::Denied) {
-                ctx.status = new_status;
-                // §7.2 — clear sensitive viewer data on denial.
-                ctx.zeroize();
-                tracing::info!("session transitioned to DENIED");
-            }
+        Err(e) => {
+            tracing::error!(error = %e, "device pairing failed");
+            *state.display_code.write().await = None;
         }
     }
 }
 
-/// Wait for the host to click Allow or Deny via the Tauri command handler.
-/// Returns `true` for Allow, `false` for Deny.
-async fn wait_for_host_decision(app: AppHandle) -> bool {
-    // In production, this would be a oneshot channel signaled by the
-    // handle_allow / handle_deny commands. For now, we use a simple poll.
-    loop {
-        let state: State<'_, AppState> = app.state();
-        let session_guard = state.session.read().await;
-        if let Some(ref ctx) = *session_guard {
-            match ctx.status {
-                SessionStatus::Allowed => return true,
-                SessionStatus::Denied => return false,
-                SessionStatus::Requested => {
-                    // Still waiting — keep polling.
+/// §1.1 CREATED → WAITING, then hand the session to the driver.
+async fn start_session(app: AppHandle) {
+    let state: State<'_, AppState> = app.state();
+
+    let auth = match state.auth.read().await.clone() {
+        Some(a) => a,
+        None => {
+            tracing::error!("cannot start a session — this device is not linked");
+            return;
+        }
+    };
+
+    // One session at a time (§8.6: one session = one host + one viewer).
+    if let Some(existing) = state.session_task.lock().await.take() {
+        existing.abort();
+    }
+
+    let driver = SessionDriver::new(auth, IceConfig::default());
+
+    let (session_id, code) = match driver.create().await {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!(error = %e, "could not create session");
+            return;
+        }
+    };
+
+    // §3.4 — grouped "XXXX XXXX" so it survives being read aloud on a phone.
+    let formatted = format_code(&code);
+    *state.display_code.write().await = Some(formatted.clone());
+
+    if let Err(e) = windows::open_code_window(&app, &formatted) {
+        tracing::warn!(error = %e, "could not open code display window");
+    }
+
+    // §2.4 — the decision channel exists only while a decision is pending.
+    let (decision_tx, decision_rx) = mpsc::channel::<bool>(1);
+    *state.decision.lock().await = Some(decision_tx);
+
+    let (events_tx, mut events_rx) = mpsc::unbounded_channel::<SessionEvent>();
+
+    // Reflect driver events into the state the HTML windows poll.
+    let app_for_events = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let state: State<'_, AppState> = app_for_events.state();
+        while let Some(event) = events_rx.recv().await {
+            match event {
+                SessionEvent::Status(status) => {
+                    *state.status.write().await = status;
                 }
-                _ => return false,
+                SessionEvent::ViewerVerified { email, .. } => {
+                    *state.viewer_email.write().await = Some(email.clone());
+                    // §2.4 — a native window, showing the verified email, with
+                    // no default focus on Allow.
+                    if let Err(e) = windows::open_allow_deny_window(&app_for_events, &email) {
+                        tracing::error!(error = %e, "could not open Allow/Deny window — denying");
+                        // Failing closed is the only safe direction here.
+                        if let Some(tx) = state.decision.lock().await.as_ref() {
+                            let _ = tx.send(false).await;
+                        }
+                    }
+                }
+                SessionEvent::Failed(reason) => {
+                    tracing::error!(reason, "session failed");
+                }
+                SessionEvent::Ended => {
+                    windows::close_window(&app_for_events, "allow-deny");
+                    windows::close_window(&app_for_events, "code-display");
+                    *state.display_code.write().await = None;
+                    *state.viewer_email.write().await = None;
+                    *state.decision.lock().await = None;
+                }
+                SessionEvent::Created { .. } => {}
             }
-        } else {
-            return false;
         }
-        drop(session_guard);
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    }
+    });
+
+    let task = tauri::async_runtime::spawn(async move {
+        driver.run(session_id, code, events_tx, decision_rx).await;
+    });
+
+    *state.session_task.lock().await = Some(task);
 }
 
-/// Get the current session status for the code display window polling.
-#[command]
-pub async fn get_session_status(app: AppHandle) -> Result<String, String> {
-    let state: State<'_, AppState> = app.state();
-    let session_guard = state.session.read().await;
-    match session_guard.as_ref() {
-        Some(ctx) => Ok(ctx.status.to_string()),
-        None => Ok("none".to_string()),
-    }
-}
+// ─── Tauri commands, called from the two HTML windows ───
 
-/// Get the current display code for the code display window.
+/// §3.4 — the code display window polls this.
 #[command]
 pub async fn get_display_code(app: AppHandle) -> Result<String, String> {
     let state: State<'_, AppState> = app.state();
-    let code_guard = state.current_code.read().await;
-    match code_guard.as_ref() {
-        Some(code) => Ok(code.clone()),
-        None => Ok("".to_string()),
-    }
+    Ok(state.display_code.read().await.clone().unwrap_or_default())
 }
 
-/// Get the verified viewer email for display in the Allow/Deny popup.
+/// §3.4 — drives the "Waiting for connection…" / "Connected" label.
+#[command]
+pub async fn get_session_status(app: AppHandle) -> Result<String, String> {
+    let state: State<'_, AppState> = app.state();
+    Ok(state.status.read().await.to_string())
+}
+
+/// §2.4/§2.5 — the email shown in the Allow/Deny dialog. From verified JWT
+/// claims, never from anything the viewer wrote to RTDB.
 #[command]
 pub async fn get_viewer_email(app: AppHandle) -> Result<String, String> {
     let state: State<'_, AppState> = app.state();
-    let email_guard = state.viewer_email.read().await;
-    match email_guard.as_ref() {
-        Some(email) => Ok(email.clone()),
-        None => Ok("".to_string()),
-    }
+    Ok(state.viewer_email.read().await.clone().unwrap_or_default())
 }
 
-/// §2.4 — host clicks ALLOW. This is the single most important action in the app.
-///
-/// §2.4 requirements:
-///   1. Popup rendered in host agent's native window, not web view.
-///   2. Shows VERIFIED viewer email (from JWT claims, §2.5).
-///   3. NO default focus on Allow — Tab required before Enter.
-///   4. NO "always allow" checkbox in MVP.
+/// §2.4 — the host clicked Allow. The single most important action in the app.
 #[command]
 pub async fn handle_allow(app: AppHandle) -> Result<(), String> {
-    tracing::info!("handle_allow — host granted permission");
-
-    let state: State<'_, AppState> = app.state();
-    let mut session_guard = state.session.write().await;
-
-    if let Some(ref mut ctx) = *session_guard {
-        // §1.1 — transition REQUESTED → ALLOWED.
-        match session::transition(ctx.status, SessionStatus::Allowed) {
-            Ok(new_status) => {
-                ctx.status = new_status;
-                tracing::info!("session transitioned to ALLOWED");
-            }
-            Err(e) => {
-                tracing::error!(error = %e, "illegal state transition in handle_allow");
-                return Err(format!("Cannot allow: {e}"));
-            }
-        }
-    } else {
-        return Err("No active session to allow".to_string());
-    }
-
-    Ok(())
+    send_decision(&app, true).await
 }
 
-/// §2.4 — host clicks DENY.
+/// §2.4 — the host clicked Deny.
 #[command]
 pub async fn handle_deny(app: AppHandle) -> Result<(), String> {
-    tracing::info!("handle_deny — host denied permission");
-
-    let state: State<'_, AppState> = app.state();
-    let mut session_guard = state.session.write().await;
-
-    if let Some(ref mut ctx) = *session_guard {
-        // §1.1 — transition REQUESTED → DENIED.
-        match session::transition(ctx.status, SessionStatus::Denied) {
-            Ok(new_status) => {
-                ctx.status = new_status;
-                tracing::info!("session transitioned to DENIED");
-            }
-            Err(e) => {
-                tracing::error!(error = %e, "illegal state transition in handle_deny");
-                return Err(format!("Cannot deny: {e}"));
-            }
-        }
-    } else {
-        return Err("No active session to deny".to_string());
-    }
-
-    Ok(())
+    send_decision(&app, false).await
 }
 
-/// End the current session (either peer can do this, §1.1).
+async fn send_decision(app: &AppHandle, allowed: bool) -> Result<(), String> {
+    let state: State<'_, AppState> = app.state();
+
+    // Take the sender rather than borrowing it: a decision is single-use, so a
+    // second click — or a replayed one from a window that was never closed —
+    // finds nothing to send on.
+    let tx = state.decision.lock().await.take();
+
+    match tx {
+        Some(tx) => {
+            tracing::info!(allowed, "host decision recorded");
+            tx.send(allowed)
+                .await
+                .map_err(|_| "The session is no longer waiting for a decision.".to_string())?;
+            windows::close_window(app, "allow-deny");
+            Ok(())
+        }
+        None => Err("No connection request is waiting for a decision.".to_string()),
+    }
+}
+
+/// §1.1 — end the current session. Either peer can do this.
 #[command]
 pub async fn end_session(app: AppHandle) -> Result<(), String> {
     let state: State<'_, AppState> = app.state();
-    let config = &state.firebase_config;
 
-    let id_token = security::get_secret("firebase_id_token")
-        .map_err(|e| format!("Failed to read auth token: {e}"))?
-        .ok_or("Not logged in")?;
-
-    let session_guard = state.session.read().await;
-    let session_id = match session_guard.as_ref() {
-        Some(s) => s.session_id.clone(),
-        None => return Ok(()),
-    };
-    drop(session_guard);
-
-    // §1.1 — write ENDED to RTDB.
-    let _ = firebase::end_session(
-        &config.database_url, &id_token, &config.project_id, &session_id,
-    ).await;
-
-    // §1.1 — transition to ENDED locally.
-    let mut session_guard = state.session.write().await;
-    if let Some(ref mut ctx) = *session_guard {
-        let _ = session::transition(ctx.status, SessionStatus::Ended);
-        ctx.status = SessionStatus::Ended;
-        // §7.2 — clear sensitive data from memory.
-        ctx.zeroize();
+    if let Some(task) = state.session_task.lock().await.take() {
+        task.abort();
     }
+    *state.decision.lock().await = None;
+    *state.display_code.write().await = None;
+    *state.viewer_email.write().await = None;
+    *state.status.write().await = SessionStatus::Ended;
 
-    // §6.2 — clear crash marker on clean shutdown.
+    windows::close_window(&app, "allow-deny");
+    windows::close_window(&app, "code-display");
+
     crate::crash_recovery::clear_marker();
-
     tracing::info!("session ended by host");
     Ok(())
+}
+
+/// Start a session from the UI as well as the tray menu.
+#[command]
+pub async fn generate_code(app: AppHandle) -> Result<String, String> {
+    start_session(app.clone()).await;
+    let state: State<'_, AppState> = app.state();
+    Ok(state.display_code.read().await.clone().unwrap_or_default())
+}
+
+/// §3.4 — group an 8-digit code as "XXXX XXXX".
+fn format_code(code: &str) -> String {
+    if code.len() == 8 {
+        format!("{} {}", &code[..4], &code[4..])
+    } else {
+        code.to_string()
+    }
+}
+
+/// A human-recognisable name for this machine, shown when approving a pairing.
+fn hostname() -> String {
+    std::env::var("HOSTNAME")
+        .or_else(|_| std::env::var("COMPUTERNAME"))
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "Unknown device".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_code_groups_eight_digits() {
+        assert_eq!(format_code("12345678"), "1234 5678");
+    }
+
+    #[test]
+    fn format_code_leaves_other_lengths_alone() {
+        // Pairing codes are six characters and must not be split.
+        assert_eq!(format_code("AB3D9F"), "AB3D9F");
+    }
 }

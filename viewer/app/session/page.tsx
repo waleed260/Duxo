@@ -17,10 +17,14 @@ import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/Button";
 import { syncFirebaseAuth, getFirebaseAuth } from "@/lib/auth-bridge";
 import { getFirebaseClient } from "@/lib/firebase-client";
-import { ref, onValue, set, push, serverTimestamp } from "firebase/database";
+import { ref, onValue, set, update, get, serverTimestamp } from "firebase/database";
 import { DuxoConnection, defaultIceServers } from "@/lib/webrtc";
+import { useRemoteInput } from "@/lib/remote-input";
 import type { Session } from "@shared/types";
 import { toast } from "sonner";
+
+// §1.4 — 10MB cap, enforced BEFORE the transfer starts, not after chunk 500.
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
 const Suspended = React.memo(function Suspended() {
   return (
@@ -61,6 +65,15 @@ function SessionPage() {
 
   const isViewOnly = hostPlatform === "linux-wayland";
 
+  // §1.2 — capture local mouse/keyboard on the overlay and send them down the
+  // data channel. Gated on ACTIVE so no input can be produced before the host
+  // has allowed the session, and off entirely for view-only hosts (§0.2).
+  const { hasFocus } = useRemoteInput({
+    videoRef,
+    connRef,
+    enabled: phase === "active" && !isViewOnly,
+  });
+
   React.useEffect(() => {
     if (!sessionId) {
       setErrorMsg("No session ID provided.");
@@ -80,36 +93,87 @@ function SessionPage() {
       try {
         await syncFirebaseAuth();
       } catch {
-        // continue anyway
+        setErrorMsg("Couldn't sign in to the signaling service. Try again.");
+        setPhase("failed");
+        return;
       }
 
       if (cancelled) return;
 
       const client = getFirebaseClient();
-      if (!client) return;
+      if (!client) {
+        setErrorMsg("Firebase is not configured for this deployment.");
+        setPhase("failed");
+        return;
+      }
       const { db } = client;
       const auth = getFirebaseAuth();
       const fbUser = auth.currentUser;
-      if (!fbUser) return;
+      if (!fbUser) {
+        router.push("/login");
+        return;
+      }
 
       const sessionRef = ref(db, `sessions/${sessionId}`);
       const idToken = await fbUser.getIdToken();
 
+      // §1.6-B — "write viewerId + ID token to session". This is an update,
+      // never a set: the host owns hostId/hostPlatform/createdAt and a set()
+      // would wipe them, taking the RTDB `.validate` on createdAt down with
+      // it and leaving the host unable to recognise its own session.
       try {
-        await set(sessionRef, {
-          hostPlatform: "windows",
-          status: "requested",
+        await update(sessionRef, {
           viewerId: fbUser.uid,
           viewerToken: idToken,
+          status: "requested",
           updatedAt: serverTimestamp(),
         });
       } catch {
-        // best-effort
+        // §10.2 — the claim clause only admits a session that still exists,
+        // is still WAITING, and is still unclaimed. Anything else is a code
+        // that has already been used, expired, or been revoked.
+        setErrorMsg(
+          "That session is no longer available — the code may have expired or already been used. Ask for a new one.",
+        );
+        setPhase("failed");
+        return;
+      }
+
+      if (cancelled) return;
+
+      // §0.6 — ICE candidates are batched into indexed children. Keep our own
+      // write cursor; the RTDB rule only admits indices 0–99.
+      let viewerCandidateIndex = 0;
+      const appliedHostCandidates = new Set<string>();
+
+      async function publishViewerCandidate(candidate: RTCIceCandidateInit) {
+        if (viewerCandidateIndex > 99) return;
+        const index = viewerCandidateIndex++;
+        try {
+          await set(
+            ref(db, `sessions/${sessionId}/viewerCandidates/${index}`),
+            JSON.stringify(candidate),
+          );
+        } catch {
+          // A dropped candidate degrades connectivity but never breaks the
+          // session — the remaining candidates still have to be tried.
+        }
+      }
+
+      async function publishOffer(offer: RTCSessionDescriptionInit) {
+        await set(ref(db, `sessions/${sessionId}/offer`), JSON.stringify(offer));
       }
 
       const conn = new DuxoConnection(defaultIceServers(), {
         onStateChange: (s) => {
-          if (s === "connected") setPhase("active");
+          if (s === "connected") {
+            setPhase("active");
+            // §1.1 — ACTIVE is the host's call to make from its own read, but
+            // the viewer records that its side is up so history is accurate.
+            void update(sessionRef, { updatedAt: serverTimestamp() }).catch(
+              () => {},
+            );
+          }
           if (s === "failed") {
             setErrorMsg(
               "Connection lost — the network may be too restrictive. Try again.",
@@ -124,6 +188,14 @@ function SessionPage() {
           }
         },
         onQualityUpdate: (rtt) => setQuality(rtt),
+        onIceCandidate: (c) => {
+          void publishViewerCandidate(c);
+        },
+        // §1.3 #4 — an ICE restart is only real once the new offer reaches the
+        // host through RTDB, under the same session id and the same code.
+        onIceRestartOffer: (offer) => {
+          void publishOffer(offer).catch(() => {});
+        },
       });
       connRef.current = conn;
 
@@ -147,7 +219,7 @@ function SessionPage() {
         if (data.status === "allowed" && !conn.hasPeer()) {
           try {
             const offer = await conn.createOffer();
-            await set(ref(db, `sessions/${sessionId}/offer`), JSON.stringify(offer));
+            await publishOffer(offer);
           } catch {
             setErrorMsg("Couldn't start the connection. Try again.");
             setPhase("failed");
@@ -162,16 +234,25 @@ function SessionPage() {
           }
         }
 
-        if (data.hostCandidates && Object.keys(data.hostCandidates).length) {
-          const candidates = Object.values(data.hostCandidates).map(
-            (s) => JSON.parse(s) as RTCIceCandidateInit,
-          );
-          conn.addIceCandidates(candidates);
+        if (data.hostCandidates) {
+          // Re-adding a candidate on every snapshot is harmless but wasteful,
+          // and it grows quadratically over a long session.
+          const fresh: RTCIceCandidateInit[] = [];
+          for (const [index, raw] of Object.entries(data.hostCandidates)) {
+            if (appliedHostCandidates.has(index)) continue;
+            appliedHostCandidates.add(index);
+            try {
+              fresh.push(JSON.parse(raw) as RTCIceCandidateInit);
+            } catch {
+              // forward-compat (§6.1)
+            }
+          }
+          if (fresh.length) conn.addIceCandidates(fresh);
         }
       });
     }
 
-    init();
+    void init();
 
     return () => {
       cancelled = true;
@@ -203,6 +284,16 @@ function SessionPage() {
   function onFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !connRef.current) return;
+
+    // §1.4 — "enforce this in the UI before the transfer starts, not after
+    // chunk 500 fails."
+    if (file.size > MAX_FILE_BYTES) {
+      toast.error(
+        `${file.name} is ${(file.size / 1024 / 1024).toFixed(1)} MB — the limit is 10 MB.`,
+      );
+      e.target.value = "";
+      return;
+    }
 
     const fileId = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
     const CHUNK_SIZE = 16 * 1024;
@@ -288,7 +379,7 @@ function SessionPage() {
 
         {phase !== "active" && phase !== "connecting" && (
           <div className="rounded-md border border-border-default bg-surface-raised p-7 text-center">
-            <h2 className="text-xl font-weight-emphasis">
+            <h2 className="text-xl font-emphasis">
               {phase === "denied" && "Connection denied"}
               {phase === "ended" && "Session ended"}
               {phase === "failed" && "Connection failed"}
@@ -317,12 +408,28 @@ function SessionPage() {
               playsInline
               muted
               aria-label="Remote desktop screen"
-              className="h-full w-full"
+              // §1.4 — object-contain keeps the remote aspect ratio intact so
+              // the normalized coordinate mapping in remote-input.ts stays
+              // true; object-fill would stretch the image and skew the cursor.
+              // tabIndex makes the surface focusable so it can receive keys.
+              tabIndex={phase === "active" && !isViewOnly ? 0 : -1}
+              className="h-full w-full object-contain outline-none"
             />
             {phase === "connecting" && (
               <div className="absolute inset-0 flex items-center justify-center gap-3 bg-surface-base/80 text-sm text-text-secondary">
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                 Connecting…
+              </div>
+            )}
+
+            {phase === "active" && !isViewOnly && !hasFocus && (
+              <div
+                role="status"
+                className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-4"
+              >
+                <span className="rounded-pill bg-surface-overlay/90 px-4 py-2 text-sm text-text-secondary">
+                  Click the screen to send keyboard and mouse input
+                </span>
               </div>
             )}
 

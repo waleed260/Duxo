@@ -41,7 +41,10 @@ pub struct JwkSet {
 pub struct Jwk {
     pub kty: String,
     pub alg: String,
-    pub use: String,
+    // `use` is a Rust keyword, so the field needs the raw identifier and an
+    // explicit serde rename to keep matching Google's JWK field name.
+    #[serde(rename = "use")]
+    pub key_use: String,
     pub kid: String,
     pub n: String,
     pub e: String,
@@ -83,7 +86,10 @@ pub fn verify_viewer_token(
         .find(|k| k.kid == kid)
         .ok_or(DuxoError::UnknownSigningKey)?;
 
-    let decoding_key = DecodingKey::from_jwk(jwk)
+    // `DecodingKey::from_jwk` wants jsonwebtoken's own `jwk::Jwk` type, not
+    // ours. Building from the RSA components directly avoids mirroring that
+    // whole type just to hand back the two fields that matter.
+    let decoding_key = DecodingKey::from_rsa_components(&jwk.n, &jwk.e)
         .map_err(|_| DuxoError::TokenInvalidSignature)?;
 
     let mut validation = Validation::new(Algorithm::RS256);

@@ -30,12 +30,12 @@ function detectOS(): DetectedOS {
 const DOWNLOADS = {
   windows: {
     label: "Windows (.exe)",
-    href: "https://github.com/duxo-org/duxo/releases/latest",
+    href: "https://github.com/waleed260/Duxo/releases/latest",
     note: "Portable .exe — no installer, no admin needed for basic use.",
   },
   linux: {
     label: "Linux (.AppImage)",
-    href: "https://github.com/duxo-org/duxo/releases/latest",
+    href: "https://github.com/waleed260/Duxo/releases/latest",
     note: "chmod +x and run. No package manager, no root needed for X11.",
   },
   mac: {
@@ -45,7 +45,7 @@ const DOWNLOADS = {
   },
   unknown: {
     label: "Choose your platform",
-    href: "https://github.com/duxo-org/duxo/releases/latest",
+    href: "https://github.com/waleed260/Duxo/releases/latest",
     note: "We couldn't detect your OS — pick a build below.",
   },
 };
@@ -61,7 +61,7 @@ export default function DownloadPage() {
     <>
       <Navbar />
       <main className="mx-auto max-w-4xl px-6 py-8">
-        <h1 className="text-2xl font-weight-emphasis">Download Duxo</h1>
+        <h1 className="text-2xl font-emphasis">Download Duxo</h1>
         <p className="mt-2 text-md text-text-secondary">
           Open-source, free forever. The host agent generates an 8-digit code
           you share with the person connecting to you.
@@ -71,7 +71,7 @@ export default function DownloadPage() {
         <div className="mt-6 rounded-md border border-border-default bg-surface-raised p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-lg font-weight-emphasis">{primary.label}</h2>
+              <h2 className="text-lg font-emphasis">{primary.label}</h2>
               <p className="mt-1 text-sm text-text-secondary">
                 {primary.note}
               </p>
@@ -92,7 +92,7 @@ export default function DownloadPage() {
           <div className="mt-4 rounded-md border border-border-default bg-surface-raised p-5">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <h3 className="text-md font-weight-emphasis">{secondary.label}</h3>
+                <h3 className="text-md font-emphasis">{secondary.label}</h3>
                 <p className="mt-1 text-sm text-text-secondary">
                   {secondary.note}
                 </p>
@@ -106,7 +106,7 @@ export default function DownloadPage() {
 
         {/* SmartScreen / trust copy — §0.9, exact wording from the plan */}
         <section className="mt-7 rounded-md border border-border-strong bg-surface-overlay p-6">
-          <h2 className="flex items-center gap-3 text-lg font-weight-emphasis">
+          <h2 className="flex items-center gap-3 text-lg font-emphasis">
             <ShieldAlert className="h-5 w-5 text-accent" aria-hidden="true" />
             Why Windows shows a warning
           </h2>
