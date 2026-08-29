@@ -29,6 +29,7 @@ use crate::backend::InputBackend;
 use crate::capture;
 use crate::firebase;
 use crate::security;
+use crate::session;
 use crate::types::{DuxoError, HostPlatform, Result, SessionStatus};
 use crate::webrtc_host::{HostPeer, HostSignal, IceConfig};
 
@@ -149,8 +150,13 @@ impl SessionDriver {
         events: &mpsc::UnboundedSender<SessionEvent>,
         decision: &mut DecisionRx,
     ) -> Result<()> {
+        // §1.1 — the host's own view of where this session is. Every write
+        // goes through `set_status`, which refuses an illegal move.
+        let mut status = SessionStatus::Waiting;
+
         // ── WAITING → REQUESTED ──────────────────────────────────────────
         let (viewer_uid, viewer_email) = self.await_viewer(session_id, events).await?;
+        status = session::transition(status, SessionStatus::Requested)?;
         let _ = events.send(SessionEvent::ViewerVerified {
             email: viewer_email.clone(),
             uid: viewer_uid.clone(),
@@ -176,6 +182,7 @@ impl SessionDriver {
 
         self.set_status(
             session_id,
+            &mut status,
             if allowed {
                 SessionStatus::Allowed
             } else {
@@ -197,7 +204,9 @@ impl SessionDriver {
 
         // ── ALLOWED → CONNECTING ─────────────────────────────────────────
         let started_at = chrono::Utc::now().timestamp_millis();
-        let result = self.connect_and_serve(session_id, events).await;
+        let result = self
+            .connect_and_serve(session_id, &mut status, events)
+            .await;
 
         // §6.3 — the durable record. Written whether the session ended cleanly
         // or not, because a session that failed still happened and the user
@@ -272,7 +281,8 @@ impl SessionDriver {
                 Ok(c) => c,
                 Err(e) => {
                     tracing::warn!(error = %e, "viewer token failed verification — denying");
-                    self.set_status(session_id, SessionStatus::Denied).await?;
+                    self.write_field(session_id, "status", serde_json::json!("denied"))
+                        .await?;
                     return Err(DuxoError::TokenInvalidSignature);
                 }
             };
@@ -283,7 +293,8 @@ impl SessionDriver {
                     rtdb_uid = %viewer_id,
                     "uid mismatch — possible spoofing, denying"
                 );
-                self.set_status(session_id, SessionStatus::Denied).await?;
+                self.write_field(session_id, "status", serde_json::json!("denied"))
+                    .await?;
                 return Err(DuxoError::ViewerMismatch);
             }
 
@@ -296,13 +307,14 @@ impl SessionDriver {
     async fn connect_and_serve(
         &self,
         session_id: &str,
+        status: &mut SessionStatus,
         events: &mpsc::UnboundedSender<SessionEvent>,
     ) -> Result<()> {
         let input: Box<dyn InputBackend> = crate::backend::platform_input()?;
         let (sig_tx, mut sig_rx) = mpsc::unbounded_channel::<HostSignal>();
 
         let peer = Arc::new(HostPeer::new(&self.ice, input, sig_tx).await?);
-        self.set_status(session_id, SessionStatus::Connecting)
+        self.set_status(session_id, status, SessionStatus::Connecting)
             .await?;
         let _ = events.send(SessionEvent::Status(SessionStatus::Connecting));
 
@@ -363,7 +375,7 @@ impl SessionDriver {
             })
         };
 
-        let result = self.serve(session_id, &peer, events).await;
+        let result = self.serve(session_id, status, &peer, events).await;
 
         candidate_task.abort();
         peer.close().await;
@@ -375,6 +387,7 @@ impl SessionDriver {
     async fn serve(
         &self,
         session_id: &str,
+        status: &mut SessionStatus,
         peer: &Arc<HostPeer>,
         events: &mpsc::UnboundedSender<SessionEvent>,
     ) -> Result<()> {
@@ -464,8 +477,21 @@ impl SessionDriver {
                 disconnected_since = None;
                 last_activity = Instant::now();
 
-                self.set_status(session_id, SessionStatus::Active).await?;
+                self.set_status(session_id, status, SessionStatus::Active)
+                    .await?;
                 let _ = events.send(SessionEvent::Status(SessionStatus::Active));
+
+                // §6.2 — a marker on disk is the only way the next launch can
+                // tell a crash from a clean exit. Written once the session is
+                // genuinely live, cleared by `teardown`.
+                let marker = crate::crash_recovery::CrashMarker {
+                    session_id: session_id.to_string(),
+                    started_at: chrono::Utc::now().timestamp_millis(),
+                    host_platform: self.platform.to_string(),
+                };
+                if let Err(e) = crate::crash_recovery::write_marker(&marker) {
+                    tracing::warn!(error = %e, "could not write crash marker");
+                }
 
                 // §2.4 — and only now does input become possible at all.
                 peer.set_input_allowed(true);
@@ -627,9 +653,27 @@ impl SessionDriver {
         firebase::read_session(&db, &token, session_id).await
     }
 
-    async fn set_status(&self, session_id: &str, status: SessionStatus) -> Result<()> {
-        self.write_field(session_id, "status", serde_json::json!(status.to_string()))
-            .await
+    /// §1.1 — move the session to `next`, validating the transition first.
+    ///
+    /// The state machine existed as `session::transition` but nothing called
+    /// it, so it documented the rules without enforcing any of them. Routing
+    /// every status write through it means an illegal move is caught here
+    /// rather than becoming a session stuck in a state nothing can leave.
+    async fn set_status(
+        &self,
+        session_id: &str,
+        current: &mut SessionStatus,
+        next: SessionStatus,
+    ) -> Result<()> {
+        let validated = session::transition(*current, next)?;
+        self.write_field(
+            session_id,
+            "status",
+            serde_json::json!(validated.to_string()),
+        )
+        .await?;
+        *current = validated;
+        Ok(())
     }
 
     async fn write_field(

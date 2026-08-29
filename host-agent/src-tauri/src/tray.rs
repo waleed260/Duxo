@@ -104,6 +104,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let start = MenuItem::with_id(app, "start", "Start a session", true, None::<&str>)?;
     let end = MenuItem::with_id(app, "end", "End session", true, None::<&str>)?;
     let link = MenuItem::with_id(app, "link", "Link this device…", true, None::<&str>)?;
+    let unlink = MenuItem::with_id(app, "unlink", "Unlink this device", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Duxo", true, None::<&str>)?;
 
@@ -116,6 +117,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             &start as &dyn IsMenuItem<tauri::Wry>,
             &end,
             &link,
+            &unlink,
             &separator,
             &quit,
         ],
@@ -137,6 +139,9 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 }
                 "link" => {
                     tauri::async_runtime::spawn(async move { link_device(app).await });
+                }
+                "unlink" => {
+                    tauri::async_runtime::spawn(async move { unlink_device(app).await });
                 }
                 "quit" => app.exit(0),
                 _ => {}
@@ -240,6 +245,28 @@ async fn link_device(app: AppHandle) {
             tracing::error!(error = %e, "device pairing failed");
             *state.display_code.write().await = None;
         }
+    }
+}
+
+/// §8.2 — forget this device's pairing.
+///
+/// Ends any running session first: leaving one live after dropping the
+/// credential it depends on would just fail every subsequent RTDB write.
+async fn unlink_device(app: AppHandle) {
+    let _ = end_session(app.clone()).await;
+
+    let state: State<'_, AppState> = app.state();
+    let auth = state.auth.write().await.take();
+
+    match auth {
+        Some(auth) => {
+            let guard = auth.lock().await;
+            match guard.sign_out() {
+                Ok(()) => tracing::info!("device unlinked — pair again to host sessions"),
+                Err(e) => tracing::error!(error = %e, "could not clear the stored credential"),
+            }
+        }
+        None => tracing::info!("device was not linked"),
     }
 }
 
