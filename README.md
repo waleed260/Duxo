@@ -17,16 +17,35 @@ Full remote control on Windows and Linux X11. Wayland = view-only in MVP.
 ## Quick start
 
 ### Prerequisites
+
 - Node.js 18+ and npm
-- Rust stable (for host agent builds)
-- Firebase project with Auth + RTDB + Firestore enabled
-- Metered.ca account (free TURN server)
+- Rust stable
+- A Firebase project with Auth, Realtime Database and Firestore enabled
+- A Clerk application (free tier) for viewer sign-in
+- A Metered.ca account for TURN (free, no card). Without TURN, sessions on
+  restrictive networks — roughly 10–15% of them — cannot connect at all.
+
+**Linux build dependencies.** The host agent will not compile without these,
+and the failure (`pkg-config not found`, `gdk-sys`, `env-libvpx-sys`) points at
+a dependency rather than at what is missing:
+
+```bash
+sudo apt install -y \
+  pkg-config build-essential curl wget file \
+  libwebkit2gtk-4.1-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev \
+  libxdo-dev libxcb1-dev libxcb-shm0-dev libxcb-randr0-dev \
+  libvpx-dev libdbus-1-dev clang libclang-dev
+```
+
+`libvpx` is a hard requirement, not an optimisation: webrtc-rs is transport
+only and does no video encoding, so VP8 compression is the host agent's own
+job (`src/encoder.rs`).
 
 ### Viewer (Next.js)
 
 ```bash
 cd viewer
-cp .env.example .env.local   # Fill in your Firebase credentials
+cp .env.example .env.local   # Fill in Firebase, Clerk and TURN values
 npm install
 npm run dev                  # → http://localhost:3000
 ```
@@ -35,8 +54,35 @@ npm run dev                  # → http://localhost:3000
 
 ```bash
 cd host-agent/src-tauri
+cp .env.example .env         # Same Firebase project as the viewer
 cargo build --release
 ```
+
+### Running a session
+
+The host agent has no login screen of its own. It cannot: the viewer signs in
+through Clerk, and the Firebase key that mints credentials must never ship
+inside a downloadable binary. So the machine being shared is *paired* to an
+account once, the way a TV app is:
+
+1. **Link the device (once per machine).** Launch the host agent and pick
+   **Link this device…** from the tray menu. It shows a six-character code.
+2. Sign in to the viewer, go to **/link-device**, and enter that code. The
+   server mints a Firebase credential for *your own* account and hands it to
+   the waiting agent, which stores the refresh token in the OS keychain
+   (Windows Credential Manager / Linux Secret Service). The device is now
+   linked until you unlink it.
+3. **Start a session.** Tray menu → **Start a session**. The agent shows an
+   8-digit code, grouped as `XXXX XXXX` so it survives being read aloud.
+4. **Connect.** On the viewer's dashboard, enter that code.
+5. **Approve.** The host machine shows a native dialog with the viewer's
+   *verified* email — taken from the signature-checked Firebase token, not
+   from anything the viewer wrote. Nothing is shared until someone at the
+   host clicks Allow. A timeout, a dismissed dialog, or a closed window all
+   count as Deny.
+
+> On GNOME, the tray icon needs the AppIndicator extension. Without it the
+> agent runs but shows no icon, which looks like it failed to launch.
 
 ## Architecture
 

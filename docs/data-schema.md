@@ -8,8 +8,8 @@ not** be mixed.
 
 | Store | Role | Frequency |
 |---|---|---|
-| **RTDB** (`sessions/`, `codes/`, `rateLimit/`) | Live signaling: offer/answer, ICE candidates, status | High-frequency, ephemeral |
-| **Firestore** (`users/`, `devices/`, `sessionHistory/`, `auditLog/`) | Durable records: profiles, device registry, history, audit | Low-frequency, persistent |
+| **RTDB** (`sessions/`, `codes/`, `pairings/`, `auditLog/`, `rateLimit/`) | Live signaling: offer/answer, ICE candidates, status; plus device pairing and the audit chain | High-frequency, ephemeral |
+| **Firestore** (`users/`, `devices/`, `sessionHistory/`) | Durable records: profiles, device registry, history | Low-frequency, persistent |
 
 > Never write per-frame or per-input-event data into Firestore. It blows the
 > 20K writes/day quota almost immediately. Per §6.3 — this is a common bug
@@ -33,6 +33,55 @@ sessions/{sessionId}
 codes/{8-digit-code}: sessionId   (100M combinations, 24h expiry)
 rateLimit/{ipHash}:   { count, lastAttempt }   (5/min/IP, §0.7)
 ```
+
+The session node also carries `viewerToken` — the viewer's Firebase ID token,
+written once when it claims the session and read once by the host, which
+verifies the signature locally against Google's public certs (§2.5). The host
+never trusts `viewerId` on its own; the email shown in the Allow/Deny dialog
+comes from the verified token's claims.
+
+## RTDB — device pairing
+
+Not in the original plan, and required: the host agent has no way to sign in
+on its own. It has no Clerk session, and the Firebase service-account key that
+mints custom tokens must never ship inside a downloadable binary. So a machine
+is paired to an account once, and the pairing node is the handoff point.
+
+```
+pairings/{6-char-code}
+  deviceName:  string   (hostname, shown to the user before they approve)
+  platform:    "windows" | "linux-x11" | "linux-wayland"
+  appVersion:  string
+  createdAt:   number (ms epoch)
+  claimed:     boolean
+  customToken: string | null   (written by the server, read once by the host)
+```
+
+The host creates this node **unauthenticated** — it has no credential yet,
+which is the whole point. That is safe only because nothing secret travels in
+that direction: the host publishes a device name, and only the server (holding
+the service-account key) can add `customToken`. Read access is scoped to the
+`customToken` child alone, so a caller cannot enumerate pending pairings.
+Single-use, ten-minute TTL, and deleted by the host as soon as it has
+exchanged the token.
+
+## RTDB — audit chain (§7.3)
+
+```
+auditLog/{uid}/{entryId}
+  uid:          string
+  action:       "login" | "session_start" | "session_end" | "permission_denied" | "totp_enabled"
+  timestamp:    number (ms epoch)
+  metadata:     object
+  previousHash: string   (SHA-256 of the previous entry — the chain)
+  hash:         string
+```
+
+**Deviation from §10.1**, which places `auditLog` in Firestore: the host agent
+writes it over the RTDB REST API, and moving it would mean carrying a second
+Firestore client in the host for no gain. The properties the hash chain
+depends on are preserved — append-only (an entry may be created, never
+rewritten) and readable only by its own uid.
 
 ## Firestore — durable records
 
