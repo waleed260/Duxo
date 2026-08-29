@@ -18,7 +18,7 @@
     "trayIcon": {
       "iconPath": "icons/icon.png",
       "iconAsTemplate": true,
-      "tooltip": "Duxo — Remote Desktop Host"
+      "tooltip": "Duxo \u2014 Remote Desktop Host"
     }
   },
   "bundle": {
@@ -36,13 +36,12 @@
         "depends": []
       },
       "appimage": {
-        "bundleMedia": true
+        "bundleMediaFramework": true
       }
     },
     "windows": {
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",
-      "timestampUrl": "",
       "wix": null,
       "nsis": null
     }
