@@ -8,6 +8,7 @@
 
 use crate::backend::{CaptureBackend, CapturedFrame};
 use crate::types::{DuxoError, Result};
+use std::io::ErrorKind;
 
 pub struct X11Capture {
     running: bool,
@@ -35,24 +36,20 @@ impl CaptureBackend for X11Capture {
         // §0.5 — scrap uses XShm for zero-copy capture on X11.
         // No permission dialog needed — X11 has no per-app permission model.
         let display = scrap::Display::primary()
-            .map_err(|e| DuxoError::Firebase(format!("Failed to open X11 display: {e}")))?;
+            .map_err(|e| DuxoError::Capture(format!("failed to open X11 display: {e}")))?;
 
         let width = display.width() as u32;
         let height = display.height() as u32;
 
         let capturer = scrap::Capturer::new(display)
-            .map_err(|e| DuxoError::Firebase(format!("Failed to create X11 capturer: {e}")))?;
+            .map_err(|e| DuxoError::Capture(format!("failed to create X11 capturer: {e}")))?;
 
         self.capturer = Some(capturer);
         self.width = width;
         self.height = height;
         self.running = true;
 
-        tracing::info!(
-            width = width,
-            height = height,
-            "Linux X11 capture started"
-        );
+        tracing::info!(width = width, height = height, "Linux X11 capture started");
         Ok(())
     }
 
@@ -65,8 +62,16 @@ impl CaptureBackend for X11Capture {
 
         // §0.5 — scrap::Capturer::frame() returns BGRA pixel data.
         // Blocks until a new frame is available (vsync-aligned).
-        let frame = capturer.frame()
-            .map_err(|e| DuxoError::Firebase(format!("X11 frame capture failed: {e}")))?;
+        // WouldBlock means "nothing new since last call", which is most calls.
+        // Treating it as a failure would log an error 40 times a second and
+        // hide the real ones.
+        let frame = capturer.frame().map_err(|e| {
+            if e.kind() == ErrorKind::WouldBlock {
+                DuxoError::FrameNotReady
+            } else {
+                DuxoError::Capture(format!("X11 frame capture failed: {e}"))
+            }
+        })?;
 
         let stride = capturer.stride();
         let bytes_per_pixel = 4; // BGRA

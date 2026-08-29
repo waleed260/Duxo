@@ -9,12 +9,12 @@
 mod audit;
 mod auth;
 mod backend;
-mod crash_recovery;
-mod encoder;
 #[cfg(target_os = "linux")]
 mod capture_linux_x11;
 #[cfg(target_os = "windows")]
 mod capture_windows;
+mod crash_recovery;
+mod encoder;
 mod firebase;
 #[cfg(target_os = "linux")]
 mod input_linux_x11;
@@ -110,8 +110,7 @@ async fn main() {
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             // Initialize tray icon, code display window, and RTDB listeners.
-            tray::setup_tray(app.handle())
-                .map_err(|e| e.to_string())?;
+            tray::setup_tray(app.handle()).map_err(|e| e.to_string())?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

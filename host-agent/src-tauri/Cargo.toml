@@ -38,7 +38,12 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 # §0.5 — VP8 video encoding.
 # NOT provided by webrtc-rs: that crate is transport-only and carries media
 # that is already compressed. Requires libvpx (libvpx-dev on Debian/Ubuntu).
-vpx-encode = "0.6"
+# `ffi-generate` runs bindgen against the system libvpx headers. Without it the
+# crate falls back to bindings pre-generated for a fixed set of libvpx
+# versions, and panics at build time on any other — Ubuntu 24.04 ships 1.14.0,
+# for which no pre-generated file exists. Costs a libclang dependency at build
+# time only; nothing is added to the shipped binary.
+vpx-encode = { version = "0.6", features = ["ffi-generate"] }
 
 # §0.5 — Screen capture
 # Cross-platform: scrap (DXGI on Windows, XShm on Linux)

@@ -52,9 +52,7 @@ impl FirebaseEnv {
     }
 
     fn is_configured(&self) -> bool {
-        !self.api_key.is_empty()
-            && !self.database_url.is_empty()
-            && !self.project_id.is_empty()
+        !self.api_key.is_empty() && !self.database_url.is_empty() && !self.project_id.is_empty()
     }
 }
 

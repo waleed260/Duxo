@@ -11,19 +11,21 @@
 //! Any state ──(24h timeout)──► EXPIRED
 //! ACTIVE ──(30 min idle OR network loss > 60s)──► ENDED
 
-use crate::types::{SessionStatus, SessionContext, HostPlatform, ProtocolVersion, Result, DuxoError};
-use serde::{Serialize, Deserialize};
+use crate::types::{
+    DuxoError, HostPlatform, ProtocolVersion, Result, SessionContext, SessionStatus,
+};
+use serde::{Deserialize, Serialize};
 
 /// §6.1 — Protocol version declared by the host for capability negotiation.
-pub const HOST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 2, patch: 0 };
+pub const HOST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion {
+    major: 1,
+    minor: 2,
+    patch: 0,
+};
 
 /// §6.1 — The set of capabilities the host supports.
 /// Used to negotiate down with older viewers.
-pub const SUPPORTED_CAPABILITIES: &[&str] = &[
-    "clipboard",
-    "file_transfer",
-    "quality_indicator",
-];
+pub const SUPPORTED_CAPABILITIES: &[&str] = &["clipboard", "file_transfer", "quality_indicator"];
 
 /// §6.1 — Viewer's declared protocol range from the session request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,10 +101,17 @@ pub fn new_session(session_id: String, host_uid: &str) -> SessionContext {
 
 /// §6.1 — Check whether the viewer's declared protocol version is compatible
 /// with this host. Returns Ok if compatible, Err with a reason if not.
-pub fn check_protocol_compatibility(viewer_decl: &ViewerProtocolDecl) -> std::result::Result<(), String> {
+pub fn check_protocol_compatibility(
+    viewer_decl: &ViewerProtocolDecl,
+) -> std::result::Result<(), String> {
     let viewer_ver = match ProtocolVersion::parse(&viewer_decl.protocol_version) {
         Ok(v) => v,
-        Err(_) => return Err(format!("Invalid protocol version: {}", viewer_decl.protocol_version)),
+        Err(_) => {
+            return Err(format!(
+                "Invalid protocol version: {}",
+                viewer_decl.protocol_version
+            ))
+        }
     };
 
     // §6.1 — MAJOR must match for wire compatibility.
@@ -129,7 +138,8 @@ pub fn check_protocol_compatibility(viewer_decl: &ViewerProtocolDecl) -> std::re
 /// Never fail the whole connection for missing capabilities — negotiate down.
 pub fn negotiated_capabilities(viewer_caps: &[String]) -> Vec<String> {
     let host_caps: Vec<&str> = SUPPORTED_CAPABILITIES.to_vec();
-    viewer_caps.iter()
+    viewer_caps
+        .iter()
         .filter(|c| host_caps.contains(&c.as_str()))
         .cloned()
         .collect()
@@ -220,7 +230,11 @@ mod tests {
         ];
         let mut state = SessionStatus::Waiting;
         for (from, to) in path {
-            assert_eq!(transition(state, to).unwrap(), to);
+            // Assert the table's own `from` matches where the walk actually is,
+            // so a reordered or wrong entry fails here rather than silently
+            // testing a different transition than the one it claims to.
+            assert_eq!(state, from, "path table is out of step with the walk");
+            assert_eq!(transition(from, to).unwrap(), to);
             state = to;
         }
     }
@@ -228,7 +242,10 @@ mod tests {
     #[test]
     fn test_deny_path() {
         let state = transition(SessionStatus::Waiting, SessionStatus::Requested).unwrap();
-        assert_eq!(transition(state, SessionStatus::Denied).unwrap(), SessionStatus::Denied);
+        assert_eq!(
+            transition(state, SessionStatus::Denied).unwrap(),
+            SessionStatus::Denied
+        );
     }
 
     #[test]

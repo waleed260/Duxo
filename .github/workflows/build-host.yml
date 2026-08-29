@@ -63,7 +63,9 @@ jobs:
             libxcb1-dev \
             libxcb-shm0-dev \
             libxcb-randr0-dev \
-            libdbus-1-dev
+            libdbus-1-dev \
+            clang \
+            libclang-dev
 
       # §0.5 — libvpx for VP8 encoding (encoder.rs). webrtc-rs does no encoding
       # of its own, so this is a hard requirement, not an optimisation.
@@ -71,6 +73,7 @@ jobs:
       - name: Install libvpx (Windows)
         if: matrix.os == 'windows-latest'
         run: |
+          choco install llvm -y
           vcpkg install libvpx:x64-windows-static-md
           echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
           echo "PKG_CONFIG_PATH=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static-md\lib\pkgconfig" >> $env:GITHUB_ENV

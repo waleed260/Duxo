@@ -345,11 +345,7 @@ impl HostPeer {
     }
 
     /// Push one encoded VP8 frame to the viewer.
-    pub async fn write_frame(
-        &self,
-        data: Vec<u8>,
-        duration: std::time::Duration,
-    ) -> Result<()> {
+    pub async fn write_frame(&self, data: Vec<u8>, duration: std::time::Duration) -> Result<()> {
         self.video_track
             .write_sample(&Sample {
                 data: data.into(),
@@ -490,9 +486,7 @@ fn allow_rate(ctx: &ChannelContext, msg_type: &str) -> bool {
         Err(p) => p.into_inner(),
     };
     let now = Instant::now();
-    let entry = rate
-        .entry(msg_type.to_string())
-        .or_insert((now, 0));
+    let entry = rate.entry(msg_type.to_string()).or_insert((now, 0));
 
     if now.duration_since(entry.0) >= RATE_LIMIT_WINDOW {
         *entry = (now, 0);
@@ -552,13 +546,15 @@ async fn handle_file_chunk(
             alive
         });
 
-        let assembly = files.entry(file_id.to_string()).or_insert_with(|| FileAssembly {
-            file_name: sanitize_file_name(file_name),
-            total,
-            received: HashMap::new(),
-            bytes: 0,
-            last_chunk_at: now,
-        });
+        let assembly = files
+            .entry(file_id.to_string())
+            .or_insert_with(|| FileAssembly {
+                file_name: sanitize_file_name(file_name),
+                total,
+                received: HashMap::new(),
+                bytes: 0,
+                last_chunk_at: now,
+            });
 
         assembly.last_chunk_at = now;
         assembly.bytes += bytes.len();
@@ -686,8 +682,14 @@ mod tests {
     #[test]
     fn sanitize_strips_traversal() {
         assert_eq!(sanitize_file_name("../../etc/passwd"), "passwd");
-        assert_eq!(sanitize_file_name("/absolute/path/report.pdf"), "report.pdf");
-        assert_eq!(sanitize_file_name("C:\\Windows\\System32\\evil.dll"), "evil.dll");
+        assert_eq!(
+            sanitize_file_name("/absolute/path/report.pdf"),
+            "report.pdf"
+        );
+        assert_eq!(
+            sanitize_file_name("C:\\Windows\\System32\\evil.dll"),
+            "evil.dll"
+        );
     }
 
     #[test]

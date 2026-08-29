@@ -53,7 +53,10 @@ impl WindowsInput {
     fn map_coordinates(&self, x: f64, y: f64) -> (i32, i32) {
         let px = (x * self.screen_width as f64) as i32;
         let py = (y * self.screen_height as f64) as i32;
-        (px.clamp(0, self.screen_width as i32), py.clamp(0, self.screen_height as i32))
+        (
+            px.clamp(0, self.screen_width as i32),
+            py.clamp(0, self.screen_height as i32),
+        )
     }
 }
 
@@ -63,7 +66,8 @@ impl InputBackend for WindowsInput {
         let (px, py) = self.map_coordinates(x, y);
 
         if let Some(ref mut enigo) = self.enigo {
-            enigo.mouse_move_to(px, py)
+            enigo
+                .mouse_move_to(px, py)
                 .map_err(|e| DuxoError::Firebase(format!("Windows mouse_move failed: {e}")))?;
         }
 
@@ -71,7 +75,11 @@ impl InputBackend for WindowsInput {
         Ok(())
     }
 
-    fn mouse_click(&mut self, button: InputButton, state: InputState) -> Result<(), crate::types::DuxoError> {
+    fn mouse_click(
+        &mut self,
+        button: InputButton,
+        state: InputState,
+    ) -> Result<(), crate::types::DuxoError> {
         self.ensure_initialized()?;
 
         let enigo_button = match button {
@@ -83,12 +91,14 @@ impl InputBackend for WindowsInput {
         if let Some(ref mut enigo) = self.enigo {
             match state {
                 InputState::Down => {
-                    enigo.mouse_down(enigo_button)
-                        .map_err(|e| DuxoError::Firebase(format!("Windows mouse_down failed: {e}")))?;
+                    enigo.mouse_down(enigo_button).map_err(|e| {
+                        DuxoError::Firebase(format!("Windows mouse_down failed: {e}"))
+                    })?;
                 }
                 InputState::Up => {
-                    enigo.mouse_up(enigo_button)
-                        .map_err(|e| DuxoError::Firebase(format!("Windows mouse_up failed: {e}")))?;
+                    enigo.mouse_up(enigo_button).map_err(|e| {
+                        DuxoError::Firebase(format!("Windows mouse_up failed: {e}"))
+                    })?;
                 }
             }
         }
@@ -105,11 +115,13 @@ impl InputBackend for WindowsInput {
         if let Some(ref mut enigo) = self.enigo {
             match state {
                 InputState::Down => {
-                    enigo.key_down(enigo_key)
-                        .map_err(|e| DuxoError::Firebase(format!("Windows key_down failed: {e}")))?;
+                    enigo.key_down(enigo_key).map_err(|e| {
+                        DuxoError::Firebase(format!("Windows key_down failed: {e}"))
+                    })?;
                 }
                 InputState::Up => {
-                    enigo.key_up(enigo_key)
+                    enigo
+                        .key_up(enigo_key)
                         .map_err(|e| DuxoError::Firebase(format!("Windows key_up failed: {e}")))?;
                 }
             }
@@ -124,7 +136,8 @@ impl InputBackend for WindowsInput {
 
         // §1.6 — never log clipboard text content (privacy).
         if let Some(ref mut enigo) = self.enigo {
-            enigo.set_text(text)
+            enigo
+                .set_text(text)
                 .map_err(|e| DuxoError::Firebase(format!("Windows clipboard failed: {e}")))?;
         }
 

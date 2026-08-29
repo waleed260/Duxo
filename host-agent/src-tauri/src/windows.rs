@@ -45,17 +45,13 @@ pub fn open_allow_deny_window(
         urlencoding::encode(viewer_email)
     );
 
-    let _window = WebviewWindowBuilder::new(
-        app,
-        "allow-deny",
-        WebviewUrl::App(url.into()),
-    )
-    .title("Duxo — Connection Request")
-    .inner_size(440.0, 280.0)
-    .resizable(false)
-    .decorations(true)
-    .center()
-    .build()?;
+    let _window = WebviewWindowBuilder::new(app, "allow-deny", WebviewUrl::App(url.into()))
+        .title("Duxo — Connection Request")
+        .inner_size(440.0, 280.0)
+        .resizable(false)
+        .decorations(true)
+        .center()
+        .build()?;
 
     tracing::info!(viewer_email = %viewer_email, "allow/deny popup window opened");
     Ok(())

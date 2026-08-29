@@ -13,10 +13,12 @@ pub struct CrashMarker {
 
 /// Directory for crash marker: ~/.local/share/duxo/ (Linux) / %APPDATA%/duxo/ (Windows)
 fn marker_dir() -> Result<PathBuf> {
-    let base = dirs::data_local_dir()
-        .ok_or_else(|| crate::types::DuxoError::Io(std::io::Error::new(
-            std::io::ErrorKind::NotFound, "cannot determine local data directory",
-        )))?;
+    let base = dirs::data_local_dir().ok_or_else(|| {
+        crate::types::DuxoError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "cannot determine local data directory",
+        ))
+    })?;
     Ok(base.join("duxo"))
 }
 
@@ -29,14 +31,12 @@ fn marker_path() -> Result<PathBuf> {
 /// If the process exits without deleting it, the marker persists and is read on next launch.
 pub fn write_marker(marker: &CrashMarker) -> Result<()> {
     let dir = marker_dir()?;
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| crate::types::DuxoError::Io(e))?;
+    std::fs::create_dir_all(&dir).map_err(|e| crate::types::DuxoError::Io(e))?;
 
     let path = marker_path()?;
-    let json = serde_json::to_string_pretty(marker)
-        .map_err(|e| crate::types::DuxoError::Json(e))?;
-    std::fs::write(&path, &json)
-        .map_err(|e| crate::types::DuxoError::Io(e))?;
+    let json =
+        serde_json::to_string_pretty(marker).map_err(|e| crate::types::DuxoError::Json(e))?;
+    std::fs::write(&path, &json).map_err(|e| crate::types::DuxoError::Io(e))?;
 
     tracing::info!(
         session_id = %marker.session_id,

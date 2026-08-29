@@ -58,10 +58,16 @@ const TARGET_FPS: u32 = 20;
 #[derive(Debug, Clone)]
 pub enum SessionEvent {
     /// §3.4 — the code display window can now show this code.
-    Created { session_id: String, code: String },
+    Created {
+        session_id: String,
+        code: String,
+    },
     /// §2.4 — a viewer passed JWT verification. This email is from the token's
     /// claims, never from anything the viewer wrote into RTDB.
-    ViewerVerified { email: String, uid: String },
+    ViewerVerified {
+        email: String,
+        uid: String,
+    },
     /// §1.1 — every state transition, for the UI to reflect.
     Status(SessionStatus),
     /// The session ended for a reason worth telling the user about.
@@ -126,9 +132,7 @@ impl SessionDriver {
         });
         let _ = events.send(SessionEvent::Status(SessionStatus::Waiting));
 
-        let outcome = self
-            .drive(&session_id, &events, &mut decision)
-            .await;
+        let outcome = self.drive(&session_id, &events, &mut decision).await;
 
         if let Err(e) = &outcome {
             tracing::error!(error = %e, session_id = %session_id, "session failed");
@@ -186,7 +190,8 @@ impl SessionDriver {
         if !allowed {
             let _ = events.send(SessionEvent::Status(SessionStatus::Denied));
             // §7.3 — a refused connection is exactly the event worth keeping.
-            self.audit(&viewer_uid, "permission_denied", session_id).await;
+            self.audit(&viewer_uid, "permission_denied", session_id)
+                .await;
             return Ok(());
         }
 
@@ -200,8 +205,13 @@ impl SessionDriver {
         // §6.3 — the durable record. Written whether the session ended cleanly
         // or not, because a session that failed still happened and the user
         // should be able to see it in their history.
-        let end_reason = if result.is_ok() { "user_ended" } else { "error" };
-        self.record_history(&viewer_uid, started_at, end_reason).await;
+        let end_reason = if result.is_ok() {
+            "user_ended"
+        } else {
+            "error"
+        };
+        self.record_history(&viewer_uid, started_at, end_reason)
+            .await;
         self.audit(&viewer_uid, "session_end", session_id).await;
 
         result
@@ -295,7 +305,8 @@ impl SessionDriver {
         let (sig_tx, mut sig_rx) = mpsc::unbounded_channel::<HostSignal>();
 
         let peer = Arc::new(HostPeer::new(&self.ice, input, sig_tx).await?);
-        self.set_status(session_id, SessionStatus::Connecting).await?;
+        self.set_status(session_id, SessionStatus::Connecting)
+            .await?;
         let _ = events.send(SessionEvent::Status(SessionStatus::Connecting));
 
         // §0.6 — publish our candidates as they are gathered, in a task of its
@@ -316,13 +327,21 @@ impl SessionDriver {
                                 continue;
                             }
                             let mut auth = driver_auth.lock().await;
-                            let Ok(token) = auth.id_token().await else { continue };
+                            let Ok(token) = auth.id_token().await else {
+                                continue;
+                            };
                             let db = auth.database_url().to_string();
                             let proj = auth.project_id().to_string();
                             drop(auth);
 
                             if let Err(e) = firebase::write_candidate(
-                                &db, &token, &proj, &session_id, "hostCandidates", index, &json,
+                                &db,
+                                &token,
+                                &proj,
+                                &session_id,
+                                "hostCandidates",
+                                index,
+                                &json,
                             )
                             .await
                             {
@@ -567,10 +586,16 @@ impl SessionDriver {
                             fps_window = Instant::now();
                         }
                     }
+                    Err(DuxoError::FrameNotReady) => {
+                        // The desktop has not changed since the last grab. Come
+                        // back promptly rather than idling a whole frame slot —
+                        // sleeping 50ms here would halve the effective frame
+                        // rate on any screen that is not constantly repainting.
+                        tokio::time::sleep(Duration::from_millis(4)).await;
+                        continue;
+                    }
                     Err(e) => {
-                        // scrap returns WouldBlock between vsyncs; that is the
-                        // normal case, not an error worth logging every time.
-                        tracing::trace!(error = %e, "no frame this tick");
+                        tracing::warn!(error = %e, "frame capture failed");
                     }
                 }
 
@@ -589,7 +614,9 @@ impl SessionDriver {
     /// never be redeemed again.
     async fn teardown(&self, session_id: &str, code: &str) {
         let mut auth = self.auth.lock().await;
-        let Ok(token) = auth.id_token().await else { return };
+        let Ok(token) = auth.id_token().await else {
+            return;
+        };
         let db = auth.database_url().to_string();
         let proj = auth.project_id().to_string();
         drop(auth);
@@ -617,7 +644,9 @@ impl SessionDriver {
     /// take down a live support session.
     async fn audit(&self, uid: &str, action: &str, session_id: &str) {
         let mut auth = self.auth.lock().await;
-        let Ok(token) = auth.id_token().await else { return };
+        let Ok(token) = auth.id_token().await else {
+            return;
+        };
         let db = auth.database_url().to_string();
         let proj = auth.project_id().to_string();
         drop(auth);
@@ -639,7 +668,9 @@ impl SessionDriver {
     /// §6.3 — the durable session record the viewer's history page reads.
     async fn record_history(&self, viewer_uid: &str, started_at: i64, end_reason: &str) {
         let mut auth = self.auth.lock().await;
-        let Ok(token) = auth.id_token().await else { return };
+        let Ok(token) = auth.id_token().await else {
+            return;
+        };
         let proj = auth.project_id().to_string();
         let host_uid = auth.uid().to_string();
         drop(auth);

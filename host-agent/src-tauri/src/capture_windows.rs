@@ -1,5 +1,6 @@
 use crate::backend::{CaptureBackend, CapturedFrame};
 use crate::types::{DuxoError, Result};
+use std::io::ErrorKind;
 
 pub struct WindowsCapture {
     running: bool,
@@ -22,13 +23,13 @@ impl WindowsCapture {
 impl CaptureBackend for WindowsCapture {
     fn start(&mut self) -> Result<()> {
         let display = scrap::Display::primary()
-            .map_err(|e| DuxoError::Firebase(format!("Failed to open DXGI display: {e}")))?;
+            .map_err(|e| DuxoError::Capture(format!("failed to open DXGI display: {e}")))?;
 
         let width = display.width() as u32;
         let height = display.height() as u32;
 
         let capturer = scrap::Capturer::new(display)
-            .map_err(|e| DuxoError::Firebase(format!("Failed to create DXGI capturer: {e}")))?;
+            .map_err(|e| DuxoError::Capture(format!("failed to create DXGI capturer: {e}")))?;
 
         self.capturer = Some(capturer);
         self.width = width;
@@ -49,8 +50,16 @@ impl CaptureBackend for WindowsCapture {
         }
 
         let capturer = self.capturer.as_mut().unwrap();
-        let frame = capturer.frame()
-            .map_err(|e| DuxoError::Firebase(format!("DXGI frame capture failed: {e}")))?;
+        // WouldBlock means "nothing new since last call", which is most calls.
+        // Treating it as a failure would log an error 40 times a second and
+        // hide the real ones.
+        let frame = capturer.frame().map_err(|e| {
+            if e.kind() == ErrorKind::WouldBlock {
+                DuxoError::FrameNotReady
+            } else {
+                DuxoError::Capture(format!("DXGI frame capture failed: {e}"))
+            }
+        })?;
 
         let stride = capturer.stride();
         let bytes_per_pixel = 4;

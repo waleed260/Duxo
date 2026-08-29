@@ -28,8 +28,14 @@ impl SessionStatus {
     /// §10.2 — these are the only valid values the RTDB rule allows.
     pub fn valid_values() -> &'static [&'static str] {
         &[
-            "waiting", "requested", "allowed", "denied",
-            "connecting", "active", "ended", "expired",
+            "waiting",
+            "requested",
+            "allowed",
+            "denied",
+            "connecting",
+            "active",
+            "ended",
+            "expired",
         ]
     }
 }
@@ -98,7 +104,11 @@ pub struct ProtocolVersion {
 
 impl Default for ProtocolVersion {
     fn default() -> Self {
-        Self { major: 1, minor: 0, patch: 0 }
+        Self {
+            major: 1,
+            minor: 0,
+            patch: 0,
+        }
     }
 }
 
@@ -157,7 +167,7 @@ pub struct SessionContext {
     pub status: SessionStatus,
     pub host_platform: HostPlatform,
     pub viewer_id: Option<String>,
-    pub verified_viewer_email: Option<String>,  // From JWT claims, NOT from RTDB (§2.5).
+    pub verified_viewer_email: Option<String>, // From JWT claims, NOT from RTDB (§2.5).
     pub protocol_version: ProtocolVersion,
     pub created_at: i64,
 }
@@ -242,6 +252,17 @@ pub enum DuxoError {
     // §6.1 — protocol version parsing and capability negotiation.
     #[error("Protocol error: {0}")]
     Protocol(String),
+
+    #[error("Screen capture error: {0}")]
+    Capture(String),
+
+    /// Not an error condition. `scrap` returns WouldBlock whenever no new frame
+    /// has been composited since the last call, which at 20fps against a 60Hz
+    /// desktop is the majority of calls. It needs to be distinguishable from a
+    /// real capture failure so the pipeline can retry immediately instead of
+    /// sleeping a whole frame interval, and so the logs are not flooded.
+    #[error("No new frame available yet")]
+    FrameNotReady,
 
     #[error("Firebase/RTDB error: {0}")]
     Firebase(String),

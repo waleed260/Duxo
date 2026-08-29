@@ -210,14 +210,7 @@ fn i420_len(w: u32, h: u32) -> usize {
 ///
 /// Coefficients are BT.601 studio-swing, which is what libvpx and every
 /// browser's WebRTC decoder assume for VP8 by default.
-fn bgra_to_i420(
-    bgra: &[u8],
-    src_w: u32,
-    src_h: u32,
-    dst: &mut [u8],
-    dst_w: u32,
-    dst_h: u32,
-) {
+fn bgra_to_i420(bgra: &[u8], src_w: u32, src_h: u32, dst: &mut [u8], dst_w: u32, dst_h: u32) {
     let (sw, sh) = (src_w as usize, src_h as usize);
     let (dw, dh) = (dst_w as usize, dst_h as usize);
     if dw == 0 || dh == 0 || sw == 0 || sh == 0 {
@@ -256,10 +249,8 @@ fn bgra_to_i420(
             // correct but the chroma detail is discarded by the codec anyway.
             if dy % 2 == 0 && dx % 2 == 0 {
                 let c_index = (dy / 2) * (dw / 2) + (dx / 2);
-                u_plane[c_index] =
-                    (((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128) as u8;
-                v_plane[c_index] =
-                    (((112 * r - 94 * g - 18 * b + 128) >> 8) + 128) as u8;
+                u_plane[c_index] = (((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128) as u8;
+                v_plane[c_index] = (((112 * r - 94 * g - 18 * b + 128) >> 8) + 128) as u8;
             }
         }
     }
