@@ -22,8 +22,23 @@ Full remote control on Windows and Linux X11. Wayland = view-only in MVP.
 - Rust stable
 - A Firebase project with Auth, Realtime Database and Firestore enabled
 - A Clerk application (free tier) for viewer sign-in
-- A Metered.ca account for TURN (free, no card). Without TURN, sessions on
-  restrictive networks — roughly 10–15% of them — cannot connect at all.
+- A [Metered.ca](https://www.metered.ca/tools/openrelay/) account for TURN
+  (free, 50GB/month, no card). Without TURN, sessions on restrictive networks
+  — roughly 10–15% of them — cannot connect at all, and they fail for the
+  *remote* person rather than for you. The no-signup `openrelay.metered.ca`
+  credentials that circulate online no longer resolve, so an account is
+  genuinely required.
+
+  Once the values are in `viewer/.env.local`, check them:
+
+  ```bash
+  cd viewer && npm run check:turn
+  ```
+
+  This gathers ICE candidates with `iceTransportPolicy: "relay"`, so the
+  browser refuses every non-relay candidate — anything it finds had to come
+  through TURN. Bad credentials, a blocked port and an expired tier all fail
+  identically at runtime; this tells them apart.
 
 **Linux build dependencies.** The host agent will not compile without these,
 and the failure (`pkg-config not found`, `gdk-sys`, `env-libvpx-sys`) points at
