@@ -5,6 +5,9 @@
 *.pem
 *.p12
 *.key
+# §7.1 — the updater signing keypair. The private half must never be
+# committed; the public half belongs in tauri.conf.json, not here.
+host-agent/src-tauri/updater-keys/
 serviceAccount*.json
 oauth*.json
 firebase-*.json

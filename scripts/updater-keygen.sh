@@ -23,7 +23,14 @@ if ! command -v npx &>/dev/null; then
     exit 1
 fi
 
+# --ci skips the interactive password prompt, which has no TTY to read from
+# when this is run from a script or a CI job and panics rather than falling
+# back. UPDATER_KEY_PASSWORD may be empty; an empty password is fine here
+# because the private key's protection is the file system and the CI secret
+# store, not a passphrase typed into a build log.
 npx --yes @tauri-apps/cli@latest signer generate \
+    --ci \
+    --password "${UPDATER_KEY_PASSWORD:-}" \
     -w "$KEY_DIR/duxo-updater.key"
 
 echo ""

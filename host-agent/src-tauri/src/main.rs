@@ -108,6 +108,13 @@ async fn main() {
     // Launch the Tauri app with tray icon + code display.
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        // §7.1 — the updater plugin verifies release signatures against the
+        // minisign public key in tauri.conf.json. It was declared as a
+        // dependency and configured, but never registered, so the whole
+        // updater config was inert. The launch-time GitHub Releases check in
+        // `check_for_update` stays as the §1.5 MVP notification path; this is
+        // what makes an actual signed in-app update possible.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             // Initialize tray icon, code display window, and RTDB listeners.
             tray::setup_tray(app.handle()).map_err(|e| e.to_string())?;

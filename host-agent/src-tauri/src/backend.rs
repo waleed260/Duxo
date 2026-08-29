@@ -106,8 +106,17 @@ pub fn platform_capture() -> Result<Box<dyn CaptureBackend>> {
     #[cfg(target_os = "linux")]
     {
         if std::env::var("WAYLAND_DISPLAY").is_ok() && std::env::var("DISPLAY").is_err() {
-            // No XWayland to fall back on: §0.2 Wayland capture is Phase 5.
-            return Err(crate::types::DuxoError::CaptureBackendUnavailable);
+            // §0.2 — Wayland capture goes through xdg-desktop-portal + PipeWire
+            // and is Phase 5. With XWayland present (DISPLAY set) scrap still
+            // works, so only a pure-Wayland session is genuinely unsupported.
+            // Say why, rather than reporting a bare "backend unavailable" that
+            // reads as a bug in Duxo rather than a scoped limitation.
+            return Err(crate::types::DuxoError::Capture(
+                "this is a Wayland session with no XWayland display. Duxo can \
+                 only capture X11 sessions for now — log out and choose an \
+                 \"Xorg\" or \"X11\" session at the login screen"
+                    .to_string(),
+            ));
         }
         Ok(Box::new(crate::capture_linux_x11::X11Capture::new()))
     }
