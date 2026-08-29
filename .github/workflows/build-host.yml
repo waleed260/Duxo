@@ -82,6 +82,14 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: choco install pkgconfiglite -y
 
+      # bindgen locates libclang through LIBCLANG_PATH or PATH. The runner
+      # ships LLVM but does not export either, so without this the
+      # ffi-generate build fails with "Unable to find libclang" — which reads
+      # as a missing package rather than a missing environment variable.
+      - name: Point bindgen at libclang (Windows)
+        if: matrix.os == 'windows-latest'
+        run: echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
+
       # §0.13 step 13 — confirm X11 via Xvfb for capture testing.
       - name: Install Xvfb (for X11 capture testing)
         if: matrix.os == 'ubuntu-latest'

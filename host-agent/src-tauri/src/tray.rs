@@ -18,7 +18,7 @@
 
 use std::sync::Arc;
 
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{command, AppHandle, Manager, State};
 use tokio::sync::{mpsc, Mutex, RwLock};
@@ -104,7 +104,19 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let separator = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Duxo", true, None::<&str>)?;
 
-    let menu = Menu::with_items(app, &[&start, &end, &link, &separator, &quit])?;
+    // `Menu::with_items` takes `&[&dyn IsMenuItem<R>]`. The array mixes
+    // MenuItem and PredefinedMenuItem, so each element needs the explicit
+    // unsized coercion — inference cannot pick a single concrete type here.
+    let menu = Menu::with_items(
+        app,
+        &[
+            &start as &dyn IsMenuItem<tauri::Wry>,
+            &end,
+            &link,
+            &separator,
+            &quit,
+        ],
+    )?;
 
     let mut builder = TrayIconBuilder::with_id("duxo-tray")
         .menu(&menu)
