@@ -71,7 +71,10 @@ pub struct AppState {
     pub viewer_email: RwLock<Option<String>>,
     pub status: RwLock<SessionStatus>,
     /// The running session task, so "End session" can stop it.
-    pub session_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    ///
+    /// `tauri::async_runtime::JoinHandle`, not tokio's: the two are distinct
+    /// types even though Tauri's runtime is tokio underneath.
+    pub session_task: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
 }
 
 impl AppState {
@@ -330,14 +333,19 @@ async fn start_session(app: AppHandle) {
 #[command]
 pub async fn get_display_code(app: AppHandle) -> Result<String, String> {
     let state: State<'_, AppState> = app.state();
-    Ok(state.display_code.read().await.clone().unwrap_or_default())
+    // Bind before returning: a guard living in the tail expression is dropped
+    // after `state`, which borrows `app` — so it must not be part of the
+    // returned expression.
+    let value = state.display_code.read().await.clone().unwrap_or_default();
+    Ok(value)
 }
 
 /// §3.4 — drives the "Waiting for connection…" / "Connected" label.
 #[command]
 pub async fn get_session_status(app: AppHandle) -> Result<String, String> {
     let state: State<'_, AppState> = app.state();
-    Ok(state.status.read().await.to_string())
+    let status = state.status.read().await.to_string();
+    Ok(status)
 }
 
 /// §2.4/§2.5 — the email shown in the Allow/Deny dialog. From verified JWT
@@ -345,7 +353,11 @@ pub async fn get_session_status(app: AppHandle) -> Result<String, String> {
 #[command]
 pub async fn get_viewer_email(app: AppHandle) -> Result<String, String> {
     let state: State<'_, AppState> = app.state();
-    Ok(state.viewer_email.read().await.clone().unwrap_or_default())
+    // Bind before returning: a guard living in the tail expression is dropped
+    // after `state`, which borrows `app` — so it must not be part of the
+    // returned expression.
+    let value = state.viewer_email.read().await.clone().unwrap_or_default();
+    Ok(value)
 }
 
 /// §2.4 — the host clicked Allow. The single most important action in the app.
@@ -407,7 +419,8 @@ pub async fn end_session(app: AppHandle) -> Result<(), String> {
 pub async fn generate_code(app: AppHandle) -> Result<String, String> {
     start_session(app.clone()).await;
     let state: State<'_, AppState> = app.state();
-    Ok(state.display_code.read().await.clone().unwrap_or_default())
+    let code = state.display_code.read().await.clone().unwrap_or_default();
+    Ok(code)
 }
 
 /// §3.4 — group an 8-digit code as "XXXX XXXX".

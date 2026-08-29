@@ -25,8 +25,8 @@ use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, Mutex};
 
 use crate::auth::HostAuth;
-use crate::backend::{CaptureBackend, InputBackend};
-use crate::encoder::VideoEncoder;
+use crate::backend::InputBackend;
+use crate::capture;
 use crate::firebase;
 use crate::security;
 use crate::types::{DuxoError, HostPlatform, Result, SessionStatus};
@@ -49,9 +49,6 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 /// §1.1 — "ACTIVE ──(network loss > 60s)──► ENDED".
 const NETWORK_LOSS_GRACE: Duration = Duration::from_secs(60);
-
-/// §6.5 — capture cadence. 20fps is the top of the 15–20fps target band.
-const TARGET_FPS: u32 = 20;
 
 /// What the UI needs to know. The host agent's windows subscribe to these
 /// rather than polling shared state.
@@ -507,106 +504,37 @@ impl SessionDriver {
         Ok(())
     }
 
-    /// §0.5 — capture → encode → send, at the §6.5 target frame rate.
+    /// §0.5 — pump encoded frames from the capture thread onto the track.
+    ///
+    /// The capture and encode work happens on its own OS thread (capture.rs):
+    /// `scrap::Capturer` is not `Send`, and libvpx would block the async
+    /// executor for 10-20ms per frame. All that is left here is moving already
+    /// encoded packets onto the WebRTC track.
     fn spawn_capture(&self, peer: Arc<HostPeer>) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
-            let mut capture: Box<dyn CaptureBackend> = match crate::backend::platform_capture() {
-                Ok(c) => c,
+            let mut session = match capture::start() {
+                Ok(s) => s,
                 Err(e) => {
-                    tracing::error!(error = %e, "no capture backend — session will be blank");
+                    // The viewer would otherwise sit on a connected-but-black
+                    // screen with nothing explaining why.
+                    tracing::error!(error = %e, "screen capture unavailable — no video");
                     return;
                 }
             };
 
-            if let Err(e) = capture.start() {
-                tracing::error!(error = %e, "capture start failed");
-                return;
-            }
-
-            let frame_interval = Duration::from_millis(1000 / TARGET_FPS as u64);
-            let mut encoder: Option<VideoEncoder> = None;
-            let mut frames: u64 = 0;
-            let mut fps_window = Instant::now();
-
-            loop {
-                let tick = Instant::now();
-
-                match capture.next_frame() {
-                    Ok(frame) => {
-                        // The encoder is built from the first frame's real
-                        // dimensions rather than a guess, and rebuilt if the
-                        // user changes resolution mid-session — feeding libvpx
-                        // a differently-sized buffer than it was configured for
-                        // corrupts every subsequent frame.
-                        let needs_new = match &encoder {
-                            None => true,
-                            Some(enc) => {
-                                let (w, h) = enc.dimensions();
-                                let (fw, fh) = fit_hint(frame.width, frame.height);
-                                w != fw || h != fh
-                            }
-                        };
-
-                        if needs_new {
-                            match VideoEncoder::new(frame.width, frame.height, TARGET_FPS) {
-                                Ok(e) => encoder = Some(e),
-                                Err(e) => {
-                                    tracing::error!(error = %e, "encoder init failed");
-                                    break;
-                                }
-                            }
-                        }
-
-                        if let Some(enc) = encoder.as_mut() {
-                            match enc.encode_bgra(&frame.data, frame.width, frame.height) {
-                                Ok(packets) => {
-                                    let duration = enc.frame_duration();
-                                    for packet in packets {
-                                        if let Err(e) =
-                                            peer.write_frame(packet.data, duration).await
-                                        {
-                                            tracing::warn!(error = %e, "frame send failed");
-                                        }
-                                    }
-                                }
-                                Err(e) => tracing::warn!(error = %e, "encode failed"),
-                            }
-                        }
-
-                        frames += 1;
-                        if frames % 100 == 0 {
-                            // §6.5 KPI — measured, not asserted.
-                            let fps = 100.0 / fps_window.elapsed().as_secs_f64().max(0.001);
-                            tracing::info!(
-                                kpi = "capture_fps",
-                                frames,
-                                fps = format!("{fps:.1}"),
-                                "capture pipeline running"
-                            );
-                            fps_window = Instant::now();
-                        }
-                    }
-                    Err(DuxoError::FrameNotReady) => {
-                        // The desktop has not changed since the last grab. Come
-                        // back promptly rather than idling a whole frame slot —
-                        // sleeping 50ms here would halve the effective frame
-                        // rate on any screen that is not constantly repainting.
-                        tokio::time::sleep(Duration::from_millis(4)).await;
-                        continue;
-                    }
-                    Err(e) => {
-                        tracing::warn!(error = %e, "frame capture failed");
-                    }
+            let mut keyframes: u64 = 0;
+            while let Some(frame) = session.frames.recv().await {
+                if frame.is_keyframe {
+                    keyframes += 1;
+                    tracing::debug!(keyframes, "keyframe sent");
                 }
-
-                let elapsed = tick.elapsed();
-                if elapsed < frame_interval {
-                    tokio::time::sleep(frame_interval - elapsed).await;
+                if let Err(e) = peer.write_frame(frame.data, frame.duration).await {
+                    tracing::warn!(error = %e, "frame send failed — stopping capture");
+                    break;
                 }
             }
 
-            let _ = capture.stop();
-            tracing::info!(total_frames = frames, "capture pipeline stopped");
+            session.stop();
         })
     }
 
@@ -717,23 +645,4 @@ impl SessionDriver {
         drop(auth);
         firebase::update_session_field(&db, &token, &proj, session_id, field, value).await
     }
-}
-
-/// Mirror of `encoder::fit_within` for the resolution-change check, without
-/// making that function public purely for this comparison.
-fn fit_hint(w: u32, h: u32) -> (u32, u32) {
-    if w == 0 || h == 0 {
-        return (0, 0);
-    }
-    let scale = f64::min(
-        f64::min(
-            crate::encoder::TARGET_WIDTH as f64 / w as f64,
-            crate::encoder::TARGET_HEIGHT as f64 / h as f64,
-        ),
-        1.0,
-    );
-    (
-        ((w as f64 * scale) as u32) & !1,
-        ((h as f64 * scale) as u32) & !1,
-    )
 }

@@ -256,6 +256,9 @@ pub enum DuxoError {
     #[error("Screen capture error: {0}")]
     Capture(String),
 
+    #[error("Input injection error: {0}")]
+    Input(String),
+
     /// Not an error condition. `scrap` returns WouldBlock whenever no new frame
     /// has been composited since the last call, which at 20fps against a 60Hz
     /// desktop is the majority of calls. It needs to be distinguishable from a

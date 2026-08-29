@@ -34,12 +34,6 @@ pub const TARGET_HEIGHT: u32 = 720;
 /// free tier lasting ~74 hours a month and running out mid-support-call.
 const DEFAULT_BITRATE_KBPS: u32 = 1500;
 
-/// VP8 keyframe cadence. libvpx will also emit keyframes on its own when the
-/// scene changes; this bound is what lets a viewer that joined late, or that
-/// dropped packets, recover within a couple of seconds instead of staring at
-/// a smeared image until the next natural scene cut.
-const KEYFRAME_INTERVAL_FRAMES: u64 = 60;
-
 pub struct VideoEncoder {
     inner: vpx_encode::Encoder,
     /// Encoder input dimensions — always even, always ≤ the target.
@@ -148,9 +142,9 @@ impl VideoEncoder {
             self.height,
         );
 
-        // libvpx wants a keyframe request as a per-frame flag; vpx-encode does
-        // not expose one, so we rely on the codec's own keyframe decisions plus
-        // the interval logged here for diagnosis. See `needs_keyframe`.
+        // vpx-encode exposes no per-frame keyframe request, so keyframe timing
+        // is libvpx's own decision. The caller logs when one arrives, which is
+        // what the §6.5 recovery-after-loss KPI is measured from.
         let pts = self.frame_index as i64;
         self.frame_index += 1;
 
@@ -168,12 +162,6 @@ impl VideoEncoder {
         }
 
         Ok(out)
-    }
-
-    /// True on frames where a keyframe would be desirable, for logging and for
-    /// the caller's own bookkeeping (§6.5 KPI: recovery time after loss).
-    pub fn needs_keyframe(&self) -> bool {
-        self.frame_index % KEYFRAME_INTERVAL_FRAMES == 0
     }
 }
 

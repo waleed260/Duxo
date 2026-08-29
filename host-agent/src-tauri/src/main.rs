@@ -9,17 +9,11 @@
 mod audit;
 mod auth;
 mod backend;
-#[cfg(target_os = "linux")]
-mod capture_linux_x11;
-#[cfg(target_os = "windows")]
-mod capture_windows;
+mod capture;
 mod crash_recovery;
 mod encoder;
 mod firebase;
-#[cfg(target_os = "linux")]
-mod input_linux_x11;
-#[cfg(target_os = "windows")]
-mod input_windows;
+mod input;
 mod security;
 mod session;
 mod signaling;
@@ -64,7 +58,7 @@ async fn main() {
     // §1.5 — check for updates on launch (free GitHub Releases API).
     match check_for_update().await {
         Ok(Some(latest)) => {
-            tracing::info!(latest_version = %latest.tag, "update available");
+            tracing::info!(latest_version = %latest.tag_name, "update available");
             // MVP: log + surface via tray. No auto-install until Tauri updater
             // is configured (§1.5 Phase 2).
         }

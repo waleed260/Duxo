@@ -440,6 +440,11 @@ async fn handle_message(ctx: &ChannelContext, dc: &Arc<RTCDataChannel>, raw: &[u
             // which keys were pressed is a keylogger artifact on disk.
             with_input(ctx, |i| i.key(code, state), "key_event");
         }
+        "mouse_scroll" => {
+            let dx = msg.get("dx").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let dy = msg.get("dy").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            with_input(ctx, |i| i.mouse_scroll(dx, dy), "mouse_scroll");
+        }
         "clipboard_text" => {
             let Some(data) = msg.get("data").and_then(|v| v.as_str()) else {
                 return;
