@@ -226,18 +226,6 @@ pub enum DuxoError {
     #[error("Viewer UID mismatch — potential spoofing attempt")]
     ViewerMismatch,
 
-    #[error("ICE connection failed after {attempts} attempts")]
-    IceConnectionFailed { attempts: u8 },
-
-    #[error("ICE restart exhausted")]
-    IceRestartExhausted { attempts: u8 },
-
-    #[error("Data channel closed")]
-    DataChannelClosed,
-
-    #[error("Capture backend unavailable for this platform")]
-    CaptureBackendUnavailable,
-
     // §0.5 — webrtc-rs carries compressed media only; it does no encoding of
     // its own, so VP8 compression is a stage the host agent owns (encoder.rs).
     #[error("Video encoder error: {0}")]
@@ -266,14 +254,6 @@ pub enum DuxoError {
     /// so holding one across an await makes the whole future unspawnable.
     #[error("Window error: {0}")]
     Window(String),
-
-    /// Not an error condition. `scrap` returns WouldBlock whenever no new frame
-    /// has been composited since the last call, which at 20fps against a 60Hz
-    /// desktop is the majority of calls. It needs to be distinguishable from a
-    /// real capture failure so the pipeline can retry immediately instead of
-    /// sleeping a whole frame interval, and so the logs are not flooded.
-    #[error("No new frame available yet")]
-    FrameNotReady,
 
     #[error("Firebase/RTDB error: {0}")]
     Firebase(String),

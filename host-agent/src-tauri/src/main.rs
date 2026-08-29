@@ -58,7 +58,12 @@ async fn main() {
     // §1.5 — check for updates on launch (free GitHub Releases API).
     match check_for_update().await {
         Ok(Some(latest)) => {
-            tracing::info!(latest_version = %latest.tag_name, "update available");
+            tracing::info!(
+                latest_version = %latest.tag_name,
+                download_url = %latest.html_url,
+                notes = latest.body.as_deref().unwrap_or("(none)"),
+                "update available"
+            );
             // MVP: log + surface via tray. No auto-install until Tauri updater
             // is configured (§1.5 Phase 2).
         }
@@ -69,7 +74,13 @@ async fn main() {
     // §6.4 — check minimum supported version.
     match check_minimum_version().await {
         Ok(Some(msg)) => {
-            tracing::error!(message = %msg, "host agent below minimum supported version");
+            tracing::error!(
+                message = %msg.message,
+                minimum_version = %msg.minimum_version,
+                minimum_protocol_version = %msg.minimum_protocol_version,
+                published_at = %msg.updated_at,
+                "host agent below minimum supported version"
+            );
             // In production, this would show a blocking dialog to the user.
             // For MVP, we log it — the session state machine will reject
             // connections from incompatible versions via §6.1 negotiation.
@@ -180,7 +191,7 @@ struct MinVersionFile {
 
 /// §6.4 — Check whether the running version meets the minimum supported version.
 /// Fetches minversion.json from the viewer's GitHub Pages deployment.
-async fn check_minimum_version() -> Result<Option<String>, Box<dyn std::error::Error>> {
+async fn check_minimum_version() -> Result<Option<MinVersionFile>, Box<dyn std::error::Error>> {
     let client = reqwest::Client::builder()
         .user_agent(format!("duxo-host/{}", env!("CARGO_PKG_VERSION")))
         .build()?;
@@ -200,7 +211,7 @@ async fn check_minimum_version() -> Result<Option<String>, Box<dyn std::error::E
     let minimum = semver::Version::parse(&min_ver.minimum_version)?;
 
     if current < minimum {
-        Ok(Some(min_ver.message))
+        Ok(Some(min_ver))
     } else {
         Ok(None)
     }

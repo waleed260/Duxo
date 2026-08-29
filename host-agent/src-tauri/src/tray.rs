@@ -130,7 +130,11 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             let app = app.clone();
             match event.id.as_ref() {
                 "start" => {
-                    tauri::async_runtime::spawn(async move { start_session(app).await });
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) = start_session(app).await {
+                            tracing::error!(error = %e, "could not start a session");
+                        }
+                    });
                 }
                 "end" => {
                     tauri::async_runtime::spawn(async move {
@@ -271,14 +275,14 @@ async fn unlink_device(app: AppHandle) {
 }
 
 /// §1.1 CREATED → WAITING, then hand the session to the driver.
-async fn start_session(app: AppHandle) {
+async fn start_session(app: AppHandle) -> crate::types::Result<String> {
     let state: State<'_, AppState> = app.state();
 
     let auth = match state.auth.read().await.clone() {
         Some(a) => a,
         None => {
             tracing::error!("cannot start a session — this device is not linked");
-            return;
+            return Err(crate::types::DuxoError::NotAuthenticated);
         }
     };
 
@@ -289,13 +293,9 @@ async fn start_session(app: AppHandle) {
 
     let driver = SessionDriver::new(auth, IceConfig::default());
 
-    let (session_id, code) = match driver.create().await {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!(error = %e, "could not create session");
-            return;
-        }
-    };
+    let (session_id, code) = driver.create().await.inspect_err(|e| {
+        tracing::error!(error = %e, "could not create session");
+    })?;
 
     // §3.4 — grouped "XXXX XXXX" so it survives being read aloud on a phone.
     let formatted = format_code(&code);
@@ -352,6 +352,7 @@ async fn start_session(app: AppHandle) {
     });
 
     *state.session_task.lock().await = Some(task);
+    Ok(formatted)
 }
 
 // ─── Tauri commands, called from the two HTML windows ───
@@ -444,10 +445,10 @@ pub async fn end_session(app: AppHandle) -> Result<(), String> {
 /// Start a session from the UI as well as the tray menu.
 #[command]
 pub async fn generate_code(app: AppHandle) -> Result<String, String> {
-    start_session(app.clone()).await;
-    let state: State<'_, AppState> = app.state();
-    let code = state.display_code.read().await.clone().unwrap_or_default();
-    Ok(code)
+    // Returning the error text rather than an empty string: a code window
+    // showing nothing, with the reason only in a log file, is the worst of
+    // both worlds for whoever is sitting at the machine.
+    start_session(app).await.map_err(|e| e.to_string())
 }
 
 /// §3.4 — group an 8-digit code as "XXXX XXXX".
