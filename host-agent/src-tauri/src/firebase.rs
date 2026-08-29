@@ -260,16 +260,29 @@ pub async fn delete_code(database_url: &str, id_token: &str, code: &str) -> Resu
 /// The viewer's history page reads `sessionHistory`, and until now nothing
 /// wrote it — every completed session vanished and the page was permanently
 /// empty. Metadata only: timestamps, duration, platform. Never screen content.
+pub struct SessionHistoryRecord<'a> {
+    pub host_uid: &'a str,
+    pub viewer_uid: &'a str,
+    pub host_platform: &'a str,
+    pub started_at_ms: i64,
+    pub ended_at_ms: i64,
+    pub end_reason: &'a str,
+}
+
 pub async fn write_session_history(
     project_id: &str,
     id_token: &str,
-    host_uid: &str,
-    viewer_uid: &str,
-    host_platform: &str,
-    started_at_ms: i64,
-    ended_at_ms: i64,
-    end_reason: &str,
+    record: &SessionHistoryRecord<'_>,
 ) -> Result<()> {
+    let SessionHistoryRecord {
+        host_uid,
+        viewer_uid,
+        host_platform,
+        started_at_ms,
+        ended_at_ms,
+        end_reason,
+    } = *record;
+
     let client = reqwest::Client::new();
     let url = format!(
         "https://firestore.googleapis.com/v1/projects/{project_id}/databases/(default)/documents/sessionHistory"

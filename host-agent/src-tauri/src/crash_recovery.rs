@@ -1,4 +1,7 @@
 use crate::types::Result;
+
+/// §6.2 — how recent a crash marker has to be for a resume to make sense.
+const RESUME_WINDOW_MS: i64 = 5 * 60 * 1000;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -31,12 +34,11 @@ fn marker_path() -> Result<PathBuf> {
 /// If the process exits without deleting it, the marker persists and is read on next launch.
 pub fn write_marker(marker: &CrashMarker) -> Result<()> {
     let dir = marker_dir()?;
-    std::fs::create_dir_all(&dir).map_err(|e| crate::types::DuxoError::Io(e))?;
+    std::fs::create_dir_all(&dir).map_err(crate::types::DuxoError::Io)?;
 
     let path = marker_path()?;
-    let json =
-        serde_json::to_string_pretty(marker).map_err(|e| crate::types::DuxoError::Json(e))?;
-    std::fs::write(&path, &json).map_err(|e| crate::types::DuxoError::Io(e))?;
+    let json = serde_json::to_string_pretty(marker).map_err(crate::types::DuxoError::Json)?;
+    std::fs::write(&path, &json).map_err(crate::types::DuxoError::Io)?;
 
     tracing::info!(
         session_id = %marker.session_id,
@@ -76,8 +78,10 @@ pub fn read_marker() -> Result<Option<CrashMarker>> {
     let now = chrono::Utc::now().timestamp_millis();
     let age_ms = now - marker.started_at;
 
-    // §6.2 — only offer resume if marker is under 5 minutes old.
-    if age_ms > 300_000 || age_ms < 0 {
+    // §6.2 — only offer resume if the marker is under 5 minutes old. A
+    // negative age means the clock moved backwards since the marker was
+    // written, which makes the age meaningless rather than small.
+    if !(0..=RESUME_WINDOW_MS).contains(&age_ms) {
         tracing::info!(
             age_ms = age_ms,
             "crash marker stale (>5 min or negative) — removing"

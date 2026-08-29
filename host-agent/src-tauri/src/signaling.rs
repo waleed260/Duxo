@@ -629,18 +629,17 @@ impl SessionDriver {
         let host_uid = auth.uid().to_string();
         drop(auth);
 
-        if let Err(e) = firebase::write_session_history(
-            &proj,
-            &token,
-            &host_uid,
+        let platform = self.platform.to_string();
+        let record = firebase::SessionHistoryRecord {
+            host_uid: &host_uid,
             viewer_uid,
-            &self.platform.to_string(),
-            started_at,
-            chrono::Utc::now().timestamp_millis(),
+            host_platform: &platform,
+            started_at_ms: started_at,
+            ended_at_ms: chrono::Utc::now().timestamp_millis(),
             end_reason,
-        )
-        .await
-        {
+        };
+
+        if let Err(e) = firebase::write_session_history(&proj, &token, &record).await {
             tracing::warn!(error = %e, "session history write failed");
         }
     }
