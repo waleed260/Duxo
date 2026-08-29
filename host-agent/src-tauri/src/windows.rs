@@ -13,10 +13,11 @@
 //!   - Copy-to-clipboard button
 //!   - "Waiting for connection..." state
 
+use crate::types::{DuxoError, Result};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// §3.4 — Open the code display window showing the 8-digit code.
-pub fn open_code_window(app: &AppHandle, code: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn open_code_window(app: &AppHandle, code: &str) -> Result<()> {
     let _window = WebviewWindowBuilder::new(
         app,
         "code-display",
@@ -27,17 +28,15 @@ pub fn open_code_window(app: &AppHandle, code: &str) -> Result<(), Box<dyn std::
     .resizable(false)
     .decorations(true)
     .center()
-    .build()?;
+    .build()
+    .map_err(|e| DuxoError::Window(format!("could not open the code window: {e}")))?;
 
     tracing::info!(code = %code, "code display window opened");
     Ok(())
 }
 
 /// §2.4 — Open the Allow/Deny popup window.
-pub fn open_allow_deny_window(
-    app: &AppHandle,
-    viewer_email: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn open_allow_deny_window(app: &AppHandle, viewer_email: &str) -> Result<()> {
     // The email comes from verified JWT claims (§2.5), but it still reaches the
     // window as a URL parameter, so it is encoded rather than interpolated raw.
     let url = format!(
@@ -51,7 +50,8 @@ pub fn open_allow_deny_window(
         .resizable(false)
         .decorations(true)
         .center()
-        .build()?;
+        .build()
+        .map_err(|e| DuxoError::Window(format!("could not open the Allow/Deny window: {e}")))?;
 
     tracing::info!(viewer_email = %viewer_email, "allow/deny popup window opened");
     Ok(())

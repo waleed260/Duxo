@@ -259,6 +259,14 @@ pub enum DuxoError {
     #[error("Input injection error: {0}")]
     Input(String),
 
+    /// Native window failures (§2.4 Allow/Deny, §3.4 code display).
+    ///
+    /// Deliberately a concrete error rather than `Box<dyn Error>`: the tray
+    /// handles these inside a spawned task, and `Box<dyn Error>` is not `Send`,
+    /// so holding one across an await makes the whole future unspawnable.
+    #[error("Window error: {0}")]
+    Window(String),
+
     /// Not an error condition. `scrap` returns WouldBlock whenever no new frame
     /// has been composited since the last call, which at 20fps against a 60Hz
     /// desktop is the majority of calls. It needs to be distinguishable from a
