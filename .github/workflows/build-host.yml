@@ -2,7 +2,11 @@ name: Build Host Agent
 
 on:
   push:
-    branches: [main, master]
+    # Feature branches build too: the host agent needs Linux and Windows
+    # toolchains that a single dev machine rarely has both of, so CI is where
+    # a cross-platform break is actually caught — waiting for merge to main
+    # means finding it after it is already on the default branch.
+    branches: [main, master, "feat/**", "fix/**"]
     paths:
       - "host-agent/**"
       - ".github/workflows/build-host.yml"
