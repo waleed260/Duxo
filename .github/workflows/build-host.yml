@@ -126,6 +126,11 @@ jobs:
       # §7.5 — cargo audit for known Rust dependency vulnerabilities.
       - name: Cargo audit
         if: matrix.os == 'ubuntu-latest'
+        # Every other cargo step sets this. Without it, audit runs at the repo
+        # root — which has no Cargo.lock — and fails with "Couldn't load
+        # Cargo.lock", a message that reads like a missing lockfile rather
+        # than a missing working directory.
+        working-directory: host-agent/src-tauri
         run: |
           cargo install cargo-audit --locked || true
           cargo audit
