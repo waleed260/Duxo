@@ -155,6 +155,10 @@ fn capture_loop(
     let mut frames: u64 = 0;
     let mut dropped: u64 = 0;
     let mut window = Instant::now();
+    // Frame count at the last KPI log, so the rate is measured over frames
+    // that actually happened rather than over loop iterations.
+    let mut frames_at_last_log: u64 = 0;
+    let mut dropped_at_last_log: u64 = 0;
 
     tracing::info!(width, height, fps = TARGET_FPS, "capture thread started");
 
@@ -209,16 +213,29 @@ fn capture_loop(
             }
         }
 
-        if frames > 0 && frames.is_multiple_of(100) {
-            // §6.5 KPI — measured, not asserted.
-            let fps = 100.0 / window.elapsed().as_secs_f64().max(0.001);
+        // §6.5 KPI — measured, not asserted.
+        //
+        // Gated on the count having actually advanced, not on it being a
+        // multiple of 100. `frames` only increments on a successful send, so
+        // once the consumer falls behind it can sit on 100 for many
+        // iterations — and `frames % 100 == 0` then fired on every one of
+        // them, each time resetting `window`. The reported rate became
+        // 100 frames over a few milliseconds: thousands of fps, logged
+        // precisely when capture was in fact struggling. A KPI that reads
+        // best when things are worst is worse than no KPI.
+        if frames >= frames_at_last_log + 100 {
+            let counted = frames - frames_at_last_log;
+            let fps = counted as f64 / window.elapsed().as_secs_f64().max(0.001);
             tracing::info!(
                 kpi = "capture_fps",
                 frames,
                 dropped,
+                dropped_in_window = dropped - dropped_at_last_log,
                 fps = format!("{fps:.1}"),
                 "capture running"
             );
+            frames_at_last_log = frames;
+            dropped_at_last_log = dropped;
             window = Instant::now();
         }
 
