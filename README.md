@@ -104,6 +104,21 @@ also cannot reach `REQUESTED` without the viewer-claim clause in
 `database.rules.json`, so an undeployed ruleset shows up as a viewer that
 enters a valid code and then hangs.
 
+### Railway environment
+
+`GET /api/health` on the live deployment reports what is missing. As of the
+last check the production instance is missing three variables — all server
+secrets are set, so sign-in and the API routes work, but:
+
+| Missing | Effect |
+|---|---|
+| `NEXT_PUBLIC_FIREBASE_DATABASE_URL` | The viewer cannot reach the Realtime Database at all — no signaling, so no session can be claimed or connected |
+| `NEXT_PUBLIC_METERED_TURN_USERNAME` | §0.8 — sessions fail on restrictive networks (~10–15%), and they fail for the *remote* caller |
+| `NEXT_PUBLIC_METERED_TURN_CREDENTIAL` | Same |
+
+The `NEXT_PUBLIC_*` ones are inlined at build time, so Railway needs a
+redeploy after setting them, not just a restart.
+
 ### Checking a deployment
 
 The viewer runs on Railway (`viewer/railway.json` — Nixpacks build, `next start`).
