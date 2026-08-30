@@ -20,8 +20,23 @@ use zeroize::ZeroizeOnDrop;
 /// contents (UID, email) are not left sitting in freed memory.
 #[derive(Debug, Deserialize, ZeroizeOnDrop)]
 pub struct VerifiedClaims {
-    pub sub: String,   // Firebase UID — verified against RTDB viewerId.
-    pub email: String, // Displayed in the Allow/Deny popup (§2.4).
+    pub sub: String, // Firebase UID — verified against RTDB viewerId.
+
+    /// Displayed in the Allow/Deny popup (§2.4).
+    ///
+    /// Defaulted, not required. A Firebase ID token minted from a *custom*
+    /// token — which is how every Duxo viewer authenticates, via the Clerk
+    /// bridge — carries only the claims the minting server put in it. When
+    /// this was a required field, a token without it failed to deserialise,
+    /// and the failure was mapped to `TokenInvalidSignature`: every viewer
+    /// was denied, and the log blamed the signature of a perfectly valid
+    /// token. `/api/firebase-token` now sets it; this default is what keeps
+    /// an older or third-party token from being rejected for the wrong
+    /// reason.
+    #[serde(default)]
+    pub email: String,
+
+    #[serde(default)]
     pub email_verified: bool,
     pub aud: String, // Must match our Firebase project ID.
     pub iss: String, // Must be securetoken.google.com/<project_id>.
