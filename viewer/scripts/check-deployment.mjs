@@ -38,9 +38,21 @@ const page = await context.newPage();
 // renders but throws in the browser is the shape a missing NEXT_PUBLIC_* key
 // takes, and it looks entirely fine to curl.
 const consoleErrors = [];
+const cspViolations = [];
 const failedRequests = [];
+
+// Origins a CSP block is the *correct* outcome for. The README promises no
+// telemetry, so the policy refusing analytics is the policy working — but a
+// CSP violation is not automatically benign (the "worker-src blob" fix in this
+// repo's history was a real break found exactly this way), so the two are
+// separated rather than the whole category being ignored.
+const EXPECTED_CSP_BLOCKS = /google-analytics\.com|googletagmanager\.com|doubleclick\.net/;
+
 page.on("console", (m) => {
-  if (m.type() === "error") consoleErrors.push(m.text());
+  if (m.type() !== "error") return;
+  const text = m.text();
+  if (/Content Security Policy/i.test(text)) cspViolations.push(text);
+  else consoleErrors.push(text);
 });
 page.on("requestfailed", (r) => {
   // Next.js fires RSC prefetches (`?_rsc=`) for links in view and aborts them
@@ -106,6 +118,19 @@ try {
   const url = page.url();
   record("/dashboard redirects an anonymous visitor to /login", /\/login/.test(url), url);
 
+  // ── 4b. Sign-in actually mounts ──────────────────────────────────────────
+  // Clerk loads from its own origin, so a CSP or key mismatch shows up here
+  // and nowhere else: the page still returns 200 and renders its shell, and
+  // only the form — the thing every user needs — is missing.
+  await page.goto(`${base}/login`, { waitUntil: "domcontentloaded", timeout: 45_000 });
+  const clerkMounted = await page
+    .locator("input[type='email'], input[name='identifier'], .cl-rootBox")
+    .first()
+    .waitFor({ state: "visible", timeout: 20_000 })
+    .then(() => true)
+    .catch(() => false);
+  record("sign-in form mounts on /login", clerkMounted);
+
   // ── 5. Static pages that carry no auth ───────────────────────────────────
   for (const path of ["/download", "/docs"]) {
     const res = await page.goto(`${base}${path}`, {
@@ -125,6 +150,21 @@ try {
     realErrors.length === 0,
     realErrors.slice(0, 3).join(" | ") || undefined,
   );
+
+  // A CSP block against anything the app actually depends on is a real
+  // failure; one against a tracker is the policy doing its job.
+  const unexpectedCsp = cspViolations.filter((v) => !EXPECTED_CSP_BLOCKS.test(v));
+  record(
+    "no CSP violations against origins the app needs",
+    unexpectedCsp.length === 0,
+    unexpectedCsp.slice(0, 2).join(" | ") || undefined,
+  );
+  if (cspViolations.length > unexpectedCsp.length) {
+    console.log(
+      "INFO  CSP blocked analytics requests — expected, and what \"no " +
+        "telemetry\" means in practice. Clerk's script attempts these.",
+    );
+  }
   record(
     "no failed network requests",
     failedRequests.length === 0,
