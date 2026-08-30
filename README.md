@@ -58,22 +58,31 @@ job (`src/encoder.rs`).
 
 ### Firebase project setup (§0.13 items 4–5)
 
-> **The Firebase backend does not exist yet.** Checked against the project in
-> `viewer/.env.local` (`duxo-967f0`) with its own service-account key — the key
-> authenticates, so the project is real, but every service the product runs on
-> answers "API has not been used in this project before, or it is disabled":
+> **The Firebase backend does not exist yet.** Three services are missing, each
+> confirmed by a probe you can re-run yourself. Nothing in the product works
+> until they exist — every session, code and pairing lives in these.
 >
-> | Service | State | What depends on it |
+> | Service | Probe | Result |
 > |---|---|---|
-> | Realtime Database | 404 — no instance | All signaling: `sessions/`, `codes/`, `pairings/`, `auditLog/` |
-> | Cloud Firestore | API never enabled | §6.3 durable records: session history, devices, profiles |
-> | Identity Toolkit (Auth) | 404 | §2.5 — the viewer ID tokens the host verifies |
+> | Realtime Database | `curl -s -o /dev/null -w '%{http_code}' https://duxo-967f0-default-rtdb.firebaseio.com/.json` | `404` — no instance. A database that exists but is locked answers `401`, so this is not a rules problem. Checked in `us-central1`, `europe-west1` and `asia-southeast1`. |
+> | Cloud Firestore | `firestore.googleapis.com/v1/projects/<id>/databases` with a service-account token | `403` — "API has not been used in this project before" |
+> | Authentication | `identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken` with a deliberately invalid token | `CONFIGURATION_NOT_FOUND`. An enabled project answers `INVALID_CUSTOM_TOKEN`, so this is the project, not the token. |
 >
-> Until these are created, no session can be created, no device can be paired,
-> and no code can be redeemed, regardless of what the code does. Create them in
-> the [Firebase console](https://console.firebase.google.com/) — Build →
-> Realtime Database → Create Database, and Build → Firestore → Create Database.
-> The Spark (free) plan covers both, per §0.3.
+> **Auth matters more than it looks.** Device pairing mints a custom token
+> server-side (which works — the Admin SDK signs it locally) and then the host
+> exchanges it via `signInWithCustomToken`. That second half fails with
+> `CONFIGURATION_NOT_FOUND` until Auth is enabled, so pairing breaks *after*
+> the web app has reported success.
+>
+> **To fix**, in the [Firebase console](https://console.firebase.google.com/)
+> for this project:
+>
+> 1. Build → **Realtime Database** → Create Database → `us-central1` → Locked mode
+> 2. Build → **Firestore Database** → Create database → Locked mode
+> 3. Build → **Authentication** → Get started → enable Email/Password
+>
+> Spark (free) covers all three, per §0.3. Then deploy the rules below —
+> locked mode denies everything until you do.
 >
 > Set the `FIREBASE_PROJECT_ID` **repository variable** to the same project.
 > The workflows had it hardcoded to `duxo-remote`, which is not the project the
