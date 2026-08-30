@@ -30,9 +30,25 @@ sessions/{sessionId}
   createdAt:        number (ms epoch)
   updatedAt:        number (ms epoch)
 
-codes/{8-digit-code}: sessionId   (100M combinations, 24h expiry)
-rateLimit/{ipHash}:   { count, lastAttempt }   (5/min/IP, §0.7)
+codes/{8-digit-code}
+  sessionId:        string   (the session this code opens)
+  hostId:           string   (Firebase UID of the host that created it)
+
+rateLimit/{ipHash}:   { count, lastAttempt }   (reserved; see below)
 ```
+
+`codes/` is **not readable by any client**. Viewers resolve a code through
+`POST /api/resolve-code`, which holds the Admin credential and enforces §0.7's
+5-attempts-per-minute limit. Reading it directly from the browser — which is
+what the code used to do — made the 8-digit space enumerable by anyone who
+could sign up, so "100M combinations" was carrying the whole of §0.7 on its
+own. Writes are create-or-retire by the owning host only: `hostId` is recorded
+precisely so the rules have something to check a writer against, without which
+any signed-in account could repoint a live code at a session of its own.
+
+The `rateLimit/` node is declared in the rules but nothing writes to it. RTDB
+rules cannot see a request's IP, so a per-IP limit is not expressible there;
+the counting happens in the API routes instead, per Clerk user.
 
 The session node also carries `viewerToken` — the viewer's Firebase ID token,
 written once when it claims the session and read once by the host, which

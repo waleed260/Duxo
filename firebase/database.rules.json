@@ -52,12 +52,26 @@
         "viewerCandidates": { "$index": { ".validate": "$index.matches(/^([0-9]|[1-9][0-9])$/) && newData.isString() && newData.val().length <= 1000" } }
       }
     },
+    // §0.7 — the code → sessionId mapping.
+    //
+    // Read is denied to every client. It used to be `auth != null`, which made
+    // the 8-digit space enumerable by anyone who could sign up: §0.7 pairs
+    // "100M combinations" with "5 attempts/min per IP", and only the first
+    // half existed — the `rateLimit` node below never had anything writing to
+    // it. Viewers now resolve a code through /api/resolve-code, which holds
+    // the Admin credential (rules do not apply to it) and does the counting.
+    //
+    // Write is create-or-delete by the owning host, never overwrite. With
+    // `auth != null` an attacker could repoint a live code at a session of
+    // their own, so the person reading a code down the phone would connect to
+    // a machine that is not the one they were told about.
     "codes": {
       "$code": {
-        // §0.7 — 8-digit codes, 100M combinations.
-        ".read": "auth != null",
-        ".write": "auth != null",
-        ".validate": "newData.isString() && $code.length == 8 && newData.val().length <= 50"
+        ".read": false,
+        ".write": "auth != null && $code.length == 8 && ((!data.exists() && newData.child('hostId').val() == auth.uid) || data.child('hostId').val() == auth.uid)",
+        ".validate": "newData.hasChildren(['sessionId', 'hostId']) && newData.child('hostId').val() == auth.uid",
+        "sessionId": { ".validate": "newData.isString() && newData.val().length <= 64" },
+        "hostId":    { ".validate": "newData.isString() && newData.val().length <= 128" }
       }
     },
     // Device pairing — how the host agent obtains a credential at all.

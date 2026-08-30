@@ -54,7 +54,14 @@ pub async fn create_session(
         "createdAt": { ".sv": "timestamp" },
         "updatedAt": { ".sv": "timestamp" }
     });
-    body[format!("codes/{}", code)] = serde_json::json!(session_id);
+    // §0.7 — the code node records who owns it, not just where it points.
+    // A bare string gave the RTDB rules nothing to check a writer against, so
+    // "only the host that created this code may replace or retire it" could
+    // not be expressed and any signed-in account could repoint or delete it.
+    body[format!("codes/{}", code)] = serde_json::json!({
+        "sessionId": session_id,
+        "hostId": host_uid,
+    });
 
     client
         .patch(&url)
