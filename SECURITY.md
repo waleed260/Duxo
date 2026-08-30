@@ -36,6 +36,30 @@ A logged-in viewer is NOT automatically allowed to control a host. The host's
 explicit "Allow" click is the **only** thing that grants control, every single
 time, no exceptions. There is no "always allow this viewer" in MVP.
 
+## Two-factor authentication is enrollment-only today
+
+/settings offers TOTP and passkey enrolment, and the copy tells the user they
+will need a code from their authenticator app the next time they sign in.
+Nothing asks for one. `/verify-2fa` is a complete, working page that no flow
+navigates to: Clerk's post-sign-in redirect goes straight to /dashboard.
+
+Even wired up it would not be a security boundary, and it is listed here
+rather than in the threat model above for that reason:
+
+- The check runs in the browser. The gate is a `router.replace`, so anyone
+  who can open devtools or type a URL is past it.
+- `totpSecretEncrypted` is encrypted with a key derived from the user's own
+  uid, which the client already has. That protects the secret from a casual
+  glance at the database, not from whoever holds the session.
+- It fails open. If the user document cannot be read, the page forwards to
+  /dashboard, which is the right behaviour for a convenience gate and the
+  wrong behaviour for a factor.
+
+Real enforcement needs the code verified server-side and the result bound to
+the session — which Clerk, already the identity provider here, provides
+natively. Until that decision is made, treat the feature as a preference the
+account holder has expressed, not as a control anything relies on.
+
 ## Signing and trust
 
 - Windows binaries ship unsigned for MVP (SmartScreen warning expected).
