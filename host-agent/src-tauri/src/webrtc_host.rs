@@ -53,6 +53,17 @@ const MAX_FILE_BYTES: usize = 10 * 1024 * 1024;
 /// (§6.2 — "mid-transfer data channel drop → discard, restart from scratch").
 const FILE_ASSEMBLY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
+/// How many transfers may be in flight at once, and how much they may hold
+/// between them.
+///
+/// The 10MB cap is per `fileId`, and `fileId` is chosen by the peer. Nothing
+/// stopped it opening new ones indefinitely and keeping each alive with one
+/// chunk inside the timeout window, so "10MB per file" bounded nothing in
+/// aggregate. The host has been approved to share a screen (§2.4), which is
+/// not the same as being approved to fill its memory.
+const MAX_CONCURRENT_TRANSFERS: usize = 8;
+const MAX_TOTAL_ASSEMBLY_BYTES: usize = 32 * 1024 * 1024;
+
 /// Events the peer raises for the signaling loop to publish to RTDB (§1.6-B).
 #[derive(Debug)]
 pub enum HostSignal {
@@ -560,6 +571,15 @@ async fn handle_file_chunk(
             alive
         });
 
+        if !files.contains_key(file_id) && !may_start_transfer(&files, bytes.len()) {
+            tracing::warn!(
+                file_id,
+                in_flight = files.len(),
+                "refusing a new file transfer — too many already in flight"
+            );
+            return;
+        }
+
         let assembly = files
             .entry(file_id.to_string())
             .or_insert_with(|| FileAssembly {
@@ -571,7 +591,13 @@ async fn handle_file_chunk(
             });
 
         assembly.last_chunk_at = now;
-        assembly.bytes += bytes.len();
+        assembly.received.insert(index, bytes);
+
+        // Recomputed from what is actually held, not accumulated per message:
+        // a peer that re-sends the same index replaces the stored chunk, so
+        // adding each arrival would count the same bytes twice and trip the
+        // cap on a transfer that never exceeded it.
+        assembly.bytes = assembly.received.values().map(Vec::len).sum();
 
         // §1.4 — the 10MB cap again, on the receiving side. The viewer checks
         // before starting; the host checks because it cannot assume the peer
@@ -581,8 +607,6 @@ async fn handle_file_chunk(
             files.remove(file_id);
             return;
         }
-
-        assembly.received.insert(index, bytes);
 
         if assembly.received.len() as u64 == assembly.total {
             files.remove(file_id)
@@ -637,6 +661,19 @@ async fn handle_file_chunk(
 ///
 /// A viewer supplies this name, so it is untrusted input: `../../.bashrc` and
 /// absolute paths both have to stop here, not at the filesystem.
+/// Whether a *new* transfer may be admitted alongside the ones in flight.
+///
+/// Only new transfers are refused. Chunks for a transfer already under way
+/// still land, so a legitimate transfer is never starved by one that started
+/// after it — the alternative punishes the wrong sender.
+fn may_start_transfer(files: &HashMap<String, FileAssembly>, incoming: usize) -> bool {
+    if files.len() >= MAX_CONCURRENT_TRANSFERS {
+        return false;
+    }
+    let buffered: usize = files.values().map(|a| a.bytes).sum();
+    buffered.saturating_add(incoming) <= MAX_TOTAL_ASSEMBLY_BYTES
+}
+
 fn sanitize_file_name(name: &str) -> String {
     let base = name
         .rsplit(['/', '\\'])
@@ -724,6 +761,51 @@ mod tests {
     fn sanitize_bounds_length() {
         let long = "a".repeat(5000);
         assert!(sanitize_file_name(&long).len() <= 200);
+    }
+
+    fn assembly_holding(bytes: usize) -> FileAssembly {
+        FileAssembly {
+            file_name: "f".into(),
+            total: 1,
+            received: HashMap::new(),
+            bytes,
+            last_chunk_at: Instant::now(),
+        }
+    }
+
+    fn in_flight(count: usize, each: usize) -> HashMap<String, FileAssembly> {
+        (0..count)
+            .map(|i| (format!("file{i}"), assembly_holding(each)))
+            .collect()
+    }
+
+    #[test]
+    fn a_new_transfer_is_admitted_when_there_is_room() {
+        assert!(may_start_transfer(&in_flight(0, 0), 1024));
+        assert!(may_start_transfer(&in_flight(3, 1024), 1024));
+    }
+
+    #[test]
+    fn transfers_are_capped_by_count() {
+        // `fileId` is chosen by the peer, so without this the "10MB per file"
+        // cap bounds nothing in aggregate — you just open more files.
+        let full = in_flight(MAX_CONCURRENT_TRANSFERS, 1);
+        assert!(!may_start_transfer(&full, 1));
+    }
+
+    #[test]
+    fn transfers_are_capped_by_total_bytes() {
+        // Few enough transfers to pass the count check, large enough together
+        // to fail the byte check — the two limits have to be independent.
+        let heavy = in_flight(4, MAX_TOTAL_ASSEMBLY_BYTES / 4);
+        assert!(heavy.len() < MAX_CONCURRENT_TRANSFERS);
+        assert!(!may_start_transfer(&heavy, 1));
+    }
+
+    #[test]
+    fn the_byte_cap_cannot_be_overflowed_into_passing() {
+        let huge = in_flight(1, usize::MAX);
+        assert!(!may_start_transfer(&huge, usize::MAX));
     }
 
     #[test]
