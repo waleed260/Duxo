@@ -21,6 +21,10 @@ use enigo::{Axis, Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Se
 use crate::backend::{InputBackend, InputButton, InputState};
 use crate::types::{DuxoError, Result};
 
+/// §1.4 — browser wheel pixels per enigo scroll notch. The de-facto standard
+/// deltaY for one wheel click in every major browser.
+const PIXELS_PER_NOTCH: f64 = 100.0;
+
 pub struct EnigoInput {
     /// Created lazily: constructing an Enigo opens a display connection, and
     /// doing that at session-setup time would fail the whole session on a
@@ -28,6 +32,16 @@ pub struct EnigoInput {
     enigo: Option<Enigo>,
     screen_width: i32,
     screen_height: i32,
+    /// §1.4 — leftover wheel pixels between events.
+    ///
+    /// Browsers report deltaMode 0 (pixels) and enigo counts notches, so the
+    /// conversion divides by ~100. Rounding each event independently threw
+    /// away everything under half a notch, which is most of what a trackpad
+    /// or a smooth-scrolling wheel produces: a stream of 8px events each
+    /// rounded to zero, and scrolling that simply did nothing. Carrying the
+    /// remainder means small deltas accumulate until they add up to a notch.
+    scroll_remainder_x: f64,
+    scroll_remainder_y: f64,
 }
 
 impl EnigoInput {
@@ -36,6 +50,8 @@ impl EnigoInput {
             enigo: None,
             screen_width: 0,
             screen_height: 0,
+            scroll_remainder_x: 0.0,
+            scroll_remainder_y: 0.0,
         }
     }
 
@@ -63,6 +79,20 @@ impl EnigoInput {
             );
         }
         Ok(self.enigo.as_mut().expect("just initialised"))
+    }
+
+    /// Convert a pixel wheel delta into whole notches, banking the remainder.
+    ///
+    /// Returns `(vertical, horizontal)`. Truncation is toward zero so equal
+    /// and opposite scrolling nets to zero rather than drifting.
+    fn take_scroll_notches(&mut self, dx: f64, dy: f64) -> (i32, i32) {
+        let total_y = self.scroll_remainder_y + dy / PIXELS_PER_NOTCH;
+        let total_x = self.scroll_remainder_x + dx / PIXELS_PER_NOTCH;
+        let whole_y = total_y.trunc();
+        let whole_x = total_x.trunc();
+        self.scroll_remainder_y = total_y - whole_y;
+        self.scroll_remainder_x = total_x - whole_x;
+        (whole_y as i32, whole_x as i32)
     }
 
     /// §1.4 — normalized 0–1 → absolute screen pixels.
@@ -108,13 +138,22 @@ impl InputBackend for EnigoInput {
     }
 
     fn mouse_scroll(&mut self, dx: f64, dy: f64) -> Result<()> {
-        let enigo = self.enigo()?;
-
         // Browsers report wheel deltas in pixels (deltaMode 0) — typically
         // ~100 per notch — while enigo counts notches. Sending the raw delta
         // would scroll roughly a hundred lines per flick.
-        let notches_y = (dy / 100.0).round() as i32;
-        let notches_x = (dx / 100.0).round() as i32;
+        //
+        // The remainder is carried between events rather than rounded away.
+        // `(dy / 100.0).round()` is zero for anything under 50px, which is
+        // most trackpad and smooth-wheel input, so scrolling from those
+        // devices produced no movement at all — not jerky, none.
+        let (notches_y, notches_x) = self.take_scroll_notches(dx, dy);
+
+        if notches_y == 0 && notches_x == 0 {
+            // Nothing whole yet; the fraction is banked for the next event.
+            return Ok(());
+        }
+
+        let enigo = self.enigo()?;
 
         if notches_y != 0 {
             enigo
@@ -424,7 +463,70 @@ mod tests {
             enigo: None,
             screen_width: 0,
             screen_height: 0,
+            scroll_remainder_x: 0.0,
+            scroll_remainder_y: 0.0,
         };
         assert_eq!(input.to_pixels(0.5, 0.5), (0, 0));
+    }
+
+    // Deltas below are chosen to be binary-exact after division by 100
+    // (12.5 → 0.125, 25 → 0.25). Accumulating 0.1 ten times in f64 lands on
+    // 0.9999999999999999, which truncates to zero — a test written with 10px
+    // events would fail on the arithmetic rather than on the behaviour.
+
+    /// The bug this replaces: `(dy / 100.0).round()` is 0 for anything under
+    /// 50px, and a trackpad emits a stream of small deltas. Scrolling with one
+    /// produced no movement whatsoever.
+    #[test]
+    fn small_scroll_deltas_accumulate_into_a_notch() {
+        let mut input = EnigoInput::new();
+        let mut notches = 0i32;
+        for _ in 0..8 {
+            notches += input.take_scroll_notches(0.0, 12.5).0;
+        }
+        assert_eq!(notches, 1, "8 × 12.5px is exactly one notch");
+    }
+
+    #[test]
+    fn a_single_small_delta_moves_nothing_yet() {
+        let mut input = EnigoInput::new();
+        assert_eq!(input.take_scroll_notches(0.0, 12.5), (0, 0));
+    }
+
+    #[test]
+    fn a_full_wheel_click_is_one_notch_immediately() {
+        let mut input = EnigoInput::new();
+        assert_eq!(input.take_scroll_notches(0.0, 100.0).0, 1);
+    }
+
+    #[test]
+    fn scrolling_back_and_forth_does_not_drift() {
+        // Truncation has to be symmetric about zero, or shaking the wheel
+        // would slowly walk the page in one direction.
+        let mut input = EnigoInput::new();
+        let mut net = 0i32;
+        for _ in 0..50 {
+            net += input.take_scroll_notches(0.0, 25.0).0;
+            net += input.take_scroll_notches(0.0, -25.0).0;
+        }
+        assert_eq!(net, 0, "equal and opposite scrolling must net to zero");
+    }
+
+    #[test]
+    fn a_large_delta_still_scrolls_proportionally() {
+        // The remainder must not cap the rate: a fast flick is many notches.
+        let mut input = EnigoInput::new();
+        assert_eq!(input.take_scroll_notches(0.0, 500.0).0, 5);
+    }
+
+    #[test]
+    fn horizontal_and_vertical_remainders_are_independent() {
+        let mut input = EnigoInput::new();
+        for _ in 0..3 {
+            input.take_scroll_notches(25.0, 0.0);
+        }
+        // 75px horizontal banked; the fourth completes a notch, vertical
+        // stays untouched throughout.
+        assert_eq!(input.take_scroll_notches(25.0, 0.0), (0, 1));
     }
 }
