@@ -25,7 +25,7 @@
         "status": {
           ".validate": "newData.val() == 'waiting' || newData.val() == 'requested' || newData.val() == 'allowed' || newData.val() == 'denied' || newData.val() == 'connecting' || newData.val() == 'active' || newData.val() == 'ended' || newData.val() == 'expired'"
         },
-        // §6.3 — must match shared/types.ts HostPlatform exactly.
+        // §6.3 — must match viewer/shared/types.ts HostPlatform exactly.
         "hostPlatform": {
           ".validate": "newData.val() == 'windows' || newData.val() == 'linux-x11' || newData.val() == 'linux-wayland'"
         },
@@ -93,6 +93,10 @@
         "deviceName": { ".validate": "newData.isString() && newData.val().length <= 120" },
         "platform":   { ".validate": "newData.val() == 'windows' || newData.val() == 'linux-x11' || newData.val() == 'linux-wayland'" },
         "appVersion": { ".validate": "newData.isString() && newData.val().length <= 32" },
+        // §6.1/§8.2 — recorded into the device registry when the pairing is
+        // claimed, so the shape is pinned here like every other field the
+        // server reads back out of this node.
+        "protocolVersion": { ".validate": "newData.isString() && newData.val().matches(/^[0-9]{1,3}[.][0-9]{1,3}[.][0-9]{1,3}$/)" },
         "createdAt":  { ".validate": "newData.val() <= now" },
         "claimed":    { ".validate": "newData.isBoolean()" },
         // Only the host polls this, and only it knows the code.

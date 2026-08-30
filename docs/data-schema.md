@@ -22,7 +22,7 @@ sessions/{sessionId}
   hostId:           string   (Firebase UID)
   hostPlatform:     "windows" | "linux-x11" | "linux-wayland"
   viewerId:         string | null
-  status:           SessionStatus  (see shared/types.ts — explicit enum)
+  status:           SessionStatus  (see viewer/shared/types.ts — explicit enum)
   offer:            string | null  (≤10KB SDP)
   answer:           string | null  (≤10KB SDP)
   hostCandidates:   { "0".."99": candidate-string }  (batched, max 10/write)

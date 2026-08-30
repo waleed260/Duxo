@@ -237,10 +237,11 @@ export default function SettingsPage() {
                   >
                     <div>
                       <p className="text-sm font-emphasis">
-                        {platformLabel(d.platform)}
+                        {d.deviceName || platformLabel(d.platform)}
                       </p>
                       <p className="text-xs text-text-secondary">
-                        v{d.appVersion} &middot; Last seen{" "}
+                        {platformLabel(d.platform)} &middot; v{d.appVersion}{" "}
+                        &middot; Last seen{" "}
                         {new Date(d.lastSeenAt).toLocaleDateString()}
                       </p>
                     </div>
@@ -249,7 +250,7 @@ export default function SettingsPage() {
                       size="md"
                       onClick={() => handleRevokeDevice(d.id)}
                       isLoading={revoking === d.id}
-                      aria-label={`Revoke ${platformLabel(d.platform)}`}
+                      aria-label={`Revoke ${d.deviceName || platformLabel(d.platform)}`}
                     >
                       <Trash2 className="h-4 w-4 text-danger" aria-hidden="true" />
                     </Button>

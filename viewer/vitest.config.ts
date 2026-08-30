@@ -15,7 +15,13 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "."),
-      "@shared": path.resolve(__dirname, "../shared"),
+      // Must match tsconfig's `@shared/*` -> `./shared/*`. It used to point
+      // one directory up, at a byte-identical second copy of the same file:
+      // vitest tested one, `tsc` and `next build` compiled the other, and
+      // `VIEWER_PROTOCOL_VERSION` is a runtime value the host refuses a
+      // session over. The duplicate is gone; this keeps them pointed at the
+      // same place.
+      "@shared": path.resolve(__dirname, "./shared"),
     },
   },
 });

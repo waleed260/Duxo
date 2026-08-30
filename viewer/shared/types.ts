@@ -82,7 +82,14 @@ export interface UserProfile {
 
 export interface DeviceRecord {
   ownerUid: string;
+  /**
+   * §8.2 — the host's own name for the machine, captured at pairing. Without
+   * it the settings list shows two Linux laptops as two identical rows, and
+   * "revoke" becomes a guess about which one you are revoking.
+   */
+  deviceName: string;
   platform: HostPlatform;
+  pairedAt: number;
   lastSeenAt: number;
   appVersion: string;
   protocolVersion: ProtocolVersion;

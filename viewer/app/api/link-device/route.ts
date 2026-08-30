@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { getAuth } from "firebase-admin/auth";
 import { getDatabase } from "firebase-admin/database";
+import { getFirestore } from "firebase-admin/firestore";
 import { firebaseAdmin } from "@/lib/firebase-admin";
 
 /**
@@ -88,6 +89,8 @@ export async function POST(request: Request) {
     const pairing = snapshot.val() as {
       deviceName?: unknown;
       platform?: unknown;
+      appVersion?: unknown;
+      protocolVersion?: unknown;
       createdAt?: unknown;
       claimed?: unknown;
     };
@@ -116,13 +119,47 @@ export async function POST(request: Request) {
 
     await nodeRef.update({ claimed: true, customToken });
 
+    // §8.2 — the device registry. Nothing wrote it before, so /settings
+    // listed "No devices registered" no matter how many machines a user had
+    // linked, which reads as a pairing that silently failed. It is written
+    // after the token is minted rather than before: a registry entry for a
+    // pairing that then failed would be worse than none.
+    //
+    // Best-effort. The device is genuinely linked once the host has the
+    // token, and failing the whole request over a bookkeeping write would
+    // leave the user with a machine that is paired and an error that says it
+    // is not.
+    const deviceName =
+      typeof pairing.deviceName === "string" ? pairing.deviceName : "Unknown device";
+    const platform =
+      typeof pairing.platform === "string" ? pairing.platform : "unknown";
+    try {
+      const now = Date.now();
+      await getFirestore(firebaseAdmin)
+        .collection("devices")
+        .add({
+          ownerUid: userId,
+          deviceName,
+          platform,
+          pairedAt: now,
+          lastSeenAt: now,
+          appVersion:
+            typeof pairing.appVersion === "string" ? pairing.appVersion : "unknown",
+          protocolVersion:
+            typeof pairing.protocolVersion === "string"
+              ? pairing.protocolVersion
+              : "1.0.0",
+        });
+    } catch (error) {
+      console.error("Device registry write failed:", error);
+    }
+
     return NextResponse.json({
       ok: true,
       // Echoed so the UI can confirm *which* machine was just linked — the
       // user should see the device name before trusting the pairing.
-      deviceName:
-        typeof pairing.deviceName === "string" ? pairing.deviceName : "Unknown device",
-      platform: typeof pairing.platform === "string" ? pairing.platform : "unknown",
+      deviceName,
+      platform,
     });
   } catch (error) {
     console.error("Device pairing failed:", error);

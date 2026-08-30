@@ -306,7 +306,7 @@ impl SessionDriver {
         shutdown: &ShutdownRx,
     ) -> Result<Option<Verified>> {
         let project_id = self.auth.lock().await.project_id().to_string();
-        let certs = security::fetch_google_certs(&project_id).await?;
+        let mut certs = security::fetch_google_certs(&project_id).await?;
 
         let started = Instant::now();
 
@@ -351,7 +351,25 @@ impl SessionDriver {
                 continue;
             }
 
-            let claims = match security::verify_viewer_token(viewer_token, &certs, &project_id) {
+            // Google rotates the securetoken signing keys, and this set was
+            // fetched once — up to 24 hours ago, since that is how long a code
+            // stays redeemable. A token signed with a key minted after that
+            // fetch is not a bad token; it is a stale cache, and denying it
+            // would tell the user their perfectly good sign-in was rejected.
+            // Refetch once and try again before treating it as a forgery.
+            let mut verified = security::verify_viewer_token(viewer_token, &certs, &project_id);
+            if matches!(verified, Err(DuxoError::UnknownSigningKey)) {
+                tracing::info!("unknown signing key — refreshing Google's certs");
+                match security::fetch_google_certs(&project_id).await {
+                    Ok(fresh) => {
+                        certs = fresh;
+                        verified = security::verify_viewer_token(viewer_token, &certs, &project_id);
+                    }
+                    Err(e) => tracing::warn!(error = %e, "could not refresh Google's certs"),
+                }
+            }
+
+            let claims = match verified {
                 Ok(c) => c,
                 Err(e) => {
                     tracing::warn!(error = %e, "viewer token failed verification — denying");

@@ -216,6 +216,10 @@ pub async fn begin_pairing(
         "deviceName": device_name,
         "platform": platform,
         "appVersion": env!("CARGO_PKG_VERSION"),
+        // §6.1/§8.2 — the wire protocol this build speaks, recorded in the
+        // device registry at pairing. It is what tells a user which of their
+        // machines is running a version too old to connect, before they try.
+        "protocolVersion": crate::session::HOST_PROTOCOL_VERSION.to_string(),
         "createdAt": { ".sv": "timestamp" },
         "claimed": false,
     });
