@@ -133,6 +133,13 @@ the database lives in another region, where the derived
 The `NEXT_PUBLIC_*` ones are inlined at build time, so Railway needs a
 redeploy after setting them, not just a restart.
 
+Railway health-checks `/api/health` on every deploy (`viewer/railway.json`),
+so a build that comes up without its server secrets fails the deploy instead
+of replacing a working instance with a broken one. That is why the endpoint
+answers 503 rather than 200 when it is misconfigured — a missing TURN
+credential stays 200, since §0.8 degrades rather than breaks and should not
+block a release.
+
 ### Checking a deployment
 
 The viewer runs on Railway (`viewer/railway.json` — Nixpacks build, `next start`).
