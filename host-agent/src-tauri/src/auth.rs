@@ -257,7 +257,9 @@ pub async fn complete_pairing(
 
     let custom_token = loop {
         if started.elapsed() > PAIRING_TIMEOUT {
-            let _ = delete_pairing(database_url, code).await;
+            // No token was ever issued, so this node carries no secret and
+            // the unauthenticated delete the rules refuse costs nothing.
+            let _ = delete_pairing(database_url, code, None).await;
             return Err(DuxoError::Firebase(
                 "pairing timed out — no one approved this code".into(),
             ));
@@ -298,7 +300,7 @@ pub async fn complete_pairing(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        let _ = delete_pairing(database_url, code).await;
+        let _ = delete_pairing(database_url, code, None).await;
         return Err(DuxoError::Firebase(format!(
             "custom token exchange failed ({status}): {body}"
         )));
@@ -306,13 +308,22 @@ pub async fn complete_pairing(
 
     let exchange: CustomTokenExchange = resp.json().await?;
 
-    // The pairing node has served its purpose and still holds a usable custom
-    // token — remove it immediately rather than letting it sit until expiry.
-    let _ = delete_pairing(database_url, code).await;
-
     // Read the uid back out of the freshly issued token rather than trusting
     // anything the pairing node said about who this is.
     let refreshed = HostAuth::exchange_refresh_token(api_key, &exchange.refresh_token).await?;
+
+    // The pairing node has served its purpose and still holds a usable custom
+    // token, so retire it now — authenticated, which is the only way the rule
+    // permits it. Not fatal if it fails: the device is paired either way, and
+    // refusing to complete pairing over a stale node would be the worse
+    // outcome. But it is logged loudly, because a node that survives here is
+    // an hour-long window onto the account.
+    if let Err(e) = delete_pairing(database_url, code, Some(&refreshed.id_token)).await {
+        tracing::error!(
+            error = %e,
+            "pairing node still holds a live custom token — delete it by hand"
+        );
+    }
 
     crate::security::set_secret(KEY_REFRESH_TOKEN, &refreshed.refresh_token)?;
     crate::security::set_secret(KEY_UID, &refreshed.user_id)?;
@@ -330,22 +341,49 @@ pub async fn complete_pairing(
     })
 }
 
-async fn delete_pairing(database_url: &str, code: &str) -> Result<()> {
+/// Retire a pairing node.
+///
+/// `id_token` is not optional decoration. The §10.2 rule for `pairings` is
+/// `(!data.exists() && !newData.child('claimed').val()) || auth != null`, and
+/// for a delete of an existing node the first clause is false by definition —
+/// so an unauthenticated delete is refused, always. This used to be called
+/// without a token and its result discarded, which meant the node was never
+/// removed and the code's own comment ("remove it immediately") described
+/// something that had never once happened.
+///
+/// That node holds a Firebase **custom token**, and `customToken` is readable
+/// by anyone who knows the code. A custom token is good for an hour and
+/// exchanges for a full session as that user, so leaving it lying around turns
+/// a guessed or shoulder-surfed pairing code into account access long after
+/// the pairing itself is done.
+async fn delete_pairing(database_url: &str, code: &str, id_token: Option<&str>) -> Result<()> {
     let client = reqwest::Client::new();
-    let url = format!(
+    let mut url = format!(
         "{}/pairings/{}.json",
         database_url.trim_end_matches('/'),
         code
     );
-    client.delete(&url).send().await?;
+    if let Some(token) = id_token {
+        url.push_str(&format!("?auth={token}"));
+    }
+
+    let resp = client.delete(&url).send().await?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(DuxoError::Firebase(format!(
+            "could not retire pairing node ({status}): {body}"
+        )));
+    }
     Ok(())
 }
 
 /// A 6-character pairing code from an unambiguous alphabet.
 ///
 /// Deliberately not the §0.6 8-digit *session* code alphabet: these get read
-/// aloud and typed on a phone, so 0/O and 1/I/L are excluded. 28^6 ≈ 480M
-/// combinations against a node that lives at most ten minutes.
+/// aloud and typed on a phone, so 0/O and 1/I/L are excluded. The alphabet is
+/// 31 characters, so 31^6 ≈ 887M combinations against a node that lives at
+/// most ten minutes.
 fn generate_pairing_code() -> String {
     use rand::Rng;
     const ALPHABET: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -358,6 +396,23 @@ fn generate_pairing_code() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The alphabet has to stay inside what /api/link-device will accept
+    /// (`/^[A-Z2-9]{6}$/`), or a host shows a code the web app rejects as
+    /// malformed — and the user is told their own device's code is invalid.
+    #[test]
+    fn pairing_code_matches_the_pattern_the_web_app_validates() {
+        for _ in 0..200 {
+            let code = generate_pairing_code();
+            assert_eq!(code.len(), 6);
+            for c in code.chars() {
+                assert!(
+                    c.is_ascii_uppercase() || ('2'..='9').contains(&c),
+                    "{c:?} is outside /^[A-Z2-9]{{6}}$/, which /api/link-device enforces"
+                );
+            }
+        }
+    }
 
     #[test]
     fn pairing_code_avoids_ambiguous_characters() {
