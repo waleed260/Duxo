@@ -69,6 +69,12 @@ firebase deploy --only database,firestore:rules,firestore:indexes \
   --project <your-project-id>
 ```
 
+For the workflow to deploy anything, the repo needs one of two secrets:
+`FIREBASE_SERVICE_ACCOUNT` (base64 of a service-account JSON key — the same
+one `firestore-backup.yml` uses) or `FIREBASE_TOKEN`. **Neither is currently
+set**, so the workflow will fail loudly rather than report a green check for a
+deploy that did not happen.
+
 Until this runs, the project is on whatever rules were last set in the
 console — for a new project, Firebase's defaults, which are open. A session
 also cannot reach `REQUESTED` without the viewer-claim clause in

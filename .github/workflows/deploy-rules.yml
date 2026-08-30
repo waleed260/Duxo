@@ -74,13 +74,27 @@ jobs:
       - name: Install firebase-tools
         run: npm install -g firebase-tools
 
+      # Two credentials are accepted, preferring the service account:
+      # firestore-backup.yml already uses FIREBASE_SERVICE_ACCOUNT, so a repo
+      # that can run backups can deploy rules with no extra setup, and
+      # `firebase login:ci` (which mints FIREBASE_TOKEN) is deprecated.
       - name: Deploy database and Firestore rules
         env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
           FIREBASE_PROJECT_ID: duxo-remote
         run: |
-          if [ -z "$FIREBASE_TOKEN" ]; then
-            echo "::error::FIREBASE_TOKEN is not set — the rules in this repo are NOT deployed."
+          set -euo pipefail
+          if [ -n "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "$FIREBASE_SERVICE_ACCOUNT" | base64 -d > "$RUNNER_TEMP/sa.json"
+            export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          elif [ -z "${FIREBASE_TOKEN:-}" ]; then
+            # Failing here is the point. A green check on a job that deployed
+            # nothing is how the rules in this repo stayed undeployed for
+            # months while reading, to anyone glancing at CI, as applied.
+            echo "::error::No Firebase credential. Set FIREBASE_SERVICE_ACCOUNT" \
+                 "(base64 of a service-account JSON key, as firestore-backup.yml" \
+                 "uses) or FIREBASE_TOKEN. The rules in this repo are NOT deployed."
             exit 1
           fi
           firebase deploy \
