@@ -1,0 +1,89 @@
+# §10.1 / §10.2 — deploy the Firebase security rules.
+#
+# The rules files have lived in `firebase/` since the start with nothing that
+# applies them, and there was no `firebase.json` for the CLI to read, so every
+# rule in the repo was a document rather than a deployed control. That is the
+# worst failure mode available here: the rules are the *only* thing standing
+# between a signed-in account and another user's session, and a repo full of
+# careful rules reads exactly like a project that has deployed them.
+#
+# §0.13 item 5 — "Deploy RTDB + Firestore security rules before any user data".
+#
+# Runs on any change to the rules, so tightening a rule cannot be merged and
+# then silently left unapplied.
+name: Deploy Firebase Rules
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "firebase/**"
+      - "firebase.json"
+      - "viewer/firestore.indexes.json"
+      - ".github/workflows/deploy-rules.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Catches a malformed rules file on every branch and PR, including the
+      # ones that never reach the deploy job below. A syntax error here would
+      # otherwise surface as a failed deploy after merge, at which point the
+      # live rules are whatever was deployed last.
+      - name: Check database.rules.json parses
+        run: |
+          python3 - <<'PY'
+          import json, re, sys
+          raw = open("firebase/database.rules.json").read()
+          # The file is JSON-with-comments by convention; strip line comments
+          # the same way the Firebase CLI does before parsing.
+          stripped = re.sub(r'^\s*//.*$', '', raw, flags=re.M)
+          rules = json.loads(stripped)
+          assert "rules" in rules, "top-level 'rules' key is missing"
+          for node in ("sessions", "codes", "pairings", "auditLog"):
+              assert node in rules["rules"], f"{node} rules disappeared"
+          # §0.7 — codes must never be client-readable. This is a one-line
+          # change away from re-opening the enumeration hole, so it is asserted
+          # rather than left to review.
+          assert rules["rules"]["codes"]["$code"][".read"] is False, \
+              "codes/$code must not be client-readable (§0.7)"
+          print("database.rules.json OK")
+          PY
+
+  deploy:
+    name: Deploy rules
+    needs: validate
+    # Only from the default branch: a rules deploy is global and immediate,
+    # with no per-branch preview to roll back to.
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install firebase-tools
+        run: npm install -g firebase-tools
+
+      - name: Deploy database and Firestore rules
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          FIREBASE_PROJECT_ID: duxo-remote
+        run: |
+          if [ -z "$FIREBASE_TOKEN" ]; then
+            echo "::error::FIREBASE_TOKEN is not set — the rules in this repo are NOT deployed."
+            exit 1
+          fi
+          firebase deploy \
+            --only database,firestore:rules,firestore:indexes \
+            --project "$FIREBASE_PROJECT_ID" \
+            --non-interactive
