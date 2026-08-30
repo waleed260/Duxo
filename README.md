@@ -172,6 +172,28 @@ failure, so it can gate a release.
 variables without returning their values, and answers 503 rather than 200 when
 the deploy is misconfigured, so an uptime check cannot read it as healthy.
 
+### Cutting a release (§7.1)
+
+The download page points at `releases/latest`, and there are no releases yet,
+so it currently lands on an empty page. Publishing one is a manual
+`workflow_dispatch` on **Release Host Agent** with a version like `v0.1.0`; it
+builds and uploads a Linux `.tar.gz` and a Windows `.zip`.
+
+In-app updates additionally need the minisign key pair the updater verifies
+against. `tauri.conf.json` already carries the public half, and
+`scripts/updater-keygen.sh` generates a pair if you need a new one. Set:
+
+| Secret | Needed for |
+|---|---|
+| `UPDATER_SIGNING_KEY` | The private key's *contents* (not a path). Without it the release still publishes and downloads, but no update manifest is written. |
+| `UPDATER_SIGNING_KEY_PASSWORD` | Only if the key is passphrase-encrypted, which `updater-keygen.sh` produces by default. |
+
+Without those, the workflow warns and skips the manifest rather than
+publishing one it cannot sign: the updater plugin verifies every download
+against the embedded public key, so a manifest with an empty signature does
+not mean "unsigned build", it means every in-app update fails and tells the
+user so. No manifest at all means the updater finds nothing and says nothing.
+
 ### Viewer (Next.js)
 
 ```bash

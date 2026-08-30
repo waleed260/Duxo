@@ -93,18 +93,9 @@ jobs:
         working-directory: host-agent/src-tauri
         run: cargo test --target ${{ matrix.target }}
 
-      - name: Sign binary
-        shell: bash
-        env:
-          SIGNING_KEY: ${{ secrets.UPDATER_SIGNING_KEY }}
-        run: |
-          echo "$SIGNING_KEY" > /tmp/signing.key
-          npx @tauri-apps/cli@latest signer sign \
-            -k /tmp/signing.key \
-            -f host-agent/src-tauri/target/${{ matrix.target }}/release/${{ matrix.binary_name }}
-          rm /tmp/signing.key
-        continue-on-error: true
-
+      # Packaging comes before signing on purpose: the updater downloads the
+      # archive, so the archive is what its signature has to cover. The old
+      # order signed the bare binary, which the updater never sees.
       - name: Package archive
         shell: bash
         run: |
@@ -117,6 +108,48 @@ jobs:
           fi
           echo "archive=$ARCHIVE" >> $GITHUB_ENV
 
+      - name: Is there a signing key?
+        id: signing
+        shell: bash
+        env:
+          SIGNING_KEY: ${{ secrets.UPDATER_SIGNING_KEY }}
+        run: |
+          if [ -n "${SIGNING_KEY:-}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::UPDATER_SIGNING_KEY is not set. The binaries will" \
+                 "still be published and can be downloaded, but no update" \
+                 "manifest will be written — the updater plugin verifies every" \
+                 "download against the minisign key in tauri.conf.json, so an" \
+                 "unsigned manifest turns each in-app update into a failure" \
+                 "rather than into no update at all."
+          fi
+
+      # `signer sign` takes the file to sign as its positional argument, the
+      # key as a *string* in TAURI_SIGNING_PRIVATE_KEY, and the passphrase in
+      # TAURI_SIGNING_PRIVATE_KEY_PASSWORD. The previous invocation passed the
+      # key's path to -k (which wants the key itself) and the binary to -f
+      # (which wants a key path), and named no file to sign at all — so it
+      # exited non-zero every time, and `continue-on-error` kept that quiet.
+      - name: Sign the archive
+        if: steps.signing.outputs.enabled == 'true'
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATER_SIGNING_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.UPDATER_SIGNING_KEY_PASSWORD }}
+        run: npx --yes @tauri-apps/cli@2 signer sign "${{ env.archive }}"
+
+      # The manifest is written by a later job, which cannot reach this one's
+      # filesystem. The signature travels as an artifact.
+      - name: Upload the signature for the manifest job
+        if: steps.signing.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: signature-${{ matrix.target }}
+          path: ${{ env.archive }}.sig
+          if-no-files-found: error
+
       - name: Upload release asset via gh CLI
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -124,37 +157,81 @@ jobs:
           gh release upload "${{ inputs.version }}" "./${{ env.archive }}" --clobber
 
   update-manifest:
+    name: Publish the update manifest
     runs-on: ubuntu-latest
     needs: build-and-sign
     steps:
       - uses: actions/checkout@v4
 
-      - name: Update update.json manifest
+      - name: Collect the archive signatures
+        uses: actions/download-artifact@v4
+        with:
+          pattern: signature-*
+          path: signatures
+        continue-on-error: true
+
+      # A manifest is only worth publishing if it can verify. The updater
+      # plugin checks every download against the minisign public key in
+      # tauri.conf.json, so `"signature": ""` — which this job used to write
+      # unconditionally — does not mean "unsigned build", it means every
+      # in-app update fails verification and reports an error to the user.
+      # No manifest at all is the honest state: the updater then finds nothing
+      # and says nothing, and the release is still downloadable from the page.
+      - name: Write update.json
+        id: manifest
         run: |
-          cat > viewer/public/update.json <<EOF
-          {
-            "version": "${{ inputs.version }}",
-            "notes": "Duxo ${{ inputs.version }} release.",
-            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "platforms": {
-              "linux-x86_64": {
-                "signature": "",
-                "url": "https://github.com/${{ github.repository }}/releases/download/${{ inputs.version }}/duxo-host-${{ inputs.version }}-x86_64-unknown-linux-gnu.tar.gz"
-              },
-              "windows-x86_64": {
-                "signature": "",
-                "url": "https://github.com/${{ github.repository }}/releases/download/${{ inputs.version }}/duxo-host-${{ inputs.version }}-x86_64-pc-windows-msvc.zip"
+          set -euo pipefail
+          LINUX_SIG_FILE=$(find signatures -name '*x86_64-unknown-linux-gnu*.sig' | head -1 || true)
+          WINDOWS_SIG_FILE=$(find signatures -name '*x86_64-pc-windows-msvc*.sig' | head -1 || true)
+
+          if [ -z "$LINUX_SIG_FILE" ] || [ -z "$WINDOWS_SIG_FILE" ]; then
+            echo "::warning::No signatures for this release, so no update" \
+                 "manifest was published. Set the UPDATER_SIGNING_KEY secret" \
+                 "(and UPDATER_SIGNING_KEY_PASSWORD if the key is encrypted)" \
+                 "and re-run to enable in-app updates. ${{ inputs.version }}" \
+                 "is still published and downloadable."
+            echo "written=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          LINUX_SIG=$(cat "$LINUX_SIG_FILE")
+          WINDOWS_SIG=$(cat "$WINDOWS_SIG_FILE")
+          BASE="https://github.com/${{ github.repository }}/releases/download/${{ inputs.version }}"
+
+          jq -n \
+            --arg version "${{ inputs.version }}" \
+            --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg linux_sig "$LINUX_SIG" \
+            --arg windows_sig "$WINDOWS_SIG" \
+            --arg linux_url "$BASE/duxo-host-${{ inputs.version }}-x86_64-unknown-linux-gnu.tar.gz" \
+            --arg windows_url "$BASE/duxo-host-${{ inputs.version }}-x86_64-pc-windows-msvc.zip" \
+            '{
+              version: $version,
+              notes: "Duxo \($version) release.",
+              pub_date: $pub_date,
+              platforms: {
+                "linux-x86_64":   { signature: $linux_sig,   url: $linux_url },
+                "windows-x86_64": { signature: $windows_sig, url: $windows_url }
               }
-            }
-          }
-          EOF
-          # Also update docs/ copy
+            }' > viewer/public/update.json
+
+          # docs/ is what GitHub Pages serves, and the endpoint in
+          # tauri.conf.json points there. Both copies have to move together.
           cp viewer/public/update.json docs/update.json
+          echo "written=true" >> "$GITHUB_OUTPUT"
 
       - name: Commit update manifest
+        if: steps.manifest.outputs.written == 'true'
         run: |
+          set -euo pipefail
           git config user.name "Duxo Bot"
           git config user.email "bot@duxo.dev"
           git add viewer/public/update.json docs/update.json
+          # Re-running a release for the same version changes only pub_date,
+          # and an empty commit would fail the job over nothing.
+          if git diff --cached --quiet; then
+            echo "manifest unchanged"
+            exit 0
+          fi
           git commit -m "chore: update manifest to ${{ inputs.version }}"
           git push

@@ -259,9 +259,7 @@ pub fn redact_secrets(text: &str) -> String {
         let value = &rest[name_end..];
         // A query value ends at the next separator; URLs here are followed by
         // `&`, `)`, or the end of the message.
-        let end = value
-            .find(|c: char| c == '&' || c == ')' || c == ' ' || c == '"')
-            .unwrap_or(value.len());
+        let end = value.find(['&', ')', ' ', '"']).unwrap_or(value.len());
         rest = &value[end..];
     }
 
