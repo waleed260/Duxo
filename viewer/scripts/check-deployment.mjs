@@ -69,8 +69,21 @@ try {
   const landing = await page.goto(base, { waitUntil: "domcontentloaded", timeout: 45_000 });
   record("landing page responds", landing?.ok() === true, `HTTP ${landing?.status()}`);
 
+  // Not just "an h1 exists". When the Railway service is stopped, its edge
+  // router answers every path with {"code":404,"message":"Application not
+  // found"}, and the browser renders that as a page with an <h1> reading "Not
+  // Found" — which passed a bare presence check and reported a dead site as
+  // having rendered fine. The assertion has to be that *this app* answered.
+  const bodyText = (await page.locator("body").innerText().catch(() => "")) ?? "";
+  const servedByRailwayEdge = /Application not found/i.test(bodyText);
   const h1 = await page.locator("h1").first().textContent().catch(() => null);
-  record("landing page rendered markup", Boolean(h1?.trim()), h1?.trim()?.slice(0, 60));
+  record(
+    "landing page is the Duxo app, not an error page",
+    Boolean(h1?.trim()) && !servedByRailwayEdge && !/^not found$/i.test(h1?.trim() ?? ""),
+    servedByRailwayEdge
+      ? "Railway edge returned 'Application not found' — the service is not running"
+      : h1?.trim()?.slice(0, 60),
+  );
 
   // ── 2. Configuration, via the health route ───────────────────────────────
   // The single most useful signal: a deploy can be up and still be missing
