@@ -68,6 +68,41 @@ describe("GET /api/health", () => {
     expect(res.status).toBe(503);
   });
 
+  it("stays healthy when the database URL is only derivable", async () => {
+    // lib/firebase-client.ts falls back to <project>-default-rtdb for a
+    // default-region database, so a deployment without the explicit variable
+    // still reaches RTDB. Reporting that as misconfigured was a false alarm,
+    // and false alarms are how a health endpoint stops being read.
+    const { res, body } = await callHealth({
+      ...ALL,
+      NEXT_PUBLIC_FIREBASE_DATABASE_URL: undefined,
+    });
+    expect(res.status).toBe(200);
+    expect(body.status).toBe("ok");
+    expect(body.databaseUrlDerived).toBe(true);
+    expect(body.databaseUrl).toBe("https://duxo-test-default-rtdb.firebaseio.com");
+  });
+
+  it("prefers an explicit database URL over the derived one", async () => {
+    // A non-default region is the case the variable exists for; the derived
+    // host would be wrong there, so an explicit value must win.
+    const { body } = await callHealth({
+      ...ALL,
+      NEXT_PUBLIC_FIREBASE_DATABASE_URL: "https://duxo-test.europe-west1.firebasedatabase.app",
+    });
+    expect(body.databaseUrlDerived).toBe(false);
+    expect(body.databaseUrl).toBe("https://duxo-test.europe-west1.firebasedatabase.app");
+  });
+
+  it("is misconfigured when no database URL can be resolved at all", async () => {
+    const { res } = await callHealth({
+      ...ALL,
+      NEXT_PUBLIC_FIREBASE_DATABASE_URL: undefined,
+      NEXT_PUBLIC_FIREBASE_PROJECT_ID: undefined,
+    });
+    expect(res.status).toBe(503);
+  });
+
   it("stays healthy without TURN but flags it (§0.8)", async () => {
     // Missing TURN is "up, and broken for some callers" — a different answer
     // from misconfigured, and it must not take the deploy down.
@@ -84,7 +119,17 @@ describe("GET /api/health", () => {
   it("never returns a secret, or any part of one", async () => {
     const { body } = await callHealth(ALL);
     const text = JSON.stringify(body);
-    for (const value of Object.values(ALL)) {
+    // Only the server-side secrets. NEXT_PUBLIC_* values are compiled into
+    // the client bundle and served to every visitor, so echoing one back is
+    // not a leak — and asserting otherwise would block the endpoint from
+    // reporting the database host it resolved, which is the useful part.
+    const secrets = [
+      ALL.CLERK_SECRET_KEY,
+      ALL.FIREBASE_CLIENT_EMAIL,
+      ALL.FIREBASE_PRIVATE_KEY,
+      ALL.NEXT_PUBLIC_METERED_TURN_CREDENTIAL,
+    ];
+    for (const value of secrets) {
       expect(text).not.toContain(value);
     }
     // Not even a prefix long enough to be useful.

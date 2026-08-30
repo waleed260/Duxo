@@ -29,9 +29,29 @@ const REQUIRED_SERVER = [
 const REQUIRED_CLIENT = [
   "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
   "NEXT_PUBLIC_FIREBASE_API_KEY",
-  "NEXT_PUBLIC_FIREBASE_DATABASE_URL",
   "NEXT_PUBLIC_FIREBASE_PROJECT_ID",
 ] as const;
+
+/**
+ * NEXT_PUBLIC_FIREBASE_DATABASE_URL is deliberately *not* required.
+ *
+ * `lib/firebase-client.ts` derives Firebase's default instance from the
+ * project id when it is absent, so a deployment without it still reaches the
+ * database. It is only load-bearing for a non-default RTDB region, where the
+ * derived `<project>-default-rtdb.firebaseio.com` would be the wrong host.
+ *
+ * Listing it as required cost more than it saved: it reported a healthy
+ * deployment as misconfigured, which is exactly the false alarm that teaches
+ * people to stop reading this endpoint.
+ */
+function databaseUrl(): { url: string | null; derived: boolean } {
+  const explicit = process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL?.trim();
+  if (explicit) return { url: explicit, derived: false };
+  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID?.trim();
+  return projectId
+    ? { url: `https://${projectId}-default-rtdb.firebaseio.com`, derived: true }
+    : { url: null, derived: false };
+}
 
 /**
  * §0.8 — TURN is not optional, but its absence degrades rather than breaks,
@@ -55,8 +75,10 @@ export async function GET() {
   const missingServer = missingFrom(REQUIRED_SERVER);
   const missingClient = missingFrom(REQUIRED_CLIENT);
   const missingTurn = missingFrom(REQUIRED_TURN);
+  const database = databaseUrl();
 
-  const configured = missingServer.length === 0 && missingClient.length === 0;
+  const configured =
+    missingServer.length === 0 && missingClient.length === 0 && database.url !== null;
 
   return NextResponse.json(
     {
@@ -70,6 +92,11 @@ export async function GET() {
       },
       // §0.8 — up, but relay-less: fine on most networks, broken on some.
       turnConfigured: missingTurn.length === 0,
+      // The host it will actually talk to, and whether that was configured or
+      // inferred. Inferred is correct for a default-region database and wrong
+      // for any other, so it is worth saying which one happened.
+      databaseUrl: database.url,
+      databaseUrlDerived: database.derived,
     },
     {
       // A misconfigured deploy must not read as healthy to a load balancer or
