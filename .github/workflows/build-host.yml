@@ -136,9 +136,16 @@ jobs:
           cargo audit
 
       # §10.5 — clippy with -D warnings in CI to fail on any lint.
+      #
+      # --all-targets so tests and benches are linted too. Without it clippy
+      # sees only the binary, which has two consequences: test code is never
+      # linted at all, and a helper whose only caller is a #[cfg(test)] module
+      # is reported as dead code. `SessionStatus::valid_values` is exactly
+      # that — it exists to be cross-checked against the RTDB status rule, and
+      # a test is the only place that check belongs.
       - name: Clippy lint
         working-directory: host-agent/src-tauri
-        run: cargo clippy --target ${{ matrix.target }} -- -D warnings
+        run: cargo clippy --all-targets --target ${{ matrix.target }} -- -D warnings
 
       # §10.5 — rustfmt check.
       - name: Rustfmt check
