@@ -61,6 +61,9 @@ const CODE_LIFETIME: Duration = Duration::from_millis(session::CODE_LIFETIME_MS 
 /// §1.1 — "ACTIVE ──(network loss > 60s)──► ENDED".
 const NETWORK_LOSS_GRACE: Duration = Duration::from_secs(60);
 
+/// §6.2 — how often the crash marker's `last_seen_at` is refreshed.
+const CRASH_MARKER_HEARTBEAT: Duration = Duration::from_secs(30);
+
 /// What the UI needs to know. The host agent's windows subscribe to these
 /// rather than polling shared state.
 #[derive(Debug, Clone)]
@@ -476,6 +479,7 @@ impl SessionDriver {
         let session_start = Instant::now();
         let mut last_activity = Instant::now();
         let mut disconnected_since: Option<Instant> = None;
+        let mut last_heartbeat = Instant::now();
 
         loop {
             tokio::time::sleep(POLL_INTERVAL).await;
@@ -560,10 +564,12 @@ impl SessionDriver {
                 // §6.2 — a marker on disk is the only way the next launch can
                 // tell a crash from a clean exit. Written once the session is
                 // genuinely live, cleared by `teardown`.
+                let now_ms = chrono::Utc::now().timestamp_millis();
                 let marker = crate::crash_recovery::CrashMarker {
                     session_id: session_id.to_string(),
-                    started_at: chrono::Utc::now().timestamp_millis(),
+                    started_at: now_ms,
                     host_platform: self.platform.to_string(),
+                    last_seen_at: Some(now_ms),
                 };
                 if let Err(e) = crate::crash_recovery::write_marker(&marker) {
                     tracing::warn!(error = %e, "could not write crash marker");
@@ -584,6 +590,15 @@ impl SessionDriver {
                 }
             } else if connected {
                 disconnected_since = None;
+            }
+
+            // §6.2 — keep the crash marker's age meaning "how long ago did
+            // this host stop". Every 30 seconds, not every poll: five-minute
+            // granularity does not need a file write per second for eight
+            // hours.
+            if is_active && last_heartbeat.elapsed() >= CRASH_MARKER_HEARTBEAT {
+                crate::crash_recovery::touch_marker();
+                last_heartbeat = Instant::now();
             }
 
             // §7.4 — 30 minutes with no input ends the session. Deliberately
