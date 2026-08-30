@@ -42,11 +42,21 @@ const POLL_INTERVAL: Duration = Duration::from_secs(1);
 /// §2.4 — "Timeout → Denied, never Allowed."
 const DECISION_TIMEOUT: Duration = Duration::from_secs(60);
 
+// §7.4 — the expiry policy itself lives in `session.rs` alongside the state
+// machine it belongs to. These are the same numbers as `Duration`s; deriving
+// them rather than restating them means the policy cannot drift between the
+// module that documents it and the loop that enforces it.
+
 /// §7.4 — max session duration: 8 hours, auto-ends, user must reconnect.
-const MAX_SESSION_DURATION: Duration = Duration::from_secs(8 * 60 * 60);
+const MAX_SESSION_DURATION: Duration =
+    Duration::from_millis(session::MAX_SESSION_DURATION_MS as u64);
 
 /// §7.4 — idle timeout: 30 minutes with no input events.
-const IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+const IDLE_TIMEOUT: Duration = Duration::from_millis(session::IDLE_TIMEOUT_MS as u64);
+
+/// §0.6 — an 8-digit code lives 24h. A host left running overnight stops
+/// polling rather than holding a session node open indefinitely.
+const CODE_LIFETIME: Duration = Duration::from_millis(session::CODE_LIFETIME_MS as u64);
 
 /// §1.1 — "ACTIVE ──(network loss > 60s)──► ENDED".
 const NETWORK_LOSS_GRACE: Duration = Duration::from_secs(60);
@@ -65,12 +75,23 @@ pub enum SessionEvent {
     ViewerVerified {
         email: String,
         uid: String,
+        /// §6.1 — the intersection of what host and viewer both support.
+        capabilities: Vec<String>,
     },
     /// §1.1 — every state transition, for the UI to reflect.
     Status(SessionStatus),
     /// The session ended for a reason worth telling the user about.
     Failed(String),
     Ended,
+}
+
+/// §2.5 + §6.1 — what one poll of `await_viewer` established: who the viewer
+/// is (from verified JWT claims, never from RTDB) and what the two sides
+/// agreed they can both do.
+struct Verified {
+    uid: String,
+    email: String,
+    capabilities: Vec<String>,
 }
 
 /// The host's Allow/Deny answer, delivered from the native popup (§2.4).
@@ -155,11 +176,13 @@ impl SessionDriver {
         let mut status = SessionStatus::Waiting;
 
         // ── WAITING → REQUESTED ──────────────────────────────────────────
-        let (viewer_uid, viewer_email) = self.await_viewer(session_id, events).await?;
+        let viewer = self.await_viewer(session_id, events).await?;
+        let viewer_uid = viewer.uid;
         status = session::transition(status, SessionStatus::Requested)?;
         let _ = events.send(SessionEvent::ViewerVerified {
-            email: viewer_email.clone(),
+            email: viewer.email,
             uid: viewer_uid.clone(),
+            capabilities: viewer.capabilities,
         });
         let _ = events.send(SessionEvent::Status(SessionStatus::Requested));
 
@@ -180,16 +203,17 @@ impl SessionDriver {
             }
         };
 
-        self.set_status(
-            session_id,
-            &mut status,
-            if allowed {
-                SessionStatus::Allowed
-            } else {
-                SessionStatus::Denied
-            },
-        )
-        .await?;
+        // §2.4 — the most important write in the app. The §1.1 transition is
+        // validated *before* the write, so an Allow arriving for a session
+        // that already moved on is refused rather than published.
+        let decided = if allowed {
+            SessionStatus::Allowed
+        } else {
+            SessionStatus::Denied
+        };
+        session::transition(status, decided)?;
+        self.set_permission(session_id, allowed).await?;
+        status = decided;
 
         if !allowed {
             let _ = events.send(SessionEvent::Status(SessionStatus::Denied));
@@ -235,16 +259,14 @@ impl SessionDriver {
         &self,
         session_id: &str,
         _events: &mpsc::UnboundedSender<SessionEvent>,
-    ) -> Result<(String, String)> {
+    ) -> Result<Verified> {
         let project_id = self.auth.lock().await.project_id().to_string();
         let certs = security::fetch_google_certs(&project_id).await?;
 
         let started = Instant::now();
 
         loop {
-            // §0.6 — codes live 24h; a host left running overnight should stop
-            // polling rather than hold a session node open indefinitely.
-            if started.elapsed() > Duration::from_secs(24 * 60 * 60) {
+            if started.elapsed() > CODE_LIFETIME {
                 return Err(DuxoError::SessionExpired);
             }
 
@@ -298,8 +320,52 @@ impl SessionDriver {
                 return Err(DuxoError::ViewerMismatch);
             }
 
-            tracing::info!(viewer_uid = %claims.sub, "viewer identity verified");
-            return Ok((claims.sub.clone(), claims.email.clone()));
+            // §6.1 — the viewer declares its wire protocol with the claim.
+            // An incompatible MAJOR is refused here, before the host is ever
+            // asked to approve a viewer it could not talk to anyway.
+            let decl = session::ViewerProtocolDecl {
+                protocol_version: node
+                    .get("protocolVersion")
+                    .and_then(|v| v.as_str())
+                    // A viewer that declares nothing is a pre-§6.1 build.
+                    // Treat it as the 1.0.0 baseline rather than rejecting it:
+                    // §6.1's whole point is negotiating down, not failing shut.
+                    .unwrap_or("1.0.0")
+                    .to_string(),
+                capabilities: node
+                    .get("capabilities")
+                    .and_then(|v| v.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|c| c.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            };
+
+            if let Err(reason) = session::check_protocol_compatibility(&decl) {
+                tracing::warn!(
+                    reason = %reason,
+                    host_protocol = %session::HOST_PROTOCOL_VERSION,
+                    "viewer protocol is incompatible — denying"
+                );
+                self.write_field(session_id, "status", serde_json::json!("denied"))
+                    .await?;
+                return Err(DuxoError::Protocol(reason));
+            }
+
+            let capabilities = session::negotiated_capabilities(&decl.capabilities);
+            tracing::info!(
+                viewer_uid = %claims.sub,
+                viewer_protocol = %decl.protocol_version,
+                negotiated = ?capabilities,
+                "viewer identity verified"
+            );
+            return Ok(Verified {
+                uid: claims.sub.clone(),
+                email: claims.email.clone(),
+                capabilities,
+            });
         }
     }
 
@@ -310,7 +376,17 @@ impl SessionDriver {
         status: &mut SessionStatus,
         events: &mpsc::UnboundedSender<SessionEvent>,
     ) -> Result<()> {
-        let input: Box<dyn InputBackend> = crate::backend::platform_input()?;
+        // §0.2 — a host that cannot inject input still hosts a perfectly good
+        // view-only session. Propagating this error instead would mean a
+        // Wayland user gets no session at all, which is a worse answer than
+        // the one the plan actually specifies.
+        let input: Option<Box<dyn InputBackend>> = match crate::backend::platform_input() {
+            Ok(backend) => Some(backend),
+            Err(e) => {
+                tracing::warn!(error = %e, "starting a view-only session");
+                None
+            }
+        };
         let (sig_tx, mut sig_rx) = mpsc::unbounded_channel::<HostSignal>();
 
         let peer = Arc::new(HostPeer::new(&self.ice, input, sig_tx).await?);
@@ -575,15 +651,7 @@ impl SessionDriver {
         let proj = auth.project_id().to_string();
         drop(auth);
 
-        let _ = firebase::update_session_field(
-            &db,
-            &token,
-            &proj,
-            session_id,
-            "status",
-            serde_json::json!("ended"),
-        )
-        .await;
+        let _ = firebase::end_session(&db, &token, &proj, session_id).await;
 
         if let Err(e) = firebase::delete_code(&db, &token, code).await {
             tracing::warn!(error = %e, "could not retire session code");
@@ -673,6 +741,16 @@ impl SessionDriver {
         .await?;
         *current = validated;
         Ok(())
+    }
+
+    /// §2.4 — publish the host's Allow/Deny answer.
+    async fn set_permission(&self, session_id: &str, allowed: bool) -> Result<()> {
+        let mut auth = self.auth.lock().await;
+        let token = auth.id_token().await?;
+        let db = auth.database_url().to_string();
+        let proj = auth.project_id().to_string();
+        drop(auth);
+        firebase::set_permission(&db, &token, &proj, session_id, allowed).await
     }
 
     async fn write_field(

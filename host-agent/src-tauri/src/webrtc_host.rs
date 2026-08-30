@@ -136,7 +136,10 @@ struct FileAssembly {
 /// Shared state the data-channel callbacks need. Kept in one struct so the
 /// closures capture a single Arc rather than five.
 struct ChannelContext {
-    input: Mutex<Box<dyn InputBackend>>,
+    /// §0.2 — `None` on a platform that cannot inject input (Wayland). The
+    /// session still runs; it is view-only, and every input message is
+    /// dropped with one log line rather than failing the connection.
+    input: Mutex<Option<Box<dyn InputBackend>>>,
     /// §1.2/§2.4 — the gate. False until the host's own state machine says
     /// ACTIVE; re-read per message, so revoking it takes effect immediately.
     input_allowed: Arc<AtomicBool>,
@@ -161,7 +164,7 @@ impl HostPeer {
     /// signaling loop to act on; nothing here touches RTDB directly.
     pub async fn new(
         ice: &IceConfig,
-        input: Box<dyn InputBackend>,
+        input: Option<Box<dyn InputBackend>>,
         signals: mpsc::UnboundedSender<HostSignal>,
     ) -> Result<Self> {
         let mut media_engine = MediaEngine::default();
@@ -479,7 +482,13 @@ where
             poisoned.into_inner()
         }
     };
-    if let Err(e) = op(guard.as_mut()) {
+    // §0.2 — view-only host. Dropping the event is the whole behaviour; the
+    // viewer's UI learns this from the capabilities it negotiated (§6.1).
+    let Some(backend) = guard.as_mut() else {
+        tracing::debug!(operation = what, "input dropped — host is view-only");
+        return;
+    };
+    if let Err(e) = op(backend.as_mut()) {
         tracing::warn!(error = %e, operation = what, "input injection failed");
     }
 }

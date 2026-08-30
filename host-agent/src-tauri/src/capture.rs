@@ -187,8 +187,6 @@ fn capture_loop(
                 continue;
             }
         };
-        drop(raw);
-
         for packet in packets {
             let video = CapturedVideo {
                 data: packet.data,
@@ -211,7 +209,7 @@ fn capture_loop(
             }
         }
 
-        if frames > 0 && frames % 100 == 0 {
+        if frames > 0 && frames.is_multiple_of(100) {
             // §6.5 KPI — measured, not asserted.
             let fps = 100.0 / window.elapsed().as_secs_f64().max(0.001);
             tracing::info!(

@@ -37,6 +37,17 @@
         "viewerToken": {
           ".validate": "newData.isString() && newData.val().length <= 4096 && newData.parent().child('viewerId').val() == auth.uid"
         },
+        // §6.1 — the viewer's declared wire protocol and capabilities, written
+        // with the claim. Only the viewer may write them, and the shape is
+        // pinned here so a malformed version string is refused at the rule
+        // layer rather than becoming a parse error on the host.
+        "protocolVersion": {
+          ".validate": "newData.isString() && newData.val().matches(/^[0-9]{1,3}[.][0-9]{1,3}[.][0-9]{1,3}$/) && newData.parent().child('viewerId').val() == auth.uid"
+        },
+        "capabilities": {
+          ".validate": "newData.parent().child('viewerId').val() == auth.uid",
+          "$index": { ".validate": "newData.isString() && newData.val().length <= 40" }
+        },
         "hostCandidates":   { "$index": { ".validate": "$index.matches(/^([0-9]|[1-9][0-9])$/) && newData.isString() && newData.val().length <= 1000" } },
         "viewerCandidates": { "$index": { ".validate": "$index.matches(/^([0-9]|[1-9][0-9])$/) && newData.isString() && newData.val().length <= 1000" } }
       }
@@ -86,6 +97,23 @@
     "auditLog": {
       "$uid": {
         ".read": "auth != null && auth.uid == $uid",
+        // §7.3 — the chain tip: the hash the *next* append chains onto. It
+        // has to be rewritable, and it was not: `_tip` matched the `$entryId`
+        // wildcard below, whose whole point is `!data.exists()`. So the first
+        // tip write was refused by that rule's `.validate` (a tip has no
+        // uid/action/timestamp) and every later one by its `.write`. The tip
+        // therefore never existed, `get_tip_hash` always returned None, and
+        // every entry in the chain recorded previousHash "0" — a hash chain
+        // in shape only, chaining nothing to anything.
+        //
+        // Overwriting the tip costs nothing the chain relies on: the tip is a
+        // pointer, not evidence. The entries are still append-only, and they
+        // are what a tamper check reads.
+        "_tip": {
+          ".write": "auth != null && auth.uid == $uid",
+          ".validate": "newData.hasChildren(['hash'])",
+          "hash": { ".validate": "newData.isString() && newData.val().length <= 64" }
+        },
         "$entryId": {
           // Append-only: an entry may be created but never rewritten, which is
           // what makes the prevHash chain meaningful.

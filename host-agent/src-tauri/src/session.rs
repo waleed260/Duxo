@@ -11,9 +11,7 @@
 //! Any state ──(24h timeout)──► EXPIRED
 //! ACTIVE ──(30 min idle OR network loss > 60s)──► ENDED
 
-use crate::types::{
-    DuxoError, HostPlatform, ProtocolVersion, Result, SessionContext, SessionStatus,
-};
+use crate::types::{DuxoError, ProtocolVersion, Result, SessionStatus};
 use serde::{Deserialize, Serialize};
 
 /// §6.1 — Protocol version declared by the host for capability negotiation.
@@ -83,20 +81,6 @@ pub fn transition(current: SessionStatus, next: SessionStatus) -> Result<Session
     }
 }
 
-/// Create a fresh SessionContext in the CREATED → WAITING state.
-pub fn new_session(session_id: String, host_uid: &str) -> SessionContext {
-    SessionContext {
-        session_id,
-        host_uid: host_uid.to_string(),
-        status: SessionStatus::Waiting,
-        host_platform: HostPlatform::detect(),
-        viewer_id: None,
-        verified_viewer_email: None,
-        protocol_version: ProtocolVersion::default(),
-        created_at: chrono::Utc::now().timestamp_millis(),
-    }
-}
-
 // ─── §6.1 — Protocol version negotiation ───
 
 /// §6.1 — Check whether the viewer's declared protocol version is compatible
@@ -146,6 +130,13 @@ pub fn negotiated_capabilities(viewer_caps: &[String]) -> Vec<String> {
 }
 
 // ─── §7.4 — Session expiration & idle timeout ───
+//
+// The policy lives here with the state machine; `signaling.rs` enforces it,
+// converting these to `Duration`s. There used to be a `spawn_expiry_watcher`
+// here as well, running its own 60-second tick against a shared
+// `SessionContext`. Nothing ever spawned it, and the session driver already
+// checks both deadlines on every poll of the session node — a second timer
+// racing the first to write EXPIRED would have been the only thing it added.
 
 /// §7.4 — Max session duration in milliseconds (8 hours).
 pub const MAX_SESSION_DURATION_MS: i64 = 8 * 60 * 60 * 1000;
@@ -155,65 +146,6 @@ pub const IDLE_TIMEOUT_MS: i64 = 30 * 60 * 1000;
 
 /// §7.4 — 8-digit code lifetime in milliseconds (24 hours).
 pub const CODE_LIFETIME_MS: i64 = 24 * 60 * 60 * 1000;
-
-/// Check whether a session has exceeded the max duration (8h).
-pub fn is_session_expired_by_duration(ctx: &SessionContext) -> bool {
-    let now = chrono::Utc::now().timestamp_millis();
-    (now - ctx.created_at) > MAX_SESSION_DURATION_MS
-}
-
-/// Check whether the code has expired (24h since session creation).
-pub fn is_code_expired(ctx: &SessionContext) -> bool {
-    let now = chrono::Utc::now().timestamp_millis();
-    (now - ctx.created_at) > CODE_LIFETIME_MS
-}
-
-/// §7.4 — Spawn a background watcher that checks expiry conditions.
-///
-/// Checks every 60 seconds:
-///   1. Has the session exceeded the 8h max duration? → auto-end
-///   2. (Idle timeout is checked via last_input_at tracking in the session)
-///
-/// The caller passes a callback (e.g., to write EXPIRED/ENDED to RTDB).
-pub fn spawn_expiry_watcher<F>(
-    ctx: std::sync::Arc<tokio::sync::RwLock<SessionContext>>,
-    on_expired: F,
-) -> tokio::task::JoinHandle<()>
-where
-    F: Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + 'static,
-{
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
-
-        loop {
-            interval.tick().await;
-
-            let expired = {
-                let ctx_guard = ctx.read().await;
-                match ctx_guard.status {
-                    SessionStatus::Ended | SessionStatus::Expired => {
-                        // Session already ended — stop watcher.
-                        break;
-                    }
-                    _ => is_session_expired_by_duration(&ctx_guard),
-                }
-            };
-
-            if expired {
-                let mut ctx_guard = ctx.write().await;
-                if let Ok(new_status) = transition(ctx_guard.status, SessionStatus::Expired) {
-                    ctx_guard.status = new_status;
-                    tracing::warn!(
-                        session_id = %ctx_guard.session_id,
-                        "session expired (max duration reached)"
-                    );
-                    on_expired().await;
-                }
-                break;
-            }
-        }
-    })
-}
 
 #[cfg(test)]
 mod tests {

@@ -82,10 +82,21 @@ pub fn verify_viewer_token(
 
     let kid = header.kid.ok_or(DuxoError::MissingKeyId)?;
 
+    // §2.5 — match on `kid`, but do not trust `kid` alone to have selected a
+    // key that is actually usable for this signature. RFC 7517 §4 makes `kty`,
+    // `alg` and `use` part of what identifies a key's purpose, and the
+    // validation below hard-codes RS256: picking a key published for anything
+    // else and then verifying it as RS256 is a key-confusion bug waiting for
+    // the day Google publishes a second key type at the same endpoint.
     let jwk = google_certs
         .keys
         .iter()
-        .find(|k| k.kid == kid)
+        .find(|k| {
+            k.kid == kid
+                && k.kty == "RSA"
+                && k.alg == "RS256"
+                && (k.key_use == "sig" || k.key_use.is_empty())
+        })
         .ok_or(DuxoError::UnknownSigningKey)?;
 
     // `DecodingKey::from_jwk` wants jsonwebtoken's own `jwk::Jwk` type, not

@@ -103,11 +103,6 @@ impl VideoEncoder {
         })
     }
 
-    /// Encoder output dimensions — what the viewer will actually receive.
-    pub fn dimensions(&self) -> (u32, u32) {
-        (self.width, self.height)
-    }
-
     /// How long each frame occupies, for `Sample::duration`.
     pub fn frame_duration(&self) -> std::time::Duration {
         std::time::Duration::from_secs_f64(1.0 / self.timebase_hz as f64)

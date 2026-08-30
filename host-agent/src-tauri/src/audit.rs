@@ -25,9 +25,6 @@ pub struct AuditLogEntry {
     /// §7.3 — SHA-256 hex hash of the previous entry's content.
     /// First entry in the chain uses "0" as the previous hash.
     pub previous_hash: String,
-    /// This entry's own hash (for chaining by the next entry).
-    #[serde(skip)]
-    pub hash: String,
 }
 
 /// Compute the SHA-256 hash of an entry's content (excluding the hash field).
@@ -48,7 +45,8 @@ pub fn hash_entry(entry: &AuditLogEntry) -> String {
 /// Write an audit log entry to RTDB.
 ///
 /// §7.3 — Fetches the current chain tip hash, creates a new entry chained
-/// to it, and writes it to RTDB under auditLog/{uid}/entries/{entryId}.
+/// to it, writes it to RTDB under `auditLog/{uid}/{entryId}`, and advances
+/// `auditLog/{uid}/_tip` so the next append chains onto this one.
 pub async fn write_audit_entry(
     database_url: &str,
     id_token: &str,
@@ -68,7 +66,6 @@ pub async fn write_audit_entry(
         timestamp: chrono::Utc::now().timestamp_millis(),
         metadata,
         previous_hash: previous_hash.clone(),
-        hash: String::new(), // filled below
     };
 
     let hash = hash_entry(&entry);
@@ -113,11 +110,22 @@ pub async fn write_audit_entry(
         uid,
         id_token
     );
-    let _ = client
+    // Not fatal — an entry that was written is still evidence — but not
+    // silent either: a tip that stops advancing is exactly how this chain
+    // was broken before, and a swallowed error is what hid it.
+    match client
         .put(&tip_url)
         .json(&serde_json::json!({ "hash": hash }))
         .send()
-        .await;
+        .await
+        .and_then(|r| r.error_for_status())
+    {
+        Ok(_) => {}
+        Err(e) => tracing::warn!(
+            error = %e,
+            "audit chain tip did not advance — the next entry will re-chain"
+        ),
+    }
 
     tracing::info!(
         action = action,

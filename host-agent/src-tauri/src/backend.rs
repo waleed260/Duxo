@@ -60,5 +60,17 @@ pub trait InputBackend: Send {
 /// connection for every individual mouse move — 60 handshakes a second to
 /// deliver 60 cursor positions.
 pub fn platform_input() -> Result<Box<dyn InputBackend>> {
+    // §0.2 — Wayland is view-only in the MVP. There is no portable way to
+    // inject input under a Wayland compositor without a portal handshake the
+    // agent does not implement, and enigo's X11 path silently does nothing
+    // when it is pointed at one. Refusing here is what turns that into an
+    // honest "view-only" session instead of a session where the viewer moves
+    // the mouse and nothing on the remote screen ever happens.
+    let platform = crate::types::HostPlatform::detect();
+    if !platform.supports_remote_input() {
+        return Err(crate::types::DuxoError::Input(format!(
+            "remote input is not supported on {platform} — this session is view-only"
+        )));
+    }
     Ok(Box::new(crate::input::EnigoInput::new()))
 }

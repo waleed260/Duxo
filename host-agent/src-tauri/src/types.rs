@@ -143,64 +143,6 @@ impl std::fmt::Display for ProtocolVersion {
     }
 }
 
-/// §1.4 — data channel message envelope (tagged JSON).
-/// Forward-compat: unhandled message types are logged, never panicked (§10.3b).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DataChannelMessage {
-    #[serde(rename = "type")]
-    pub msg_type: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub t: Option<i64>,
-    /// Remaining fields stored as raw JSON for flexible dispatch.
-    #[serde(flatten)]
-    pub extra: serde_json::Value,
-}
-
-/// Live session context — held in memory while the WebRTC connection is active.
-#[derive(Debug, Clone)]
-pub struct SessionContext {
-    pub session_id: String,
-    /// The Firebase uid this host is acting as — the `hostId` written to RTDB.
-    /// Held so a session can be matched to its owner without another keychain
-    /// read, and so §6.3's durable record has a host to attribute it to.
-    pub host_uid: String,
-    pub status: SessionStatus,
-    pub host_platform: HostPlatform,
-    pub viewer_id: Option<String>,
-    pub verified_viewer_email: Option<String>, // From JWT claims, NOT from RTDB (§2.5).
-    pub protocol_version: ProtocolVersion,
-    pub created_at: i64,
-}
-
-impl SessionContext {
-    /// §2.4 / §10.3 — the single most important security gate.
-    /// Never auto-accept. Never inject input before this returns true.
-    pub fn can_open_data_channel(&self, verified_viewer_uid: &str) -> bool {
-        self.status == SessionStatus::Allowed
-            && self.viewer_id.as_deref() == Some(verified_viewer_uid)
-            && !self.is_expired()
-    }
-
-    /// §0.7 — 24-hour expiry check.
-    pub fn is_expired(&self) -> bool {
-        let now = chrono::Utc::now().timestamp_millis();
-        (now - self.created_at) > 24 * 60 * 60 * 1000
-    }
-
-    /// §7.2 — Clear sensitive data from memory when a session ends.
-    /// Called when the session transitions to ENDED or EXPIRED.
-    pub fn zeroize(&mut self) {
-        use zeroize::Zeroize;
-        self.session_id.zeroize();
-        if let Some(ref mut id) = self.viewer_id {
-            id.zeroize();
-        }
-        if let Some(ref mut email) = self.verified_viewer_email {
-            email.zeroize();
-        }
-    }
-}
-
 /// §10.3b — unified error type. Every Rust module returns this so callers
 /// match explicitly rather than unwrap().
 #[derive(Debug, thiserror::Error)]
@@ -270,3 +212,67 @@ pub enum DuxoError {
 
 /// Result alias used throughout the host agent.
 pub type Result<T> = std::result::Result<T, DuxoError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// §10.2 — the RTDB `status` rule is a hard-coded list of strings. If the
+    /// enum and that list ever disagree, the host writes a status the rules
+    /// reject and the session stalls in whatever state it was already in,
+    /// with nothing but a 401 in a log to say why. This is the check that
+    /// keeps `valid_values` honest against `Display`.
+    #[test]
+    fn every_status_serialises_to_a_value_the_rtdb_rule_admits() {
+        let all = [
+            SessionStatus::Waiting,
+            SessionStatus::Requested,
+            SessionStatus::Allowed,
+            SessionStatus::Denied,
+            SessionStatus::Connecting,
+            SessionStatus::Active,
+            SessionStatus::Ended,
+            SessionStatus::Expired,
+        ];
+        let allowed = SessionStatus::valid_values();
+        assert_eq!(
+            all.len(),
+            allowed.len(),
+            "a variant was added to SessionStatus without adding it to \
+             valid_values() and to firebase/database.rules.json"
+        );
+        for status in all {
+            let wire = status.to_string();
+            assert!(
+                allowed.contains(&wire.as_str()),
+                "{wire:?} is not in the RTDB status rule"
+            );
+        }
+    }
+
+    #[test]
+    fn protocol_version_round_trips() {
+        let v = ProtocolVersion::parse("1.2.0").expect("valid");
+        assert_eq!((v.major, v.minor, v.patch), (1, 2, 0));
+        assert_eq!(v.to_string(), "1.2.0");
+    }
+
+    #[test]
+    fn malformed_protocol_versions_are_rejected() {
+        for bad in ["1.2", "1.2.0.1", "a.b.c", "", "1.2.x"] {
+            assert!(
+                ProtocolVersion::parse(bad).is_err(),
+                "{bad:?} should not parse"
+            );
+        }
+    }
+
+    /// §0.2 — Wayland is view-only; this is the check `backend::platform_input`
+    /// consults before it hands out an input backend at all.
+    #[test]
+    fn wayland_does_not_support_remote_input() {
+        assert!(HostPlatform::Windows.supports_remote_input());
+        assert!(HostPlatform::LinuxX11.supports_remote_input());
+        assert!(!HostPlatform::LinuxWayland.supports_remote_input());
+    }
+}

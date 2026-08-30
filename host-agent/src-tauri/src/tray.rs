@@ -320,7 +320,20 @@ async fn start_session(app: AppHandle) -> crate::types::Result<String> {
                 SessionEvent::Status(status) => {
                     *state.status.write().await = status;
                 }
-                SessionEvent::ViewerVerified { email, .. } => {
+                SessionEvent::ViewerVerified {
+                    email,
+                    uid,
+                    capabilities,
+                } => {
+                    // §6.1 — what the two sides actually agreed on. Worth a
+                    // log line: a viewer silently losing clipboard or file
+                    // transfer to a version mismatch is otherwise indis-
+                    // tinguishable from the feature being broken.
+                    tracing::info!(
+                        viewer_uid = %uid,
+                        negotiated = ?capabilities,
+                        "viewer verified — awaiting the host's decision"
+                    );
                     *state.viewer_email.write().await = Some(email.clone());
                     // §2.4 — a native window, showing the verified email, with
                     // no default focus on Allow.
@@ -342,7 +355,12 @@ async fn start_session(app: AppHandle) -> crate::types::Result<String> {
                     *state.viewer_email.write().await = None;
                     *state.decision.lock().await = None;
                 }
-                SessionEvent::Created { .. } => {}
+                SessionEvent::Created { session_id, code } => {
+                    // The tray already published the code to the window; this
+                    // is the correlation id every later log line for this
+                    // session is grouped by.
+                    tracing::info!(%session_id, code_len = code.len(), "session created");
+                }
             }
         }
     });

@@ -21,6 +21,7 @@ import { ref, onValue, set, update, get, serverTimestamp } from "firebase/databa
 import { DuxoConnection, defaultIceServers } from "@/lib/webrtc";
 import { useRemoteInput } from "@/lib/remote-input";
 import type { Session } from "@shared/types";
+import { VIEWER_PROTOCOL_VERSION, VIEWER_CAPABILITIES } from "@shared/types";
 import { toast } from "sonner";
 
 // §1.4 — 10MB cap, enforced BEFORE the transfer starts, not after chunk 500.
@@ -126,6 +127,13 @@ function SessionPage() {
           viewerId: fbUser.uid,
           viewerToken: idToken,
           status: "requested",
+          // §6.1 — declare the wire protocol and capabilities alongside the
+          // claim. The host reads these in the same poll that verifies the
+          // token, so an incompatible MAJOR is refused before the Allow/Deny
+          // dialog ever appears rather than after the host has been asked to
+          // approve a viewer it cannot actually talk to.
+          protocolVersion: VIEWER_PROTOCOL_VERSION,
+          capabilities: VIEWER_CAPABILITIES,
           updatedAt: serverTimestamp(),
         });
       } catch {

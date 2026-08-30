@@ -31,6 +31,21 @@ export type Capability =
   | "file_transfer"
   | "quality_indicator";
 
+// §6.1 — what this viewer build actually speaks and can do. Declared to the
+// host on REQUESTED so the host can reject an incompatible MAJOR and
+// negotiate capabilities down rather than failing the whole session.
+//
+// Every entry here is implemented: "clipboard" by the clipboard_text sender,
+// "file_transfer" by the file_chunk sender, "quality_indicator" by the
+// ping/pong RTT loop in lib/webrtc.ts. Do not add a flag before the feature.
+export const VIEWER_PROTOCOL_VERSION: ProtocolVersion = "1.2.0";
+
+export const VIEWER_CAPABILITIES: Capability[] = [
+  "clipboard",
+  "file_transfer",
+  "quality_indicator",
+];
+
 // §10.4 — RTDB live session node (signaling only, never durable).
 export interface Session {
   hostId: string;
