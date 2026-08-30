@@ -435,9 +435,13 @@ mod tests {
     #[test]
     fn normalized_coordinates_stay_on_screen() {
         let input = EnigoInput {
-            enigo: None,
             screen_width: 1920,
             screen_height: 1080,
+            // Spread the real constructor rather than listing every field:
+            // these tests are about coordinate mapping, and adding a field to
+            // the struct should not break them the way `scroll_remainder_*`
+            // did.
+            ..EnigoInput::new()
         };
         assert_eq!(input.to_pixels(0.0, 0.0), (0, 0));
         assert_eq!(input.to_pixels(0.5, 0.5), (960, 540));
@@ -448,9 +452,9 @@ mod tests {
     #[test]
     fn out_of_range_coordinates_are_clamped() {
         let input = EnigoInput {
-            enigo: None,
             screen_width: 1920,
             screen_height: 1080,
+            ..EnigoInput::new()
         };
         assert_eq!(input.to_pixels(-1.0, 2.0), (0, 1079));
     }
@@ -460,11 +464,9 @@ mod tests {
         // main_display() can report 0 on a headless or mid-reconfiguration
         // display; clamping to width-1 would give -1 without the max(0).
         let input = EnigoInput {
-            enigo: None,
             screen_width: 0,
             screen_height: 0,
-            scroll_remainder_x: 0.0,
-            scroll_remainder_y: 0.0,
+            ..EnigoInput::new()
         };
         assert_eq!(input.to_pixels(0.5, 0.5), (0, 0));
     }
