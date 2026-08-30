@@ -151,7 +151,15 @@ fn capture_loop(
     let _ = ready.send(Ok(()));
 
     let frame_interval = Duration::from_millis(1000 / TARGET_FPS as u64);
-    let frame_duration = encoder.frame_duration();
+    // The nominal frame length, used only for the very first sample — there
+    // is no previous frame to measure against yet.
+    let nominal_duration = encoder.frame_duration();
+    let stream_start = Instant::now();
+    // When the last sample that actually reached the track was captured.
+    // Everything between that instant and the next one — WouldBlock waits,
+    // slow encodes, frames the queue refused — is time the viewer's clock has
+    // to account for, so it belongs to the next sample's duration.
+    let mut last_written: Option<Instant> = None;
     let mut frames: u64 = 0;
     let mut dropped: u64 = 0;
     let mut window = Instant::now();
@@ -184,22 +192,45 @@ fn capture_loop(
 
         // scrap 0.5 hands back a tightly packed BGRA buffer on both X11 and
         // DXGI — there is no stride to un-pad.
-        let packets = match encoder.encode_bgra(&raw, width, height) {
+        let packets = match encoder.encode_bgra(&raw, width, height, tick - stream_start) {
             Ok(p) => p,
             Err(e) => {
                 tracing::warn!(error = %e, "encode failed");
                 continue;
             }
         };
+        // §0.5 — `Sample::duration` is not documentation: webrtc-rs turns
+        // it into the RTP timestamp increment, so it is the viewer's only
+        // measure of how much time a frame represents. Reporting a constant
+        // 1/20s while the loop was really producing 8fps — or dropping every
+        // third frame to a full queue, which this loop does by design under
+        // load — made the video timeline advance slower than the world it was
+        // showing. The picture then falls permanently further behind the
+        // host's screen, and on a remote-control tool that means clicking
+        // where the cursor was a minute ago.
+        //
+        // The elapsed time is carried until a packet is actually accepted, so
+        // a dropped frame hands its share of the timeline to the next one that
+        // gets through rather than deleting it.
+        let mut carried = match last_written {
+            Some(previous) => tick.saturating_duration_since(previous),
+            None => nominal_duration,
+        };
+
         for packet in packets {
             let video = CapturedVideo {
                 data: packet.data,
-                duration: frame_duration,
+                duration: carried,
                 is_keyframe: packet.is_keyframe,
             };
 
             match tx.try_send(video) {
-                Ok(()) => frames += 1,
+                Ok(()) => {
+                    frames += 1;
+                    last_written = Some(tick);
+                    // Extra packets from the same capture share its instant.
+                    carried = Duration::ZERO;
+                }
                 Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
                     // The consumer is behind. Dropping the newest frame keeps
                     // the queue holding the *most recent* screen state; the

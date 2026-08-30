@@ -42,7 +42,10 @@ pub struct VideoEncoder {
     /// Reusable I420 scratch buffer. Reallocating ~1.4MB per frame at 20fps
     /// is pure allocator churn for no benefit.
     i420: Vec<u8>,
-    frame_index: u64,
+    /// The PTS of the last frame handed to libvpx. PTS must strictly
+    /// increase, and two frames captured inside the same timebase tick would
+    /// otherwise collide.
+    last_pts: i64,
     /// The timebase denominator, i.e. PTS units per second.
     timebase_hz: i64,
 }
@@ -98,9 +101,25 @@ impl VideoEncoder {
             width,
             height,
             i420: vec![0u8; i420_len],
-            frame_index: 0,
+            last_pts: -1,
             timebase_hz: timebase_hz as i64,
         })
+    }
+
+    /// Where on the encoder's timeline a frame captured `elapsed` after the
+    /// stream started belongs.
+    ///
+    /// Deliberately wall-clock, not a frame counter. A counter says "frame 200
+    /// is at t=10s" no matter when frame 200 was actually grabbed, so if
+    /// capture is running at 8fps rather than the 20 it was configured for,
+    /// libvpx believes 200 frames spanned 10 seconds when they really spanned
+    /// 25 — and paces its 1500 kbps budget against a timeline running 2.5×
+    /// fast, spending 2.5× the bitrate. On a 50GB/month TURN allowance
+    /// (§0.3) that is the difference between a month and twelve days.
+    fn pts_for(&mut self, elapsed: std::time::Duration) -> i64 {
+        let pts = pts_units(elapsed, self.timebase_hz).max(self.last_pts + 1);
+        self.last_pts = pts;
+        pts
     }
 
     /// How long each frame occupies, for `Sample::duration`.
@@ -119,6 +138,7 @@ impl VideoEncoder {
         bgra: &[u8],
         src_width: u32,
         src_height: u32,
+        elapsed: std::time::Duration,
     ) -> Result<Vec<EncodedFrame>> {
         let expected = (src_width as usize) * (src_height as usize) * 4;
         if bgra.len() < expected {
@@ -140,8 +160,7 @@ impl VideoEncoder {
         // vpx-encode exposes no per-frame keyframe request, so keyframe timing
         // is libvpx's own decision. The caller logs when one arrives, which is
         // what the §6.5 recovery-after-loss KPI is measured from.
-        let pts = self.frame_index as i64;
-        self.frame_index += 1;
+        let pts = self.pts_for(elapsed);
 
         let packets = self
             .inner
@@ -173,6 +192,11 @@ fn fit_within(w: u32, h: u32, max_w: u32, max_h: u32) -> (u32, u32) {
     let out_w = ((w as f64 * scale) as u32) & !1;
     let out_h = ((h as f64 * scale) as u32) & !1;
     (out_w, out_h)
+}
+
+/// Convert wall-clock elapsed time into encoder timebase units.
+fn pts_units(elapsed: std::time::Duration, timebase_hz: i64) -> i64 {
+    (elapsed.as_secs_f64() * timebase_hz as f64) as i64
 }
 
 /// Byte length of a planar I420 buffer: full-resolution Y, quarter-resolution
@@ -307,6 +331,27 @@ mod tests {
             "pure red luma should be ~81, got {}",
             out[0]
         );
+    }
+
+    #[test]
+    fn pts_tracks_the_wall_clock_not_the_frame_count() {
+        // 20fps timebase. A frame captured 2.5 seconds in belongs at 50,
+        // whether it is the 50th frame or the 12th — capture that stalls or
+        // drops frames must not compress the timeline it reports.
+        assert_eq!(pts_units(std::time::Duration::from_millis(2500), 20), 50);
+        assert_eq!(pts_units(std::time::Duration::ZERO, 20), 0);
+        assert_eq!(pts_units(std::time::Duration::from_secs(60), 20), 1200);
+    }
+
+    #[test]
+    fn pts_never_repeats_within_one_timebase_tick() {
+        // libvpx requires strictly increasing PTS. At 20fps the timebase tick
+        // is 50ms, so two frames 10ms apart round to the same unit; the
+        // encoder has to break the tie rather than hand libvpx a duplicate.
+        let a = pts_units(std::time::Duration::from_millis(100), 20);
+        let b = pts_units(std::time::Duration::from_millis(110), 20);
+        assert_eq!(a, b, "this is the collision the clamp exists for");
+        assert!(b.max(a + 1) > a);
     }
 
     #[test]
