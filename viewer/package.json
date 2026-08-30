@@ -13,6 +13,7 @@
     "test:e2e": "playwright test",
     "type-check": "tsc --noEmit",
     "check:turn": "node scripts/check-turn.mjs",
+    "check:backend": "node scripts/check-backend.mjs",
     "check:deploy": "node scripts/check-deployment.mjs"
   },
   "dependencies": {

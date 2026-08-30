@@ -62,6 +62,16 @@ job (`src/encoder.rs`).
 > confirmed by a probe you can re-run yourself. Nothing in the product works
 > until they exist — every session, code and pairing lives in these.
 >
+> ```bash
+> cd viewer && npm run check:backend
+> ```
+>
+> That runs all three probes below against the project in `.env.local`, names
+> the console click each missing service needs, and exits non-zero while any
+> of them is missing — so it doubles as the "did that actually take?" check
+> after you enable them. It uses only public config values, no
+> service-account key.
+>
 > | Service | Probe | Result |
 > |---|---|---|
 > | Realtime Database | `curl -s -o /dev/null -w '%{http_code}' https://duxo-967f0-default-rtdb.firebaseio.com/.json` | `404` — no instance. A database that exists but is locked answers `401`, so this is not a rules problem. Checked in `us-central1`, `europe-west1` and `asia-southeast1`. |
