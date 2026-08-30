@@ -117,9 +117,16 @@ pub fn verify_viewer_token(
             }
         })?;
 
-    // §2.2 — for hosting, email must be verified.
+    // §2.2 — an unverified email is not rejected here, and deliberately so:
+    // the viewer signs in through Clerk and this uid comes from a Firebase
+    // *custom* token, which carries whatever the bridge put in it. Refusing
+    // would break the normal path.
+    //
+    // What must not happen is presenting it as though it were verified. The
+    // flag travels with the claims to the Allow/Deny dialog, which says so.
+    // This used to log "allowing view only" and then do nothing of the kind.
     if !token_data.claims.email_verified {
-        tracing::warn!("viewer token has unverified email — allowing view only");
+        tracing::warn!("viewer email is not verified — the dialog will say so");
     }
 
     Ok(token_data.claims)

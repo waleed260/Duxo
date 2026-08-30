@@ -78,6 +78,8 @@ pub enum SessionEvent {
     ViewerVerified {
         email: String,
         uid: String,
+        /// §2.5 — false means the address is self-asserted and unconfirmed.
+        email_verified: bool,
         /// §6.1 — the intersection of what host and viewer both support.
         capabilities: Vec<String>,
     },
@@ -94,6 +96,10 @@ pub enum SessionEvent {
 struct Verified {
     uid: String,
     email: String,
+    /// §2.5 — whether the identity provider vouched for that address. The
+    /// host is about to hand over its screen on the strength of this email,
+    /// so an unverified one has to be shown as unverified.
+    email_verified: bool,
     capabilities: Vec<String>,
 }
 
@@ -206,6 +212,7 @@ impl SessionDriver {
         let _ = events.send(SessionEvent::ViewerVerified {
             email: viewer.email,
             uid: viewer_uid.clone(),
+            email_verified: viewer.email_verified,
             capabilities: viewer.capabilities,
         });
         let _ = events.send(SessionEvent::Status(SessionStatus::Requested));
@@ -396,6 +403,7 @@ impl SessionDriver {
             return Ok(Some(Verified {
                 uid: claims.sub.clone(),
                 email: claims.email.clone(),
+                email_verified: claims.email_verified,
                 capabilities,
             }));
         }

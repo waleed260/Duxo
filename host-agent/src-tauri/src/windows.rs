@@ -45,7 +45,11 @@ pub fn open_code_window(app: &AppHandle, code: &str) -> Result<()> {
 }
 
 /// §2.4 — Open the Allow/Deny popup window.
-pub fn open_allow_deny_window(app: &AppHandle, viewer_email: &str) -> Result<()> {
+pub fn open_allow_deny_window(
+    app: &AppHandle,
+    viewer_email: &str,
+    email_verified: bool,
+) -> Result<()> {
     // Same label collision as the code window, and worse here: a stale dialog
     // shows the *previous* viewer's email, so the host would be approving a
     // connection request while reading someone else's name.
@@ -54,8 +58,9 @@ pub fn open_allow_deny_window(app: &AppHandle, viewer_email: &str) -> Result<()>
     // The email comes from verified JWT claims (§2.5), but it still reaches the
     // window as a URL parameter, so it is encoded rather than interpolated raw.
     let url = format!(
-        "allow-deny.html?email={}",
-        urlencoding::encode(viewer_email)
+        "allow-deny.html?email={}&verified={}",
+        urlencoding::encode(viewer_email),
+        email_verified
     );
 
     let _window = WebviewWindowBuilder::new(app, "allow-deny", WebviewUrl::App(url.into()))

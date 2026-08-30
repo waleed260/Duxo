@@ -72,6 +72,18 @@
       word-break: break-all;
     }
 
+    .unverified-note {
+      margin: 0 0 12px;
+      padding: 10px 12px;
+      border: 1px solid #b45309;
+      border-radius: 6px;
+      background: rgba(180, 83, 9, 0.12);
+      color: #fbbf24;
+      font-size: 13px;
+      line-height: 1.45;
+      text-align: left;
+    }
+
     .status-badge {
       font-size: 12px;
       color: var(--text-secondary);
@@ -203,6 +215,15 @@
     <span class="email" id="viewer-email">Loading…</span>
   </div>
 
+  <!-- §2.5 — an unverified address is self-asserted: anyone can sign up
+       claiming it. Presenting it identically to a confirmed one is what makes
+       this dialog worth attacking, so say which it is. -->
+  <p class="unverified-note" id="unverified-note" hidden>
+    This email address has <strong>not been verified</strong> — anyone can
+    claim it when signing up. Confirm who this is by another means before
+    allowing.
+  </p>
+
   <div class="status-badge">Requesting access</div>
 
   <p class="warning-text">
@@ -243,10 +264,19 @@
       window.__TAURI__?.invoke ??
       (() => Promise.reject(new Error('Tauri IPC unavailable')));
 
-    // §2.5 — email is the VERIFIED claim from the host-side JWT check.
+    // §2.5 — the email comes from the host-side JWT signature check, never
+    // from anything the viewer wrote into RTDB. Whether the identity provider
+    // actually confirmed the address is a separate question, and the answer
+    // is shown rather than assumed.
     const params = new URLSearchParams(window.location.search);
     document.getElementById('viewer-email').textContent =
       params.get('email') || 'Unknown';
+
+    // Default to treating it as unverified: if the parameter is missing or
+    // malformed, the safe reading is the cautious one.
+    if (params.get('verified') !== 'true') {
+      document.getElementById('unverified-note').hidden = false;
+    }
 
     const decisionEl = document.getElementById('decision');
     const countdownEl = document.getElementById('countdown');

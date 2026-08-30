@@ -347,6 +347,7 @@ async fn start_session(app: AppHandle) -> crate::types::Result<String> {
                 SessionEvent::ViewerVerified {
                     email,
                     uid,
+                    email_verified,
                     capabilities,
                 } => {
                     // §6.1 — what the two sides actually agreed on. Worth a
@@ -355,13 +356,16 @@ async fn start_session(app: AppHandle) -> crate::types::Result<String> {
                     // tinguishable from the feature being broken.
                     tracing::info!(
                         viewer_uid = %uid,
+                        email_verified,
                         negotiated = ?capabilities,
                         "viewer verified — awaiting the host's decision"
                     );
                     *state.viewer_email.write().await = Some(email.clone());
                     // §2.4 — a native window, showing the verified email, with
                     // no default focus on Allow.
-                    if let Err(e) = windows::open_allow_deny_window(&app_for_events, &email) {
+                    if let Err(e) =
+                        windows::open_allow_deny_window(&app_for_events, &email, email_verified)
+                    {
                         tracing::error!(error = %e, "could not open Allow/Deny window — denying");
                         // Failing closed is the only safe direction here.
                         if let Some(tx) = state.decision.lock().await.as_ref() {
