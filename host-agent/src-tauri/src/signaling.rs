@@ -511,7 +511,9 @@ impl SessionDriver {
         events: &mpsc::UnboundedSender<SessionEvent>,
         shutdown: &ShutdownRx,
     ) -> Result<()> {
-        let mut answered = false;
+        // §1.3 #4 — the offer we last answered, not merely *whether* we have
+        // answered one. See `should_answer`.
+        let mut answered_offer: Option<String> = None;
         let mut applied_candidates: std::collections::HashSet<String> =
             std::collections::HashSet::new();
         let mut capture_task: Option<tokio::task::JoinHandle<()>> = None;
@@ -560,14 +562,14 @@ impl SessionDriver {
             // a *new* offer under the same session id renegotiates in place,
             // which is why this is not a one-shot.
             if let Some(offer) = node.get("offer").and_then(|v| v.as_str()) {
-                let offer_changed = !answered;
-                if offer_changed {
+                if should_answer(answered_offer.as_deref(), offer) {
+                    let renegotiation = answered_offer.is_some();
                     match peer.accept_offer(offer).await {
                         Ok(answer) => {
                             self.write_field(session_id, "answer", serde_json::json!(answer))
                                 .await?;
-                            answered = true;
-                            tracing::info!("answer published");
+                            answered_offer = Some(offer.to_string());
+                            tracing::info!(renegotiation, "answer published");
                         }
                         Err(e) => {
                             tracing::warn!(error = %e, "could not answer offer");
@@ -826,5 +828,57 @@ impl SessionDriver {
         let proj = auth.project_id().to_string();
         drop(auth);
         firebase::update_session_field(&db, &token, &proj, session_id, field, value).await
+    }
+}
+
+/// §1.3 #4 — should the host answer the offer currently in RTDB?
+///
+/// The host answers an offer it has not answered before. That sounds like
+/// "answer once", and it was implemented as one — a bare `answered` flag —
+/// which quietly removed ICE restart from the product: after a hard network
+/// failure the viewer republishes a *new* offer under the same session id and
+/// waits for a new answer, and the host, having already answered once, never
+/// produced one. The connection then sat in `failed` until the §1.1 60-second
+/// network-loss grace ended the session, so every recoverable drop cost the
+/// user their session and another spoken 8-digit code.
+///
+/// Comparing the offer itself is what makes the difference: an unchanged offer
+/// re-read on the next 1s poll must not be re-answered (that would restart
+/// negotiation once per second), and a changed one must be.
+fn should_answer(answered_offer: Option<&str>, offer: &str) -> bool {
+    answered_offer != Some(offer)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn answers_the_first_offer() {
+        assert!(should_answer(
+            None,
+            "{\"type\":\"offer\",\"sdp\":\"v=0 a\"}"
+        ));
+    }
+
+    #[test]
+    fn does_not_re_answer_the_same_offer() {
+        let offer = "{\"type\":\"offer\",\"sdp\":\"v=0 a\"}";
+        assert!(
+            !should_answer(Some(offer), offer),
+            "the session node is re-read every second; re-answering an \
+             unchanged offer would renegotiate once per poll"
+        );
+    }
+
+    #[test]
+    fn answers_an_ice_restart_offer() {
+        let first = "{\"type\":\"offer\",\"sdp\":\"v=0 ice-ufrag:aaaa\"}";
+        let restart = "{\"type\":\"offer\",\"sdp\":\"v=0 ice-ufrag:bbbb\"}";
+        assert!(
+            should_answer(Some(first), restart),
+            "§1.3 #4 — a new offer under the same session id is an ICE \
+             restart and must be answered, or the viewer waits forever"
+        );
     }
 }

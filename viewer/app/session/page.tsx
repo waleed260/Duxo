@@ -57,8 +57,13 @@ function SessionPage() {
   const streamRef = React.useRef<MediaStream | null>(null);
 
   const [phase, setPhase] = React.useState<
-    "connecting" | "active" | "failed" | "denied" | "ended"
+    "connecting" | "active" | "reconnecting" | "failed" | "denied" | "ended"
   >("connecting");
+  // §1.3 #4 — which ICE restart we are on, so a recovery that is taking a
+  // while reads as progress rather than as a frozen screen.
+  const [retry, setRetry] = React.useState<{ n: number; of: number } | null>(
+    null,
+  );
   const [quality, setQuality] = React.useState<number | null>(null);
   const [hostPlatform, setHostPlatform] = React.useState<string | null>(null);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
@@ -153,6 +158,10 @@ function SessionPage() {
       // write cursor; the RTDB rule only admits indices 0–99.
       let viewerCandidateIndex = 0;
       const appliedHostCandidates = new Set<string>();
+      // The answer we have already applied. RTDB re-delivers the whole
+      // session node on every child write, so the same answer arrives many
+      // times; only a genuinely new one is a renegotiation.
+      let appliedAnswer: string | null = null;
 
       async function publishViewerCandidate(candidate: RTCIceCandidateInit) {
         if (viewerCandidateIndex > 99) return;
@@ -175,6 +184,7 @@ function SessionPage() {
       const conn = new DuxoConnection(defaultIceServers(), {
         onStateChange: (s) => {
           if (s === "connected") {
+            setRetry(null);
             setPhase("active");
             // §1.1 — ACTIVE is the host's call to make from its own read, but
             // the viewer records that its side is up so history is accurate.
@@ -182,12 +192,28 @@ function SessionPage() {
               () => {},
             );
           }
-          if (s === "failed") {
-            setErrorMsg(
-              "Connection lost — the network may be too restrictive. Try again.",
-            );
-            setPhase("failed");
-          }
+          // `failed` is deliberately not terminal here. §1.3 #4 has the
+          // connection manager answer it with an ICE restart on the same
+          // session id, and it reports the outcome through onRecovered /
+          // onUnrecoverable. Ending the session on the browser's first
+          // `failed` would throw away every drop the plan says is
+          // recoverable, and tell the user to fetch a new code for a
+          // connection that was about to come back.
+        },
+        onRecovering: (n, of) => {
+          setRetry({ n, of });
+          setPhase((p) => (p === "denied" || p === "ended" ? p : "reconnecting"));
+        },
+        onRecovered: () => {
+          setRetry(null);
+          setPhase((p) => (p === "reconnecting" ? "active" : p));
+        },
+        onUnrecoverable: () => {
+          setRetry(null);
+          setErrorMsg(
+            "Connection lost — the network may be too restrictive. Try again.",
+          );
+          setPhase((p) => (p === "denied" || p === "ended" ? p : "failed"));
         },
         onTrack: (stream) => {
           streamRef.current = stream;
@@ -234,9 +260,17 @@ function SessionPage() {
           }
         }
 
-        if (data.answer && conn.needsAnswer()) {
+        // §1.6-B, and §1.3 #4 again: the host answers every offer it has not
+        // answered, so an ICE restart produces a *second* answer under the
+        // same session id. Keying on "we have no remote description yet"
+        // ignored that one, leaving the restarted connection with a local
+        // offer and nothing to complete it.
+        if (data.answer && data.answer !== appliedAnswer) {
+          const raw = data.answer;
           try {
-            await conn.setRemoteAnswer(JSON.parse(data.answer));
+            if (await conn.setRemoteAnswer(JSON.parse(raw))) {
+              appliedAnswer = raw;
+            }
           } catch {
             // forward-compat
           }
@@ -385,7 +419,7 @@ function SessionPage() {
           </div>
         )}
 
-        {phase !== "active" && phase !== "connecting" && (
+        {phase !== "active" && phase !== "connecting" && phase !== "reconnecting" && (
           <div className="rounded-md border border-border-default bg-surface-raised p-7 text-center">
             <h2 className="text-xl font-emphasis">
               {phase === "denied" && "Connection denied"}
@@ -427,6 +461,21 @@ function SessionPage() {
               <div className="absolute inset-0 flex items-center justify-center gap-3 bg-surface-base/80 text-sm text-text-secondary">
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                 Connecting…
+              </div>
+            )}
+
+            {/* §1.3 #3/#4 — the last frame stays on screen underneath. The
+                session is not over and the code is still the same one. */}
+            {phase === "reconnecting" && (
+              <div
+                role="status"
+                className="absolute inset-x-0 top-0 flex items-center justify-center gap-3 bg-surface-base/85 px-4 py-3 text-sm text-text-secondary"
+              >
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                <span aria-live="polite">
+                  Connection dropped — reconnecting
+                  {retry ? ` (${retry.n} of ${retry.of})` : ""}…
+                </span>
               </div>
             )}
 

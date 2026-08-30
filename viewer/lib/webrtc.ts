@@ -25,6 +25,18 @@ export interface ConnectionEvents {
   onTrack?: (stream: MediaStream) => void;
   onQualityUpdate?: (rttMs: number) => void;
   /**
+   * §1.3 #4/#5 — recovery is under way (`failed` was observed and an ICE
+   * restart is scheduled), and then whether it worked. `RTCPeerConnection`
+   * reports `failed` the moment ICE gives up, which is the *start* of the
+   * recovery §1.3 describes, not the end of it: a UI that treats that state
+   * as final tells the user to re-enter their code while the fix is in
+   * flight. Only `onUnrecoverable` is final.
+   */
+  onRecovering?: (attempt: number, ofAttempts: number) => void;
+  onRecovered?: () => void;
+  /** §1.3 #5 — every ICE restart is spent. This one is worth surfacing. */
+  onUnrecoverable?: () => void;
+  /**
    * §0.6 — trickle ICE. Fires once per locally gathered candidate; the caller
    * batches these into `sessions/{id}/viewerCandidates` (max 10 per write).
    * Without this the host never learns how to reach the browser and the
@@ -81,11 +93,6 @@ export class DuxoConnection {
     return this.pc !== null;
   }
 
-  /** True until the host's answer has been applied. */
-  needsAnswer(): boolean {
-    return this.pc !== null && this.pc.remoteDescription === null;
-  }
-
   /** §1.6-B — viewer creates the offer (we are the controlling peer here). */
   async createOffer(): Promise<RTCSessionDescriptionInit> {
     this.pc = new RTCPeerConnection({ iceServers: this.iceServers });
@@ -110,10 +117,22 @@ export class DuxoConnection {
     return offer;
   }
 
-  /** §1.6-B — host returns the answer. */
-  async setRemoteAnswer(answer: RTCSessionDescriptionInit) {
+  /**
+   * §1.6-B — host returns the answer. Also §1.3 #4: after an ICE restart the
+   * host publishes a *second* answer for the same session, and it has to be
+   * applied like the first.
+   *
+   * Returns false when there is no outstanding offer for this answer to
+   * complete. That is the normal case for a re-delivered answer — RTDB
+   * re-sends the whole session node on every change, so the same answer
+   * arrives again whenever a candidate is written — and calling
+   * `setRemoteDescription` in `stable` would throw `InvalidStateError`.
+   */
+  async setRemoteAnswer(answer: RTCSessionDescriptionInit): Promise<boolean> {
     if (!this.pc) throw new Error("PeerConnection not initialized");
+    if (this.pc.signalingState !== "have-local-offer") return false;
     await this.pc.setRemoteDescription(answer);
+    return true;
   }
 
   /** §0.6 — batched ICE candidates (max 10 per write). */
@@ -170,7 +189,11 @@ export class DuxoConnection {
     try {
       const offer = await this.pc.createOffer({ iceRestart: true });
       await this.pc.setLocalDescription(offer);
-      this.reconnectAttempts = 0;
+      // The attempt counter is NOT reset here. Producing an offer is not
+      // reconnecting — only ICE reaching `connected` is, and that resets it
+      // in `oniceconnectionstatechange`. Resetting on the attempt itself made
+      // the backoff a fixed 500ms retry with no end, so §1.3 #5's "total
+      // failure, surface a clear message" was unreachable.
       // §1.3 #4 — the restart is only real once the new offer is re-published
       // through RTDB under the SAME session id. Hand it to the caller.
       this.events.onIceRestartOffer?.(offer);
@@ -188,11 +211,12 @@ export class DuxoConnection {
   private scheduleReconnect() {
     if (this.reconnectAttempts >= BACKOFF_DELAYS_MS.length) {
       // §1.3 #5 — total failure. Surface clear UI message.
-      this.events.onStateChange?.("failed");
+      this.events.onUnrecoverable?.();
       return;
     }
     const delay = BACKOFF_DELAYS_MS[this.reconnectAttempts];
     this.reconnectAttempts += 1;
+    this.events.onRecovering?.(this.reconnectAttempts, BACKOFF_DELAYS_MS.length);
     this.reconnectTimer = setTimeout(() => {
       void this.restartIce();
     }, delay);
@@ -218,11 +242,17 @@ export class DuxoConnection {
       this.events.onIceStateChange?.(state);
 
       switch (state) {
-        case "checking":
         case "connected":
         case "completed":
+          // Only a connection that actually came up clears the budget.
+          // `checking` used to clear it too, and an ICE restart always passes
+          // through `checking` on its way back to `failed` — so the budget
+          // was refilled by the very failure it was meant to bound.
+          if (this.reconnectAttempts > 0) this.events.onRecovered?.();
           this.reconnectAttempts = 0;
           if (state === "connected") this.startPingLoop();
+          break;
+        case "checking":
           break;
         case "disconnected":
           // §1.3 #3 — DON'T tear down. Self-recovers in 10-20s.
