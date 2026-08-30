@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Slot, Slottable } from "@radix-ui/react-slot";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +26,19 @@ export interface ButtonProps
   isLoading?: boolean;
   /** Leading icon slot — always paired with a label, never icon-only (§9.3b #5). */
   leadingIcon?: React.ReactNode;
+  /**
+   * Render the child element — a Next `<Link>`, usually — with these styles,
+   * instead of a `<button>`.
+   *
+   * The alternative, `<Link><Button/></Link>`, puts a `<button>` inside an
+   * `<a>`. That is invalid HTML, and browsers disagree about it in the way
+   * that matters: Chromium follows the anchor, **Firefox activates the button
+   * and does not navigate**. Every navigation control built that way — the
+   * navbar, the landing page's two hero calls to action — silently did
+   * nothing in Firefox, which is one of the two browsers this project's
+   * Playwright config targets.
+   */
+  asChild?: boolean;
 }
 
 const variantClasses: Record<ButtonVariant, string> = {
@@ -57,16 +71,19 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       disabled,
       children,
       type = "button",
+      asChild = false,
       ...props
     },
     ref,
   ) => {
     const isDisabled = disabled || isLoading;
+    const Comp = asChild ? Slot : "button";
     return (
-      <button
+      <Comp
         ref={ref}
-        type={type}
-        disabled={isDisabled}
+        // `type` and `disabled` are button attributes; React would warn about
+        // both on an anchor, and `disabled` does nothing there anyway.
+        {...(asChild ? {} : { type, disabled: isDisabled })}
         aria-disabled={isDisabled || undefined}
         className={cn(
           "inline-flex items-center justify-center gap-2 font-base",
@@ -87,8 +104,10 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           />
         )}
         {!isLoading && leadingIcon}
-        {children}
-      </button>
+        {/* Slottable keeps the icon and spinner as siblings of the label
+            inside the rendered child, rather than replacing them. */}
+        <Slottable>{children}</Slottable>
+      </Comp>
     );
   },
 );

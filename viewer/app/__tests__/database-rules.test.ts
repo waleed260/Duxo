@@ -54,6 +54,18 @@ describe("RTDB security rules (§10.2)", () => {
       expect(code[".validate"]).toContain("hostId");
       expect(code[".validate"]).toContain("sessionId");
     });
+
+    it("pins the code to exactly 8 characters", () => {
+      // The length is a three-way contract and each side learned it
+      // separately: the host generates the code, this rule admits it, and
+      // `/api/resolve-code` plus the viewer's input accept it. The host was
+      // generating *nine* digits — `1_0000_0000..10_0000_0000` reads as eight
+      // groups but is 100,000,000 to 999,999,999 — and because the code node
+      // is written in the same atomic multi-path PATCH as the session node,
+      // this rule refusing it meant no session could be created at all. The
+      // viewer's half was already pinned; this is the half that was not.
+      expect(code[".write"]).toContain("$code.length == 8");
+    });
   });
 
   describe("sessions/$sessionId (§0.7, §1.6-B)", () => {
@@ -140,6 +152,13 @@ describe("RTDB security rules (§10.2)", () => {
       // node. That is only safe because it is single-use and the node carries
       // no secret in the direction the host writes.
       expect(rules.pairings.$code[".write"]).toContain("!data.exists()");
+    });
+
+    it("pins the protocol version the device registry records", () => {
+      // Written by the host with the pairing request and read back by
+      // /api/link-device into `devices/{id}`, so it is server-consumed input
+      // and gets the same treatment as every other field on this node.
+      expect(rules.pairings.$code.protocolVersion[".validate"]).toContain("isString()");
     });
 
     it("exposes only customToken to an unauthenticated reader", () => {

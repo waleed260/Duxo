@@ -77,15 +77,13 @@ export const Navbar = React.memo(function Navbar({ className }: { className?: st
             GitHub
           </NavLink>
           {user ? (
-            <Link href="/dashboard">
-              <Button size="md">Dashboard</Button>
-            </Link>
+            <Button asChild size="md">
+              <Link href="/dashboard">Dashboard</Link>
+            </Button>
           ) : (
-            <Link href="/download">
-              <Button size="md" leadingIcon={<Download className="h-4 w-4" />}>
-                Get Duxo
-              </Button>
-            </Link>
+            <Button asChild size="md" leadingIcon={<Download className="h-4 w-4" />}>
+              <Link href="/download">Get Duxo</Link>
+            </Button>
           )}
         </div>
 
@@ -139,15 +137,21 @@ export const Navbar = React.memo(function Navbar({ className }: { className?: st
             </MobileNavLink>
             <div className="mt-3">
               {user ? (
-                <Link href="/dashboard" onClick={() => setMobileOpen(false)}>
-                  <Button className="w-full">Dashboard</Button>
-                </Link>
+                <Button asChild className="w-full">
+                  <Link href="/dashboard" onClick={() => setMobileOpen(false)}>
+                    Dashboard
+                  </Link>
+                </Button>
               ) : (
-                <Link href="/download" onClick={() => setMobileOpen(false)}>
-                  <Button className="w-full" leadingIcon={<Download className="h-4 w-4" />}>
+                <Button
+                  asChild
+                  className="w-full"
+                  leadingIcon={<Download className="h-4 w-4" />}
+                >
+                  <Link href="/download" onClick={() => setMobileOpen(false)}>
                     Get Duxo
-                  </Button>
-                </Link>
+                  </Link>
+                </Button>
               )}
             </div>
           </div>

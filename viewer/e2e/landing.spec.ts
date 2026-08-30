@@ -18,6 +18,8 @@ test.describe("Landing page (§11)", () => {
 
   test("navigates to login page", async ({ page }) => {
     await page.getByRole("link", { name: /sign in to connect/i }).click();
-    await expect(page).toHaveURL(/\/login/);
+    // The first visit to /login compiles it, Clerk included. Firefox pays it
+    // in full — around ten seconds against the dev server.
+    await expect(page).toHaveURL(/\/login/, { timeout: 30_000 });
   });
 });

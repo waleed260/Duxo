@@ -101,11 +101,9 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <Link href="/history">
-              <Button variant="ghost" leadingIcon={<History className="h-4 w-4" />}>
-                Session history
-              </Button>
-            </Link>
+            <Button asChild variant="ghost" leadingIcon={<History className="h-4 w-4" />}>
+              <Link href="/history">Session history</Link>
+            </Button>
           </div>
         </div>
 
@@ -152,11 +150,9 @@ export default function DashboardPage() {
                 It generates a code you can give out.
               </p>
             </div>
-            <Link href="/download" className="mt-2">
-              <Button variant="secondary" className="w-full">
-                Download host agent
-              </Button>
-            </Link>
+            <Button asChild variant="secondary" className="mt-2 w-full">
+              <Link href="/download">Download host agent</Link>
+            </Button>
           </Card>
         </div>
 

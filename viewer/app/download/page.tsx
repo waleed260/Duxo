@@ -80,11 +80,16 @@ export default function DownloadPage() {
               <Terminal className="h-5 w-5" aria-hidden="true" />
             </div>
           </div>
-          <a href={primary.href} aria-label={`Download Duxo for ${primary.label}`} className="mt-4 inline-block">
-            <Button size="lg" leadingIcon={<Download className="h-5 w-5" />}>
+          <Button
+            asChild
+            size="lg"
+            className="mt-4"
+            leadingIcon={<Download className="h-5 w-5" />}
+          >
+            <a href={primary.href} aria-label={`Download Duxo for ${primary.label}`}>
               Download
-            </Button>
-          </a>
+            </a>
+          </Button>
         </div>
 
         {/* Secondary — other platform still visible (§3.4 "not hidden") */}
@@ -97,9 +102,11 @@ export default function DownloadPage() {
                   {secondary.note}
                 </p>
               </div>
-              <a href={secondary.href}>
-                <Button variant="secondary">Download</Button>
-              </a>
+              <Button asChild variant="secondary">
+                <a href={secondary.href} aria-label={`Download Duxo for ${secondary.label}`}>
+                  Download
+                </a>
+              </Button>
             </div>
           </div>
         )}

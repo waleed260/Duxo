@@ -87,9 +87,9 @@ export default function HistoryPage() {
         {records.length === 0 ? (
           <div className="mt-6 rounded-md border border-border-default bg-surface-raised p-7 text-center">
             <p className="text-md text-text-secondary">No sessions yet.</p>
-            <Link href="/dashboard" className="mt-4 inline-block">
-              <Button>Start your first session</Button>
-            </Link>
+            <Button asChild className="mt-4">
+              <Link href="/dashboard">Start your first session</Link>
+            </Button>
           </div>
         ) : (
           <>

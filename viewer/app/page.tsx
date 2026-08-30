@@ -108,16 +108,12 @@ function Hero() {
 
           <ScrollReveal delay={300}>
             <div className="flex flex-wrap items-center gap-3">
-              <Link href="/download">
-                <Button size="lg" leadingIcon={<Download className="h-5 w-5" />}>
-                  Download host agent
-                </Button>
-              </Link>
-              <Link href="/login">
-                <Button variant="secondary" size="lg">
-                  Sign in to connect
-                </Button>
-              </Link>
+              <Button asChild size="lg" leadingIcon={<Download className="h-5 w-5" />}>
+                <Link href="/download">Download host agent</Link>
+              </Button>
+              <Button asChild variant="secondary" size="lg">
+                <Link href="/login">Sign in to connect</Link>
+              </Button>
             </div>
           </ScrollReveal>
 
@@ -164,8 +160,11 @@ function Hero() {
                 </div>
                 <div className="mt-1.5 flex items-center gap-3">
                   <span className="text-text-secondary">Code:</span>
+                  {/* §0.6 — codes are eight digits, grouped XXXX XXXX. The
+                      mock used to show letters, which sets the wrong
+                      expectation for what the host will read out. */}
                   <span className="text-2xl font-emphasis tracking-[0.15em] text-accent">
-                    4A2K 9B7D
+                    4207 9835
                   </span>
                 </div>
                 <div className="mt-1.5 flex items-center gap-2 text-text-secondary">
@@ -520,16 +519,12 @@ function FinalSection() {
               connect from any browser. It&apos;s that simple.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-3">
-              <Link href="/download">
-                <Button size="lg" leadingIcon={<Download className="h-5 w-5" />}>
-                  Download for free
-                </Button>
-              </Link>
-              <Link href="/login">
-                <Button variant="secondary" size="lg">
-                  Sign in
-                </Button>
-              </Link>
+              <Button asChild size="lg" leadingIcon={<Download className="h-5 w-5" />}>
+                <Link href="/download">Download for free</Link>
+              </Button>
+              <Button asChild variant="secondary" size="lg">
+                <Link href="/login">Sign in</Link>
+              </Button>
             </div>
             <p className="mt-4 text-xs text-text-secondary">
               Open source (MIT) &mdash; no telemetry, no account needed.{" "}
