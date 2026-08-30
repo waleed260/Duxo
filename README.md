@@ -1,1 +1,213 @@
+# Duxo — Remote access, built in the open.
 
+Zero-budget, end-to-end encrypted remote desktop for **Windows** and **Linux**.
+Open source (MIT), WebRTC-based, no telemetry, no credit card required.
+
+## What it does
+
+Web-based viewer (browser) + portable host agent (.exe / .AppImage).
+Full remote control on Windows and Linux X11. Wayland = view-only in MVP.
+
+| Platform | Screen | Input | Status |
+|---|---|---|---|
+| Windows | DXGI Desktop Duplication | SendInput (enigo) | Full |
+| Linux X11 | XShm / XGetImage | XTest (enigo) | Full |
+| Linux Wayland | xdg-desktop-portal + PipeWire | Not in MVP | View-only |
+
+## Quick start
+
+### Prerequisites
+
+- Node.js 18+ and npm
+- Rust stable
+- A Firebase project with Auth, Realtime Database and Firestore enabled
+- A Clerk application (free tier) for viewer sign-in
+- A [Metered.ca](https://www.metered.ca/tools/openrelay/) account for TURN
+  (free, 50GB/month, no card). Without TURN, sessions on restrictive networks
+  — roughly 10–15% of them — cannot connect at all, and they fail for the
+  *remote* person rather than for you. The no-signup `openrelay.metered.ca`
+  credentials that circulate online no longer resolve, so an account is
+  genuinely required.
+
+  Once the values are in `viewer/.env.local`, check them:
+
+  ```bash
+  cd viewer && npm run check:turn
+  ```
+
+  This gathers ICE candidates with `iceTransportPolicy: "relay"`, so the
+  browser refuses every non-relay candidate — anything it finds had to come
+  through TURN. Bad credentials, a blocked port and an expired tier all fail
+  identically at runtime; this tells them apart.
+
+**Linux build dependencies.** The host agent will not compile without these,
+and the failure (`pkg-config not found`, `gdk-sys`, `env-libvpx-sys`) points at
+a dependency rather than at what is missing:
+
+```bash
+sudo apt install -y \
+  pkg-config build-essential curl wget file \
+  libwebkit2gtk-4.1-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev \
+  libxdo-dev libxcb1-dev libxcb-shm0-dev libxcb-randr0-dev \
+  libvpx-dev libdbus-1-dev clang libclang-dev
+```
+
+`libvpx` is a hard requirement, not an optimisation: webrtc-rs is transport
+only and does no video encoding, so VP8 compression is the host agent's own
+job (`src/encoder.rs`).
+
+### Firebase project setup (§0.13 items 4–5)
+
+> **The Firebase backend does not exist yet.** Checked against the project in
+> `viewer/.env.local` (`duxo-967f0`) with its own service-account key — the key
+> authenticates, so the project is real, but every service the product runs on
+> answers "API has not been used in this project before, or it is disabled":
+>
+> | Service | State | What depends on it |
+> |---|---|---|
+> | Realtime Database | 404 — no instance | All signaling: `sessions/`, `codes/`, `pairings/`, `auditLog/` |
+> | Cloud Firestore | API never enabled | §6.3 durable records: session history, devices, profiles |
+> | Identity Toolkit (Auth) | 404 | §2.5 — the viewer ID tokens the host verifies |
+>
+> Until these are created, no session can be created, no device can be paired,
+> and no code can be redeemed, regardless of what the code does. Create them in
+> the [Firebase console](https://console.firebase.google.com/) — Build →
+> Realtime Database → Create Database, and Build → Firestore → Create Database.
+> The Spark (free) plan covers both, per §0.3.
+>
+> Set the `FIREBASE_PROJECT_ID` **repository variable** to the same project.
+> The workflows had it hardcoded to `duxo-remote`, which is not the project the
+> app is configured against.
+
+### Security rules (do this before anything writes user data)
+
+The rules in `firebase/` are the only thing separating one account's sessions
+from another's, and they are **not** applied by deploying the viewer. Push to
+`main` runs `.github/workflows/deploy-rules.yml`, or do it by hand:
+
+```bash
+npm install -g firebase-tools
+firebase login
+firebase deploy --only database,firestore:rules,firestore:indexes \
+  --project <your-project-id>
+```
+
+For the workflow to deploy anything, the repo needs one of two secrets:
+`FIREBASE_SERVICE_ACCOUNT` (base64 of a service-account JSON key — the same
+one `firestore-backup.yml` uses) or `FIREBASE_TOKEN`. **Neither is currently
+set**, so the workflow will fail loudly rather than report a green check for a
+deploy that did not happen.
+
+Until this runs, the project is on whatever rules were last set in the
+console — for a new project, Firebase's defaults, which are open. A session
+also cannot reach `REQUESTED` without the viewer-claim clause in
+`database.rules.json`, so an undeployed ruleset shows up as a viewer that
+enters a valid code and then hangs.
+
+### Checking a deployment
+
+The viewer runs on Railway (`viewer/railway.json` — Nixpacks build, `next start`).
+A build passing says the code compiles; it says nothing about whether the
+deployed instance has its environment set. To check a real deployment:
+
+```bash
+cd viewer
+npm run check:deploy -- https://your-app.up.railway.app
+```
+
+It drives a headless browser against the origin and asserts the things that
+only fail in a browser: that the app renders, that `/api/health` reports every
+required variable present, that the API routes refuse an anonymous caller with
+JSON rather than an HTML redirect, that `/dashboard` sends a signed-out
+visitor to `/login`, and that nothing throws in the console. Non-zero exit on
+failure, so it can gate a release.
+
+`GET /api/health` on its own answers most of it — it names any missing
+variables without returning their values, and answers 503 rather than 200 when
+the deploy is misconfigured, so an uptime check cannot read it as healthy.
+
+### Viewer (Next.js)
+
+```bash
+cd viewer
+cp .env.example .env.local   # Fill in Firebase, Clerk and TURN values
+npm install
+npm run dev                  # → http://localhost:3000
+```
+
+### Host agent (Tauri + Rust)
+
+```bash
+cd host-agent/src-tauri
+cp .env.example .env         # Same Firebase project as the viewer
+cargo build --release
+```
+
+### Running a session
+
+The host agent has no login screen of its own. It cannot: the viewer signs in
+through Clerk, and the Firebase key that mints credentials must never ship
+inside a downloadable binary. So the machine being shared is *paired* to an
+account once, the way a TV app is:
+
+1. **Link the device (once per machine).** Launch the host agent and pick
+   **Link this device…** from the tray menu. It shows a six-character code.
+2. Sign in to the viewer, go to **/link-device**, and enter that code. The
+   server mints a Firebase credential for *your own* account and hands it to
+   the waiting agent, which stores the refresh token in the OS keychain
+   (Windows Credential Manager / Linux Secret Service). The device is now
+   linked until you unlink it.
+3. **Start a session.** Tray menu → **Start a session**. The agent shows an
+   8-digit code, grouped as `XXXX XXXX` so it survives being read aloud.
+4. **Connect.** On the viewer's dashboard, enter that code.
+5. **Approve.** The host machine shows a native dialog with the viewer's
+   *verified* email — taken from the signature-checked Firebase token, not
+   from anything the viewer wrote. Nothing is shared until someone at the
+   host clicks Allow. A timeout, a dismissed dialog, or a closed window all
+   count as Deny.
+
+> On GNOME, the tray icon needs the AppIndicator extension. Without it the
+> agent runs but shows no icon, which looks like it failed to launch.
+
+## Architecture
+
+```
+VIEWER                     WebRTC P2P                    HOST AGENT
+ (Browser)      <──────────────────────────────────►   (Tauri/Rust)
+ Next.js /          STUN + Metered TURN                    Windows:
+ Vercel             + Oracle Coturn fallback (Path B)       .exe
+                     │                                     Linux:
+                     │                                     AppImage
+                     └────────── Firebase RTDB ────────────┘
+                        Auth / RTDB / Firestore
+```
+
+## Cost paths
+
+| Path | Card? | Notes |
+|---|---|---|
+| **Path A** (Zero Card) | No | Metered TURN + STUN-only fallback. Client-side code expiry. |
+| **Path B** (Card On File) | Yes (identity only) | Oracle Coturn fallback + Cloud Functions. Blaze plan. No charges within free tiers. |
+
+## Documentation
+
+- [Architecture](docs/architecture.md) — technical deep-dive
+- [Data Schema](docs/data-schema.md) — RTDB + Firestore structure
+- [Protocol Versions](docs/protocol-versions.md) — compatibility matrix
+- [SECURITY.md](SECURITY.md) — security model, reporting
+- [CONTRIBUTING.md](CONTRIBUTING.md) — conventions, workflow
+
+## Roadmap (§0.10 — 16 weeks, 1 person)
+
+| Phase | Weeks | Deliverable |
+|---|---|---|
+| 1 | 1–2 | Viewer shell + auth + landing + download page |
+| 2 | 3–5 | Host agent + code system + Allow/Deny popup |
+| 2.5 | 6 | Security hardening + TURN fallback |
+| 3 | 7–11 | WebRTC video pipe (capture → view) |
+| 4 | 12–15 | Remote control + clipboard + file transfer |
+| 5 | post-MVP | Wayland input, macOS, mobile, EV signing |
+
+## License
+
+MIT — see [LICENSE](LICENSE).

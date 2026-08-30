@@ -78,7 +78,7 @@ export default function HistoryPage() {
     <>
       <Navbar />
       <main className="mx-auto max-w-4xl px-6 py-8">
-        <h1 className="text-2xl font-weight-emphasis">Session history</h1>
+        <h1 className="text-2xl font-emphasis">Session history</h1>
         <p className="mt-2 text-sm text-text-secondary">
           Sessions you hosted. Duxo never records screen content — only
           metadata (who, when, how long).
@@ -100,7 +100,7 @@ export default function HistoryPage() {
                   className="flex items-center justify-between rounded-md border border-border-default bg-surface-raised p-4"
                 >
                   <div>
-                    <p className="text-sm font-weight-emphasis">
+                    <p className="text-sm font-emphasis">
                       {platformLabel(r.hostPlatform)}
                     </p>
                     <p className="text-xs text-text-secondary">

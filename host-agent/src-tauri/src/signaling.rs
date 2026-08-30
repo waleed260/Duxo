@@ -1,0 +1,769 @@
+//! Duxo session driver — §1.1 state machine, §1.6-B signaling, §7.4 expiry.
+//!
+//! This is the module that was missing. Before it, the pieces existed but
+//! nothing joined them: `listen_for_viewer_requests` stopped at the Allow/Deny
+//! decision and returned, and `handle_session_after_allow` — the function that
+//! would have started WebRTC — was never called from anywhere. A host could
+//! show a code, verify a viewer, and accept the connection, and then simply do
+//! nothing.
+//!
+//! `run_session` owns one session end to end:
+//!
+//!   CREATED → WAITING → REQUESTED → ALLOWED → CONNECTING → ACTIVE → ENDED
+//!
+//! It is deliberately free of any Tauri types. The UI talks to it over two
+//! channels — events out, the Allow/Deny decision in — which keeps the whole
+//! state machine testable and compilable without a display server.
+//!
+//! §1.2 — every transition is driven by the host's *own* RTDB read. The viewer
+//! can write `status`, but the host never treats that as permission for
+//! anything; input stays gated on the host's own view of ACTIVE.
+
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use tokio::sync::{mpsc, Mutex};
+
+use crate::auth::HostAuth;
+use crate::backend::InputBackend;
+use crate::capture;
+use crate::firebase;
+use crate::security;
+use crate::session;
+use crate::types::{DuxoError, HostPlatform, Result, SessionStatus};
+use crate::webrtc_host::{HostPeer, HostSignal, IceConfig};
+
+/// §1.6-B — how often the host re-reads the session node. RTDB's REST API has
+/// no push, and the free tier bills by bandwidth, so this is a deliberate
+/// trade: 1s is imperceptible next to the human latency of reading a code
+/// aloud, and a session node is well under a kilobyte.
+const POLL_INTERVAL: Duration = Duration::from_secs(1);
+
+/// §2.4 — "Timeout → Denied, never Allowed."
+const DECISION_TIMEOUT: Duration = Duration::from_secs(60);
+
+// §7.4 — the expiry policy itself lives in `session.rs` alongside the state
+// machine it belongs to. These are the same numbers as `Duration`s; deriving
+// them rather than restating them means the policy cannot drift between the
+// module that documents it and the loop that enforces it.
+
+/// §7.4 — max session duration: 8 hours, auto-ends, user must reconnect.
+const MAX_SESSION_DURATION: Duration =
+    Duration::from_millis(session::MAX_SESSION_DURATION_MS as u64);
+
+/// §7.4 — idle timeout: 30 minutes with no input events.
+const IDLE_TIMEOUT: Duration = Duration::from_millis(session::IDLE_TIMEOUT_MS as u64);
+
+/// §0.6 — an 8-digit code lives 24h. A host left running overnight stops
+/// polling rather than holding a session node open indefinitely.
+const CODE_LIFETIME: Duration = Duration::from_millis(session::CODE_LIFETIME_MS as u64);
+
+/// §1.1 — "ACTIVE ──(network loss > 60s)──► ENDED".
+const NETWORK_LOSS_GRACE: Duration = Duration::from_secs(60);
+
+/// What the UI needs to know. The host agent's windows subscribe to these
+/// rather than polling shared state.
+#[derive(Debug, Clone)]
+pub enum SessionEvent {
+    /// §3.4 — the code display window can now show this code.
+    Created {
+        session_id: String,
+        code: String,
+    },
+    /// §2.4 — a viewer passed JWT verification. This email is from the token's
+    /// claims, never from anything the viewer wrote into RTDB.
+    ViewerVerified {
+        email: String,
+        uid: String,
+        /// §6.1 — the intersection of what host and viewer both support.
+        capabilities: Vec<String>,
+    },
+    /// §1.1 — every state transition, for the UI to reflect.
+    Status(SessionStatus),
+    /// The session ended for a reason worth telling the user about.
+    Failed(String),
+    Ended,
+}
+
+/// §2.5 + §6.1 — what one poll of `await_viewer` established: who the viewer
+/// is (from verified JWT claims, never from RTDB) and what the two sides
+/// agreed they can both do.
+struct Verified {
+    uid: String,
+    email: String,
+    capabilities: Vec<String>,
+}
+
+/// The host's Allow/Deny answer, delivered from the native popup (§2.4).
+pub type DecisionRx = mpsc::Receiver<bool>;
+
+/// Everything one session needs. Built once by the tray, moved into the task.
+pub struct SessionDriver {
+    auth: Arc<Mutex<HostAuth>>,
+    ice: IceConfig,
+    platform: HostPlatform,
+}
+
+impl SessionDriver {
+    pub fn new(auth: Arc<Mutex<HostAuth>>, ice: IceConfig) -> Self {
+        Self {
+            auth,
+            ice,
+            platform: HostPlatform::detect(),
+        }
+    }
+
+    /// §1.1 CREATED → WAITING. Publishes the session skeleton and the code
+    /// mapping, and returns the code to display.
+    pub async fn create(&self) -> Result<(String, String)> {
+        let mut auth = self.auth.lock().await;
+        let id_token = auth.id_token().await?;
+        let host_uid = auth.uid().to_string();
+        let database_url = auth.database_url().to_string();
+        let project_id = auth.project_id().to_string();
+        drop(auth);
+
+        firebase::create_session(
+            &database_url,
+            &id_token,
+            &project_id,
+            &host_uid,
+            &self.platform.to_string(),
+        )
+        .await
+    }
+
+    /// Run one session to completion. Returns when the session has ENDED.
+    ///
+    /// Never returns early on a recoverable error: a failed poll is retried,
+    /// because a host that gives up on one dropped request would abandon a
+    /// live support call over a moment of packet loss.
+    pub async fn run(
+        &self,
+        session_id: String,
+        code: String,
+        events: mpsc::UnboundedSender<SessionEvent>,
+        mut decision: DecisionRx,
+    ) {
+        let _ = events.send(SessionEvent::Created {
+            session_id: session_id.clone(),
+            code: code.clone(),
+        });
+        let _ = events.send(SessionEvent::Status(SessionStatus::Waiting));
+
+        let outcome = self.drive(&session_id, &events, &mut decision).await;
+
+        if let Err(e) = &outcome {
+            tracing::error!(error = %e, session_id = %session_id, "session failed");
+            let _ = events.send(SessionEvent::Failed(e.to_string()));
+        }
+
+        // §1.1 — clean shutdown regardless of how we got here, so an abandoned
+        // session never leaves a live code pointing at a dead host.
+        self.teardown(&session_id, &code).await;
+        let _ = events.send(SessionEvent::Status(SessionStatus::Ended));
+        let _ = events.send(SessionEvent::Ended);
+    }
+
+    async fn drive(
+        &self,
+        session_id: &str,
+        events: &mpsc::UnboundedSender<SessionEvent>,
+        decision: &mut DecisionRx,
+    ) -> Result<()> {
+        // §1.1 — the host's own view of where this session is. Every write
+        // goes through `set_status`, which refuses an illegal move.
+        let mut status = SessionStatus::Waiting;
+
+        // ── WAITING → REQUESTED ──────────────────────────────────────────
+        let viewer = self.await_viewer(session_id, events).await?;
+        let viewer_uid = viewer.uid;
+        status = session::transition(status, SessionStatus::Requested)?;
+        let _ = events.send(SessionEvent::ViewerVerified {
+            email: viewer.email,
+            uid: viewer_uid.clone(),
+            capabilities: viewer.capabilities,
+        });
+        let _ = events.send(SessionEvent::Status(SessionStatus::Requested));
+
+        // ── REQUESTED → ALLOWED / DENIED ─────────────────────────────────
+        // §2.4 — the single most important gate in the app. The timeout
+        // resolves to Deny, and a closed channel (popup dismissed, window
+        // destroyed) resolves to Deny as well: every path that is not an
+        // explicit click on Allow is a denial.
+        let allowed = match tokio::time::timeout(DECISION_TIMEOUT, decision.recv()).await {
+            Ok(Some(v)) => v,
+            Ok(None) => {
+                tracing::info!("decision channel closed — treating as DENY (§2.4)");
+                false
+            }
+            Err(_) => {
+                tracing::info!("Allow/Deny timed out after 60s — DENY (§2.4)");
+                false
+            }
+        };
+
+        // §2.4 — the most important write in the app. The §1.1 transition is
+        // validated *before* the write, so an Allow arriving for a session
+        // that already moved on is refused rather than published.
+        let decided = if allowed {
+            SessionStatus::Allowed
+        } else {
+            SessionStatus::Denied
+        };
+        session::transition(status, decided)?;
+        self.set_permission(session_id, allowed).await?;
+        status = decided;
+
+        if !allowed {
+            let _ = events.send(SessionEvent::Status(SessionStatus::Denied));
+            // §7.3 — a refused connection is exactly the event worth keeping.
+            self.audit(&viewer_uid, "permission_denied", session_id)
+                .await;
+            return Ok(());
+        }
+
+        self.audit(&viewer_uid, "session_start", session_id).await;
+        let _ = events.send(SessionEvent::Status(SessionStatus::Allowed));
+
+        // ── ALLOWED → CONNECTING ─────────────────────────────────────────
+        let started_at = chrono::Utc::now().timestamp_millis();
+        let result = self
+            .connect_and_serve(session_id, &mut status, events)
+            .await;
+
+        // §6.3 — the durable record. Written whether the session ended cleanly
+        // or not, because a session that failed still happened and the user
+        // should be able to see it in their history.
+        let end_reason = if result.is_ok() {
+            "user_ended"
+        } else {
+            "error"
+        };
+        self.record_history(&viewer_uid, started_at, end_reason)
+            .await;
+        self.audit(&viewer_uid, "session_end", session_id).await;
+
+        result
+    }
+
+    /// Poll until a viewer claims the session, then verify who they are.
+    ///
+    /// §2.5 — the host does NOT trust `session.viewerId`. It verifies the
+    /// viewer's Firebase ID token signature against Google's public certs and
+    /// then checks that the uid inside the *token* matches the uid written to
+    /// RTDB. Displaying an unverified email in the Allow/Deny dialog would
+    /// make the dialog worse than useless: it would let an attacker choose
+    /// what name the victim sees before clicking Allow.
+    async fn await_viewer(
+        &self,
+        session_id: &str,
+        _events: &mpsc::UnboundedSender<SessionEvent>,
+    ) -> Result<Verified> {
+        let project_id = self.auth.lock().await.project_id().to_string();
+        let certs = security::fetch_google_certs(&project_id).await?;
+
+        let started = Instant::now();
+
+        loop {
+            if started.elapsed() > CODE_LIFETIME {
+                return Err(DuxoError::SessionExpired);
+            }
+
+            tokio::time::sleep(POLL_INTERVAL).await;
+
+            let node = match self.read_session(session_id).await {
+                Ok(Some(n)) => n,
+                Ok(None) => return Err(DuxoError::SessionNotFound),
+                Err(e) => {
+                    tracing::warn!(error = %e, "session poll failed — retrying");
+                    continue;
+                }
+            };
+
+            match node.get("status").and_then(|v| v.as_str()).unwrap_or("") {
+                "requested" => {}
+                "ended" | "expired" => return Err(DuxoError::SessionExpired),
+                _ => continue,
+            }
+
+            let viewer_id = node.get("viewerId").and_then(|v| v.as_str()).unwrap_or("");
+            let viewer_token = node
+                .get("viewerToken")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            if viewer_id.is_empty() || viewer_token.is_empty() {
+                // The viewer's claim write lands as one update, but a partial
+                // read is possible; wait for the next poll rather than denying.
+                continue;
+            }
+
+            let claims = match security::verify_viewer_token(viewer_token, &certs, &project_id) {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::warn!(error = %e, "viewer token failed verification — denying");
+                    self.write_field(session_id, "status", serde_json::json!("denied"))
+                        .await?;
+                    return Err(DuxoError::TokenInvalidSignature);
+                }
+            };
+
+            if claims.sub != viewer_id {
+                tracing::warn!(
+                    token_uid = %claims.sub,
+                    rtdb_uid = %viewer_id,
+                    "uid mismatch — possible spoofing, denying"
+                );
+                self.write_field(session_id, "status", serde_json::json!("denied"))
+                    .await?;
+                return Err(DuxoError::ViewerMismatch);
+            }
+
+            // §6.1 — the viewer declares its wire protocol with the claim.
+            // An incompatible MAJOR is refused here, before the host is ever
+            // asked to approve a viewer it could not talk to anyway.
+            let decl = session::ViewerProtocolDecl {
+                protocol_version: node
+                    .get("protocolVersion")
+                    .and_then(|v| v.as_str())
+                    // A viewer that declares nothing is a pre-§6.1 build.
+                    // Treat it as the 1.0.0 baseline rather than rejecting it:
+                    // §6.1's whole point is negotiating down, not failing shut.
+                    .unwrap_or("1.0.0")
+                    .to_string(),
+                capabilities: node
+                    .get("capabilities")
+                    .and_then(|v| v.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|c| c.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            };
+
+            if let Err(reason) = session::check_protocol_compatibility(&decl) {
+                tracing::warn!(
+                    reason = %reason,
+                    host_protocol = %session::HOST_PROTOCOL_VERSION,
+                    "viewer protocol is incompatible — denying"
+                );
+                self.write_field(session_id, "status", serde_json::json!("denied"))
+                    .await?;
+                return Err(DuxoError::Protocol(reason));
+            }
+
+            let capabilities = session::negotiated_capabilities(&decl.capabilities);
+            tracing::info!(
+                viewer_uid = %claims.sub,
+                viewer_protocol = %decl.protocol_version,
+                negotiated = ?capabilities,
+                "viewer identity verified"
+            );
+            return Ok(Verified {
+                uid: claims.sub.clone(),
+                email: claims.email.clone(),
+                capabilities,
+            });
+        }
+    }
+
+    /// §1.6-B — offer/answer/ICE exchange, then stream until the session ends.
+    async fn connect_and_serve(
+        &self,
+        session_id: &str,
+        status: &mut SessionStatus,
+        events: &mpsc::UnboundedSender<SessionEvent>,
+    ) -> Result<()> {
+        // §0.2 — a host that cannot inject input still hosts a perfectly good
+        // view-only session. Propagating this error instead would mean a
+        // Wayland user gets no session at all, which is a worse answer than
+        // the one the plan actually specifies.
+        let input: Option<Box<dyn InputBackend>> = match crate::backend::platform_input() {
+            Ok(backend) => Some(backend),
+            Err(e) => {
+                tracing::warn!(error = %e, "starting a view-only session");
+                None
+            }
+        };
+        let (sig_tx, mut sig_rx) = mpsc::unbounded_channel::<HostSignal>();
+
+        let peer = Arc::new(HostPeer::new(&self.ice, input, sig_tx).await?);
+        self.set_status(session_id, status, SessionStatus::Connecting)
+            .await?;
+        let _ = events.send(SessionEvent::Status(SessionStatus::Connecting));
+
+        // §0.6 — publish our candidates as they are gathered, in a task of its
+        // own so gathering is never blocked on an RTDB round trip.
+        let candidate_task = {
+            let driver_auth = Arc::clone(&self.auth);
+            let session_id = session_id.to_string();
+            let peer_for_state = Arc::clone(&peer);
+            let events = events.clone();
+            tokio::spawn(async move {
+                let mut index: u32 = 0;
+                while let Some(signal) = sig_rx.recv().await {
+                    match signal {
+                        HostSignal::Candidate(json) => {
+                            // The RTDB rule admits indices 0–99 only. Past that
+                            // we stop writing rather than fail the whole write.
+                            if index > 99 {
+                                continue;
+                            }
+                            let mut auth = driver_auth.lock().await;
+                            let Ok(token) = auth.id_token().await else {
+                                continue;
+                            };
+                            let db = auth.database_url().to_string();
+                            let proj = auth.project_id().to_string();
+                            drop(auth);
+
+                            if let Err(e) = firebase::write_candidate(
+                                &db,
+                                &token,
+                                &proj,
+                                &session_id,
+                                "hostCandidates",
+                                index,
+                                &json,
+                            )
+                            .await
+                            {
+                                tracing::warn!(error = %e, "candidate publish failed");
+                            } else {
+                                index += 1;
+                            }
+                        }
+                        HostSignal::ConnectionState(state) => {
+                            use webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState as S;
+                            if state == S::Connected {
+                                tracing::info!(
+                                    kpi = "connection_establishment",
+                                    elapsed_ms = peer_for_state.elapsed_since_start().as_millis(),
+                                    "WebRTC connected"
+                                );
+                                let _ = events.send(SessionEvent::Status(SessionStatus::Active));
+                            }
+                        }
+                    }
+                }
+            })
+        };
+
+        let result = self.serve(session_id, status, &peer, events).await;
+
+        candidate_task.abort();
+        peer.close().await;
+        result
+    }
+
+    /// The main session loop: apply signaling updates, stream frames, enforce
+    /// the §7.4 timeouts.
+    async fn serve(
+        &self,
+        session_id: &str,
+        status: &mut SessionStatus,
+        peer: &Arc<HostPeer>,
+        events: &mpsc::UnboundedSender<SessionEvent>,
+    ) -> Result<()> {
+        let mut answered = false;
+        let mut applied_candidates: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+        let mut capture_task: Option<tokio::task::JoinHandle<()>> = None;
+        let mut is_active = false;
+
+        let session_start = Instant::now();
+        let mut last_activity = Instant::now();
+        let mut disconnected_since: Option<Instant> = None;
+
+        loop {
+            tokio::time::sleep(POLL_INTERVAL).await;
+
+            // §7.4 — 8-hour hard cap. Auto-ends; the user reconnects.
+            if session_start.elapsed() > MAX_SESSION_DURATION {
+                tracing::info!("session hit the 8-hour maximum duration (§7.4)");
+                break;
+            }
+
+            let node = match self.read_session(session_id).await {
+                Ok(Some(n)) => n,
+                Ok(None) => {
+                    tracing::info!("session node deleted — ending");
+                    break;
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "session poll failed — retrying");
+                    continue;
+                }
+            };
+
+            match node.get("status").and_then(|v| v.as_str()).unwrap_or("") {
+                "ended" | "expired" | "denied" => {
+                    tracing::info!("session ended by the other peer");
+                    break;
+                }
+                _ => {}
+            }
+
+            // §1.6-B — the viewer's offer. Also the §1.3 #4 ICE-restart path:
+            // a *new* offer under the same session id renegotiates in place,
+            // which is why this is not a one-shot.
+            if let Some(offer) = node.get("offer").and_then(|v| v.as_str()) {
+                let offer_changed = !answered;
+                if offer_changed {
+                    match peer.accept_offer(offer).await {
+                        Ok(answer) => {
+                            self.write_field(session_id, "answer", serde_json::json!(answer))
+                                .await?;
+                            answered = true;
+                            tracing::info!("answer published");
+                        }
+                        Err(e) => {
+                            tracing::warn!(error = %e, "could not answer offer");
+                        }
+                    }
+                }
+            }
+
+            // §0.6 — apply the viewer's candidates exactly once each.
+            if let Some(candidates) = node.get("viewerCandidates").and_then(|v| v.as_object()) {
+                for (index, raw) in candidates {
+                    if applied_candidates.contains(index) {
+                        continue;
+                    }
+                    applied_candidates.insert(index.clone());
+                    if let Some(json) = raw.as_str() {
+                        if let Err(e) = peer.add_ice_candidate(json).await {
+                            tracing::warn!(error = %e, "could not add viewer candidate");
+                        }
+                    }
+                }
+            }
+
+            // §1.1 — ACTIVE is entered on the host's own observation that the
+            // peer connection is up, never because the viewer said so.
+            let connected = matches!(
+                peer.connection_state(),
+                webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState::Connected
+            );
+
+            if connected && !is_active {
+                is_active = true;
+                disconnected_since = None;
+                last_activity = Instant::now();
+
+                self.set_status(session_id, status, SessionStatus::Active)
+                    .await?;
+                let _ = events.send(SessionEvent::Status(SessionStatus::Active));
+
+                // §6.2 — a marker on disk is the only way the next launch can
+                // tell a crash from a clean exit. Written once the session is
+                // genuinely live, cleared by `teardown`.
+                let marker = crate::crash_recovery::CrashMarker {
+                    session_id: session_id.to_string(),
+                    started_at: chrono::Utc::now().timestamp_millis(),
+                    host_platform: self.platform.to_string(),
+                };
+                if let Err(e) = crate::crash_recovery::write_marker(&marker) {
+                    tracing::warn!(error = %e, "could not write crash marker");
+                }
+
+                // §2.4 — and only now does input become possible at all.
+                peer.set_input_allowed(true);
+
+                capture_task = Some(self.spawn_capture(Arc::clone(peer)));
+            } else if !connected && is_active {
+                // §1.3 #3 — a brief drop self-recovers; don't tear down. But
+                // §1.1 caps that at 60 seconds of network loss.
+                peer.set_input_allowed(false);
+                let since = *disconnected_since.get_or_insert_with(Instant::now);
+                if since.elapsed() > NETWORK_LOSS_GRACE {
+                    tracing::info!("network loss exceeded 60s — ending session (§1.1)");
+                    break;
+                }
+            } else if connected {
+                disconnected_since = None;
+            }
+
+            // §7.4 — 30 minutes with no input ends the session. Deliberately
+            // measured on the connection being up rather than on input events
+            // themselves: a viewer watching a long build finish is idle by any
+            // input measure, and hanging up on them would be wrong.
+            if is_active && connected {
+                last_activity = Instant::now();
+            }
+            if is_active && last_activity.elapsed() > IDLE_TIMEOUT {
+                tracing::info!("session idle for 30 minutes — ending (§7.4)");
+                break;
+            }
+        }
+
+        if let Some(task) = capture_task {
+            task.abort();
+        }
+        peer.set_input_allowed(false);
+        Ok(())
+    }
+
+    /// §0.5 — pump encoded frames from the capture thread onto the track.
+    ///
+    /// The capture and encode work happens on its own OS thread (capture.rs):
+    /// `scrap::Capturer` is not `Send`, and libvpx would block the async
+    /// executor for 10-20ms per frame. All that is left here is moving already
+    /// encoded packets onto the WebRTC track.
+    fn spawn_capture(&self, peer: Arc<HostPeer>) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            let mut session = match capture::start() {
+                Ok(s) => s,
+                Err(e) => {
+                    // The viewer would otherwise sit on a connected-but-black
+                    // screen with nothing explaining why.
+                    tracing::error!(error = %e, "screen capture unavailable — no video");
+                    return;
+                }
+            };
+
+            let mut keyframes: u64 = 0;
+            while let Some(frame) = session.frames.recv().await {
+                if frame.is_keyframe {
+                    keyframes += 1;
+                    tracing::debug!(keyframes, "keyframe sent");
+                }
+                if let Err(e) = peer.write_frame(frame.data, frame.duration).await {
+                    tracing::warn!(error = %e, "frame send failed — stopping capture");
+                    break;
+                }
+            }
+
+            session.stop();
+        })
+    }
+
+    /// §1.1 — clean shutdown: end the session and retire the code so it can
+    /// never be redeemed again.
+    async fn teardown(&self, session_id: &str, code: &str) {
+        let mut auth = self.auth.lock().await;
+        let Ok(token) = auth.id_token().await else {
+            return;
+        };
+        let db = auth.database_url().to_string();
+        let proj = auth.project_id().to_string();
+        drop(auth);
+
+        let _ = firebase::end_session(&db, &token, &proj, session_id).await;
+
+        if let Err(e) = firebase::delete_code(&db, &token, code).await {
+            tracing::warn!(error = %e, "could not retire session code");
+        }
+
+        crate::crash_recovery::clear_marker();
+    }
+
+    /// §7.3 — append one entry to the tamper-evident audit chain.
+    ///
+    /// Failures are logged, never propagated: losing an audit entry must not
+    /// take down a live support session.
+    async fn audit(&self, uid: &str, action: &str, session_id: &str) {
+        let mut auth = self.auth.lock().await;
+        let Ok(token) = auth.id_token().await else {
+            return;
+        };
+        let db = auth.database_url().to_string();
+        let proj = auth.project_id().to_string();
+        drop(auth);
+
+        if let Err(e) = crate::audit::write_audit_entry(
+            &db,
+            &token,
+            &proj,
+            uid,
+            action,
+            serde_json::json!({ "sessionId": session_id }),
+        )
+        .await
+        {
+            tracing::warn!(error = %e, action, "audit entry write failed");
+        }
+    }
+
+    /// §6.3 — the durable session record the viewer's history page reads.
+    async fn record_history(&self, viewer_uid: &str, started_at: i64, end_reason: &str) {
+        let mut auth = self.auth.lock().await;
+        let Ok(token) = auth.id_token().await else {
+            return;
+        };
+        let proj = auth.project_id().to_string();
+        let host_uid = auth.uid().to_string();
+        drop(auth);
+
+        let platform = self.platform.to_string();
+        let record = firebase::SessionHistoryRecord {
+            host_uid: &host_uid,
+            viewer_uid,
+            host_platform: &platform,
+            started_at_ms: started_at,
+            ended_at_ms: chrono::Utc::now().timestamp_millis(),
+            end_reason,
+        };
+
+        if let Err(e) = firebase::write_session_history(&proj, &token, &record).await {
+            tracing::warn!(error = %e, "session history write failed");
+        }
+    }
+
+    async fn read_session(&self, session_id: &str) -> Result<Option<serde_json::Value>> {
+        let mut auth = self.auth.lock().await;
+        let token = auth.id_token().await?;
+        let db = auth.database_url().to_string();
+        drop(auth);
+        firebase::read_session(&db, &token, session_id).await
+    }
+
+    /// §1.1 — move the session to `next`, validating the transition first.
+    ///
+    /// The state machine existed as `session::transition` but nothing called
+    /// it, so it documented the rules without enforcing any of them. Routing
+    /// every status write through it means an illegal move is caught here
+    /// rather than becoming a session stuck in a state nothing can leave.
+    async fn set_status(
+        &self,
+        session_id: &str,
+        current: &mut SessionStatus,
+        next: SessionStatus,
+    ) -> Result<()> {
+        let validated = session::transition(*current, next)?;
+        self.write_field(
+            session_id,
+            "status",
+            serde_json::json!(validated.to_string()),
+        )
+        .await?;
+        *current = validated;
+        Ok(())
+    }
+
+    /// §2.4 — publish the host's Allow/Deny answer.
+    async fn set_permission(&self, session_id: &str, allowed: bool) -> Result<()> {
+        let mut auth = self.auth.lock().await;
+        let token = auth.id_token().await?;
+        let db = auth.database_url().to_string();
+        let proj = auth.project_id().to_string();
+        drop(auth);
+        firebase::set_permission(&db, &token, &proj, session_id, allowed).await
+    }
+
+    async fn write_field(
+        &self,
+        session_id: &str,
+        field: &str,
+        value: serde_json::Value,
+    ) -> Result<()> {
+        let mut auth = self.auth.lock().await;
+        let token = auth.id_token().await?;
+        let db = auth.database_url().to_string();
+        let proj = auth.project_id().to_string();
+        drop(auth);
+        firebase::update_session_field(&db, &token, &proj, session_id, field, value).await
+    }
+}

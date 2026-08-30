@@ -24,11 +24,34 @@ export interface ConnectionEvents {
   onDataChannelMessage?: (data: unknown) => void;
   onTrack?: (stream: MediaStream) => void;
   onQualityUpdate?: (rttMs: number) => void;
+  /**
+   * §0.6 — trickle ICE. Fires once per locally gathered candidate; the caller
+   * batches these into `sessions/{id}/viewerCandidates` (max 10 per write).
+   * Without this the host never learns how to reach the browser and the
+   * connection can only ever succeed on a same-LAN host-candidate fluke.
+   */
+  onIceCandidate?: (candidate: RTCIceCandidateInit) => void;
+  /** §1.3 #4 — a new local offer was produced by an ICE restart. */
+  onIceRestartOffer?: (offer: RTCSessionDescriptionInit) => void;
 }
 
 // §1.3 — exponential backoff for ICE restart (matches §6.5 KPI: <10s local,
 // <15s via TURN). Cap at 8s per attempt.
 const BACKOFF_DELAYS_MS = [500, 1000, 2000, 4000, 8000];
+
+export type MouseButtonName = "left" | "middle" | "right";
+
+/** DOM `MouseEvent.button` → the §1.4 wire name. */
+export function mouseButtonName(button: number): MouseButtonName {
+  if (button === 1) return "middle";
+  if (button === 2) return "right";
+  return "left";
+}
+
+function clamp01(v: number): number {
+  if (!Number.isFinite(v)) return 0;
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
 
 export class DuxoConnection {
   private pc: RTCPeerConnection | null = null;
@@ -110,6 +133,34 @@ export class DuxoConnection {
     }
   }
 
+  /** True once the host has accepted the data channel. */
+  isChannelOpen(): boolean {
+    return this.dc?.readyState === "open";
+  }
+
+  /**
+   * §1.4 — mouse move. Coordinates are normalized 0–1 floats, never pixels,
+   * so a 1440p viewer window driving a 1080p host needs no scaling math and
+   * no DPI correction.
+   */
+  sendMouseMove(x: number, y: number) {
+    this.send({ type: "mouse_move", x: clamp01(x), y: clamp01(y), t: Date.now() });
+  }
+
+  sendMouseClick(button: MouseButtonName, state: "down" | "up") {
+    this.send({ type: "mouse_click", button, state, t: Date.now() });
+  }
+
+  /** Wheel deltas stay in host-independent "notch" units (§1.4 extension). */
+  sendMouseScroll(dx: number, dy: number) {
+    this.send({ type: "mouse_scroll", dx, dy, t: Date.now() });
+  }
+
+  /** §1.4 — physical key code (KeyboardEvent.code), layout-independent. */
+  sendKeyEvent(code: string, state: "down" | "up") {
+    this.send({ type: "key_event", code, state, t: Date.now() });
+  }
+
   /**
    * §1.3 #4 / §6.2 — ICE restart. Re-exchanges through RTDB using the SAME
    * session ID, not a new code.
@@ -120,6 +171,9 @@ export class DuxoConnection {
       const offer = await this.pc.createOffer({ iceRestart: true });
       await this.pc.setLocalDescription(offer);
       this.reconnectAttempts = 0;
+      // §1.3 #4 — the restart is only real once the new offer is re-published
+      // through RTDB under the SAME session id. Hand it to the caller.
+      this.events.onIceRestartOffer?.(offer);
       return offer;
     } catch {
       this.scheduleReconnect();
@@ -146,6 +200,14 @@ export class DuxoConnection {
 
   private attachListeners() {
     if (!this.pc) return;
+
+    // §0.6 — trickle our candidates out as they are gathered. A null
+    // candidate marks end-of-gathering and is not forwarded.
+    this.pc.onicecandidate = (e) => {
+      if (e.candidate) {
+        this.events.onIceCandidate?.(e.candidate.toJSON());
+      }
+    };
 
     this.pc.onconnectionstatechange = () => {
       this.events.onStateChange?.(this.pc!.connectionState);
@@ -228,6 +290,7 @@ export class DuxoConnection {
     }
     if (this.pc) {
       this.pc.ontrack = null;
+      this.pc.onicecandidate = null;
       this.pc.oniceconnectionstatechange = null;
       this.pc.onconnectionstatechange = null;
       this.pc.close();

@@ -1,0 +1,12 @@
+import { chromium } from '@playwright/test';
+const b = await chromium.launch();
+const p = await b.newPage();
+const errs = [];
+p.on('console', m => { if (m.type() === 'error') errs.push(`[console] ${m.text()}`); });
+p.on('pageerror', e => errs.push(`[pageerror] ${e.message}`));
+p.on('response', r => { if (r.status() >= 400) errs.push(`[${r.status()}] ${r.url()}`); });
+p.on('requestfailed', r => { if (!r.url().includes('_rsc=')) errs.push(`[reqfail] ${r.url()} :: ${r.failure()?.errorText}`); });
+await p.goto(process.argv[2], { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(e => errs.push('[goto] ' + e.message));
+await p.waitForTimeout(4000);
+console.log(errs.length ? errs.join('\n') : '(clean)');
+await b.close();

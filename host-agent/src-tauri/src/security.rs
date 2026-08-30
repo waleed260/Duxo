@@ -8,7 +8,7 @@
 //! Linux Secret Service), never plaintext files. Uses the `keyring` crate.
 
 use crate::types::{DuxoError, Result};
-use jsonwebtoken::{decode, decode_header, DecodingKey, Validation, Algorithm};
+use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
 use zeroize::ZeroizeOnDrop;
 
@@ -20,11 +20,11 @@ use zeroize::ZeroizeOnDrop;
 /// contents (UID, email) are not left sitting in freed memory.
 #[derive(Debug, Deserialize, ZeroizeOnDrop)]
 pub struct VerifiedClaims {
-    pub sub: String,       // Firebase UID — verified against RTDB viewerId.
-    pub email: String,     // Displayed in the Allow/Deny popup (§2.4).
+    pub sub: String,   // Firebase UID — verified against RTDB viewerId.
+    pub email: String, // Displayed in the Allow/Deny popup (§2.4).
     pub email_verified: bool,
-    pub aud: String,       // Must match our Firebase project ID.
-    pub iss: String,       // Must be securetoken.google.com/<project_id>.
+    pub aud: String, // Must match our Firebase project ID.
+    pub iss: String, // Must be securetoken.google.com/<project_id>.
     pub iat: u64,
     pub exp: u64,
     pub auth_time: u64,
@@ -41,7 +41,10 @@ pub struct JwkSet {
 pub struct Jwk {
     pub kty: String,
     pub alg: String,
-    pub use: String,
+    // `use` is a Rust keyword, so the field needs the raw identifier and an
+    // explicit serde rename to keep matching Google's JWK field name.
+    #[serde(rename = "use")]
+    pub key_use: String,
     pub kid: String,
     pub n: String,
     pub e: String,
@@ -52,7 +55,8 @@ pub struct Jwk {
 /// in JWK format, directly usable by the jsonwebtoken crate.
 /// This endpoint is public, free, no API key or billing.
 pub async fn fetch_google_certs(_project_id: &str) -> Result<JwkSet> {
-    let url = "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com";
+    let url =
+        "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com";
     let client = reqwest::Client::new();
     let resp = client.get(url).send().await?;
     let certs: JwkSet = resp.json().await?;
@@ -74,28 +78,43 @@ pub fn verify_viewer_token(
     google_certs: &JwkSet,
     project_id: &str,
 ) -> Result<VerifiedClaims> {
-    let header = decode_header(id_token)
-        .map_err(|_| DuxoError::TokenInvalidSignature)?;
+    let header = decode_header(id_token).map_err(|_| DuxoError::TokenInvalidSignature)?;
 
     let kid = header.kid.ok_or(DuxoError::MissingKeyId)?;
 
-    let jwk = google_certs.keys.iter()
-        .find(|k| k.kid == kid)
+    // §2.5 — match on `kid`, but do not trust `kid` alone to have selected a
+    // key that is actually usable for this signature. RFC 7517 §4 makes `kty`,
+    // `alg` and `use` part of what identifies a key's purpose, and the
+    // validation below hard-codes RS256: picking a key published for anything
+    // else and then verifying it as RS256 is a key-confusion bug waiting for
+    // the day Google publishes a second key type at the same endpoint.
+    let jwk = google_certs
+        .keys
+        .iter()
+        .find(|k| {
+            k.kid == kid
+                && k.kty == "RSA"
+                && k.alg == "RS256"
+                && (k.key_use == "sig" || k.key_use.is_empty())
+        })
         .ok_or(DuxoError::UnknownSigningKey)?;
 
-    let decoding_key = DecodingKey::from_jwk(jwk)
+    // `DecodingKey::from_jwk` wants jsonwebtoken's own `jwk::Jwk` type, not
+    // ours. Building from the RSA components directly avoids mirroring that
+    // whole type just to hand back the two fields that matter.
+    let decoding_key = DecodingKey::from_rsa_components(&jwk.n, &jwk.e)
         .map_err(|_| DuxoError::TokenInvalidSignature)?;
 
     let mut validation = Validation::new(Algorithm::RS256);
     validation.set_audience(&[project_id]);
-    validation.set_issuer(&[
-        format!("https://securetoken.google.com/{}", project_id),
-    ]);
+    validation.set_issuer(&[format!("https://securetoken.google.com/{}", project_id)]);
 
-    let token_data = decode::<VerifiedClaims>(id_token, &decoding_key, &validation)
-        .map_err(|e| match e.kind() {
-            jsonwebtoken::errors::ErrorKind::ExpiredSignature => DuxoError::TokenExpired,
-            _ => DuxoError::TokenInvalidSignature,
+    let token_data =
+        decode::<VerifiedClaims>(id_token, &decoding_key, &validation).map_err(|e| {
+            match e.kind() {
+                jsonwebtoken::errors::ErrorKind::ExpiredSignature => DuxoError::TokenExpired,
+                _ => DuxoError::TokenInvalidSignature,
+            }
         })?;
 
     // §2.2 — for hosting, email must be verified.
@@ -129,7 +148,8 @@ pub fn get_secret(key: &str) -> Result<Option<String>> {
 pub fn set_secret(key: &str, value: &str) -> Result<()> {
     let entry = keyring::Entry::new(KEYRING_SERVICE, key)
         .map_err(|e| DuxoError::Firebase(e.to_string()))?;
-    entry.set_password(value)
+    entry
+        .set_password(value)
         .map_err(|e| DuxoError::Firebase(e.to_string()))?;
     tracing::info!(key = %key, "secret stored in keychain");
     Ok(())

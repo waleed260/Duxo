@@ -10,9 +10,10 @@ import { Card, CardIconBadge } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { CodeInput } from "@/components/CodeInput";
 import TOTPSetup from "@/components/TOTPSetup";
-import { syncFirebaseAuth, getFirebaseAuth } from "@/lib/auth-bridge";
-import { getFirebaseClient } from "@/lib/firebase-client";
-import { ref, get } from "firebase/database";
+// Still synced here even though the code lookup no longer touches RTDB: the
+// session page it hands off to needs a live Firebase credential to claim the
+// session, and doing it now means the handoff is not waiting on a round trip.
+import { syncFirebaseAuth } from "@/lib/auth-bridge";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -42,27 +43,29 @@ export default function DashboardPage() {
     setCodeError(null);
     setConnecting(true);
     try {
-      const client = getFirebaseClient();
-      if (!client) {
-        setCodeError("Firebase not configured.");
+      // §0.7 — resolved server-side. `codes/` is not client-readable: a
+      // direct lookup here would mean any signed-in account could enumerate
+      // live codes, and the rate limit that is supposed to stop that has to
+      // live somewhere it cannot be skipped by talking to RTDB directly.
+      const response = await fetch("/api/resolve-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | { sessionId?: string; error?: string }
+        | null;
+
+      if (!response.ok || !payload?.sessionId) {
+        setCodeError(
+          payload?.error ??
+            "That code isn't valid. Check with the person who shared it.",
+        );
         setConnecting(false);
         return;
       }
-      const { db } = client;
-      const auth = getFirebaseAuth();
-      const currentUser = auth.currentUser;
-      if (!currentUser) {
-        router.push("/login");
-        return;
-      }
-      const snapshot = await get(ref(db, `codes/${code}`));
-      if (!snapshot.exists()) {
-        setCodeError("That code isn't valid. Check with the person who shared it.");
-        setConnecting(false);
-        return;
-      }
-      const sessionId = snapshot.val() as string;
-      router.push(`/session?id=${encodeURIComponent(sessionId)}`);
+
+      router.push(`/session?id=${encodeURIComponent(payload.sessionId)}`);
     } catch {
       setCodeError("Couldn't look up that code. Check your connection and try again.");
       setConnecting(false);
@@ -90,7 +93,7 @@ export default function DashboardPage() {
       <main className="mx-auto max-w-6xl px-6 py-8">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-weight-emphasis">
+            <h1 className="text-2xl font-emphasis">
               Welcome back{displayName ? `, ${displayName}` : ""}
             </h1>
             <p className="text-sm text-text-secondary">
@@ -112,7 +115,7 @@ export default function DashboardPage() {
               <Plug className="h-5 w-5" />
             </CardIconBadge>
             <div>
-              <h2 className="text-lg font-weight-emphasis">Connect to a device</h2>
+              <h2 className="text-lg font-emphasis">Connect to a device</h2>
               <p className="mt-1 text-sm text-text-secondary">
                 Enter the 8-digit code someone shared with you.
               </p>
@@ -141,7 +144,7 @@ export default function DashboardPage() {
               <MonitorDown className="h-5 w-5" />
             </CardIconBadge>
             <div>
-              <h2 className="text-lg font-weight-emphasis">
+              <h2 className="text-lg font-emphasis">
                 Let others connect to me
               </h2>
               <p className="mt-1 text-sm text-text-secondary">
@@ -158,7 +161,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="mt-8">
-          <h2 className="text-lg font-weight-emphasis mb-4 flex items-center gap-2">
+          <h2 className="text-lg font-emphasis mb-4 flex items-center gap-2">
             <Shield className="h-4 w-4 text-accent" aria-hidden="true" />
             Security
           </h2>

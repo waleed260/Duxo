@@ -11,19 +11,19 @@
 //! Any state ──(24h timeout)──► EXPIRED
 //! ACTIVE ──(30 min idle OR network loss > 60s)──► ENDED
 
-use crate::types::{SessionStatus, SessionContext, HostPlatform, ProtocolVersion, Result, DuxoError};
-use serde::{Serialize, Deserialize};
+use crate::types::{DuxoError, ProtocolVersion, Result, SessionStatus};
+use serde::{Deserialize, Serialize};
 
 /// §6.1 — Protocol version declared by the host for capability negotiation.
-pub const HOST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 2, patch: 0 };
+pub const HOST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion {
+    major: 1,
+    minor: 2,
+    patch: 0,
+};
 
 /// §6.1 — The set of capabilities the host supports.
 /// Used to negotiate down with older viewers.
-pub const SUPPORTED_CAPABILITIES: &[&str] = &[
-    "clipboard",
-    "file_transfer",
-    "quality_indicator",
-];
+pub const SUPPORTED_CAPABILITIES: &[&str] = &["clipboard", "file_transfer", "quality_indicator"];
 
 /// §6.1 — Viewer's declared protocol range from the session request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,27 +81,21 @@ pub fn transition(current: SessionStatus, next: SessionStatus) -> Result<Session
     }
 }
 
-/// Create a fresh SessionContext in the CREATED → WAITING state.
-pub fn new_session(session_id: String, host_uid: &str) -> SessionContext {
-    SessionContext {
-        session_id,
-        status: SessionStatus::Waiting,
-        host_platform: HostPlatform::detect(),
-        viewer_id: None,
-        verified_viewer_email: None,
-        protocol_version: ProtocolVersion::default(),
-        created_at: chrono::Utc::now().timestamp_millis(),
-    }
-}
-
 // ─── §6.1 — Protocol version negotiation ───
 
 /// §6.1 — Check whether the viewer's declared protocol version is compatible
 /// with this host. Returns Ok if compatible, Err with a reason if not.
-pub fn check_protocol_compatibility(viewer_decl: &ViewerProtocolDecl) -> std::result::Result<(), String> {
+pub fn check_protocol_compatibility(
+    viewer_decl: &ViewerProtocolDecl,
+) -> std::result::Result<(), String> {
     let viewer_ver = match ProtocolVersion::parse(&viewer_decl.protocol_version) {
         Ok(v) => v,
-        Err(_) => return Err(format!("Invalid protocol version: {}", viewer_decl.protocol_version)),
+        Err(_) => {
+            return Err(format!(
+                "Invalid protocol version: {}",
+                viewer_decl.protocol_version
+            ))
+        }
     };
 
     // §6.1 — MAJOR must match for wire compatibility.
@@ -128,13 +122,21 @@ pub fn check_protocol_compatibility(viewer_decl: &ViewerProtocolDecl) -> std::re
 /// Never fail the whole connection for missing capabilities — negotiate down.
 pub fn negotiated_capabilities(viewer_caps: &[String]) -> Vec<String> {
     let host_caps: Vec<&str> = SUPPORTED_CAPABILITIES.to_vec();
-    viewer_caps.iter()
+    viewer_caps
+        .iter()
         .filter(|c| host_caps.contains(&c.as_str()))
         .cloned()
         .collect()
 }
 
 // ─── §7.4 — Session expiration & idle timeout ───
+//
+// The policy lives here with the state machine; `signaling.rs` enforces it,
+// converting these to `Duration`s. There used to be a `spawn_expiry_watcher`
+// here as well, running its own 60-second tick against a shared
+// `SessionContext`. Nothing ever spawned it, and the session driver already
+// checks both deadlines on every poll of the session node — a second timer
+// racing the first to write EXPIRED would have been the only thing it added.
 
 /// §7.4 — Max session duration in milliseconds (8 hours).
 pub const MAX_SESSION_DURATION_MS: i64 = 8 * 60 * 60 * 1000;
@@ -144,65 +146,6 @@ pub const IDLE_TIMEOUT_MS: i64 = 30 * 60 * 1000;
 
 /// §7.4 — 8-digit code lifetime in milliseconds (24 hours).
 pub const CODE_LIFETIME_MS: i64 = 24 * 60 * 60 * 1000;
-
-/// Check whether a session has exceeded the max duration (8h).
-pub fn is_session_expired_by_duration(ctx: &SessionContext) -> bool {
-    let now = chrono::Utc::now().timestamp_millis();
-    (now - ctx.created_at) > MAX_SESSION_DURATION_MS
-}
-
-/// Check whether the code has expired (24h since session creation).
-pub fn is_code_expired(ctx: &SessionContext) -> bool {
-    let now = chrono::Utc::now().timestamp_millis();
-    (now - ctx.created_at) > CODE_LIFETIME_MS
-}
-
-/// §7.4 — Spawn a background watcher that checks expiry conditions.
-///
-/// Checks every 60 seconds:
-///   1. Has the session exceeded the 8h max duration? → auto-end
-///   2. (Idle timeout is checked via last_input_at tracking in the session)
-///
-/// The caller passes a callback (e.g., to write EXPIRED/ENDED to RTDB).
-pub fn spawn_expiry_watcher<F>(
-    ctx: std::sync::Arc<tokio::sync::RwLock<SessionContext>>,
-    on_expired: F,
-) -> tokio::task::JoinHandle<()>
-where
-    F: Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + 'static,
-{
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
-
-        loop {
-            interval.tick().await;
-
-            let expired = {
-                let ctx_guard = ctx.read().await;
-                match ctx_guard.status {
-                    SessionStatus::Ended | SessionStatus::Expired => {
-                        // Session already ended — stop watcher.
-                        break;
-                    }
-                    _ => is_session_expired_by_duration(&ctx_guard),
-                }
-            };
-
-            if expired {
-                let mut ctx_guard = ctx.write().await;
-                if let Ok(new_status) = transition(ctx_guard.status, SessionStatus::Expired) {
-                    ctx_guard.status = new_status;
-                    tracing::warn!(
-                        session_id = %ctx_guard.session_id,
-                        "session expired (max duration reached)"
-                    );
-                    on_expired().await;
-                }
-                break;
-            }
-        }
-    })
-}
 
 #[cfg(test)]
 mod tests {
@@ -219,7 +162,11 @@ mod tests {
         ];
         let mut state = SessionStatus::Waiting;
         for (from, to) in path {
-            assert_eq!(transition(state, to).unwrap(), to);
+            // Assert the table's own `from` matches where the walk actually is,
+            // so a reordered or wrong entry fails here rather than silently
+            // testing a different transition than the one it claims to.
+            assert_eq!(state, from, "path table is out of step with the walk");
+            assert_eq!(transition(from, to).unwrap(), to);
             state = to;
         }
     }
@@ -227,7 +174,10 @@ mod tests {
     #[test]
     fn test_deny_path() {
         let state = transition(SessionStatus::Waiting, SessionStatus::Requested).unwrap();
-        assert_eq!(transition(state, SessionStatus::Denied).unwrap(), SessionStatus::Denied);
+        assert_eq!(
+            transition(state, SessionStatus::Denied).unwrap(),
+            SessionStatus::Denied
+        );
     }
 
     #[test]
@@ -240,6 +190,75 @@ mod tests {
         ] {
             assert!(transition(start, SessionStatus::Expired).is_ok());
         }
+    }
+
+    // ─── §6.1 protocol negotiation ───
+
+    fn decl(version: &str, caps: &[&str]) -> ViewerProtocolDecl {
+        ViewerProtocolDecl {
+            protocol_version: version.to_string(),
+            capabilities: caps.iter().map(|c| c.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn same_major_is_compatible() {
+        assert!(check_protocol_compatibility(&decl("1.2.0", &[])).is_ok());
+        // §6.1 — an older MINOR connects; it just negotiates fewer capabilities.
+        assert!(check_protocol_compatibility(&decl("1.0.0", &[])).is_ok());
+    }
+
+    #[test]
+    fn a_different_major_is_refused() {
+        // A MAJOR bump is by definition a wire change, so there is nothing to
+        // negotiate down to — refusing is the only honest answer.
+        assert!(check_protocol_compatibility(&decl("2.0.0", &[])).is_err());
+        assert!(check_protocol_compatibility(&decl("0.9.0", &[])).is_err());
+    }
+
+    #[test]
+    fn a_viewer_more_than_one_minor_ahead_is_refused() {
+        let ahead = HOST_PROTOCOL_VERSION.minor + 1;
+        assert!(check_protocol_compatibility(&decl(&format!("1.{ahead}.0"), &[])).is_ok());
+        assert!(check_protocol_compatibility(&decl(&format!("1.{}.0", ahead + 1), &[])).is_err());
+    }
+
+    #[test]
+    fn a_malformed_version_is_refused_rather_than_defaulted() {
+        // Falling back to a default here would let a viewer skip the check by
+        // sending garbage, which is worse than refusing it.
+        for bad in ["", "1.2", "x.y.z", "1.2.0-beta"] {
+            assert!(
+                check_protocol_compatibility(&decl(bad, &[])).is_err(),
+                "{bad:?} should be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_negotiate_down_to_the_intersection() {
+        let agreed = negotiated_capabilities(&[
+            "clipboard".to_string(),
+            "file_transfer".to_string(),
+            // A capability this host has never heard of must be dropped, not
+            // echoed back — echoing it would promise a feature we do not have.
+            "holographic_projection".to_string(),
+        ]);
+        assert_eq!(agreed, vec!["clipboard", "file_transfer"]);
+    }
+
+    #[test]
+    fn a_viewer_declaring_nothing_negotiates_nothing() {
+        assert!(negotiated_capabilities(&[]).is_empty());
+    }
+
+    #[test]
+    fn every_supported_capability_survives_negotiation_with_itself() {
+        let all: Vec<String> = SUPPORTED_CAPABILITIES
+            .iter()
+            .map(|c| c.to_string())
+            .collect();
+        assert_eq!(negotiated_capabilities(&all), all);
     }
 
     #[test]

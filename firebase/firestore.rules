@@ -33,8 +33,16 @@ service cloud.firestore {
     match /sessionHistory/{sessionId} {
       allow read: if request.auth != null &&
         (resource.data.hostUid == request.auth.uid || resource.data.viewerUid == request.auth.uid);
-      // Written at session end; Path B validates server-side via Cloud Function.
-      allow create: if request.auth != null;
+      // Written at session end by the host agent. §10.1 has this as a bare
+      // `request.auth != null`, deferring validation to a Path B Cloud
+      // Function — but that leaves any signed-in user able to forge history
+      // attributing sessions to people they have never connected to, and the
+      // read rule then shows those forgeries to the named victim. Requiring
+      // the writer to be one of the two parties costs nothing and holds on
+      // Path A, with no Cloud Function involved.
+      allow create: if request.auth != null &&
+        (request.resource.data.hostUid == request.auth.uid ||
+         request.resource.data.viewerUid == request.auth.uid);
       // Append-only history.
       allow update, delete: if false;
     }

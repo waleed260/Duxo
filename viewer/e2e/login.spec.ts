@@ -7,7 +7,7 @@ test.describe("Login page (§3.4) — Clerk auth UI", () => {
 
   test("renders Clerk SignIn component with auth options", async ({ page }) => {
     // Clerk renders its own heading inside the <SignIn /> component
-    await expect(page.getByText(/sign in|sign in to continue/i)).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(/sign in/i).first()).toBeVisible({ timeout: 15000 });
 
     // Social login buttons (Google, GitHub, etc.)
     await expect(
@@ -21,7 +21,7 @@ test.describe("Login page (§3.4) — Clerk auth UI", () => {
   test("shows sign-up link to switch modes", async ({ page }) => {
     // Clerk provides a link to switch to sign-up
     await expect(
-      page.getByText(/no account/i).first()
+      page.getByText(/have an account\?/i).first()
     ).toBeVisible({ timeout: 15000 });
   });
 });

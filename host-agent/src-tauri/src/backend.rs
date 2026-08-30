@@ -1,40 +1,18 @@
-//! Duxo shared backend traits — platform-independent interfaces for
-//! screen capture and input injection.
+//! Duxo input backend trait — §1.2.
 //!
 //! §1.2 — the host agent owns capture, WebRTC, input, and ALL permission
-//! decisions. These traits define the contract between the WebRTC data channel
-//! dispatch (§10.3b) and the platform-specific implementations.
+//! decisions. This trait is the contract between the data channel dispatch
+//! (§10.3b) and the platform input implementation.
 //!
-//! §2.4 — input traits are gated: NEVER called before ACTIVE confirmed.
+//! §2.4 — input is gated: never called before ACTIVE is confirmed.
+//!
+//! The screen-capture trait that used to live here is gone. It required
+//! `Send + Sync`, which `scrap::Capturer` cannot satisfy (it holds an `Rc` and
+//! raw pointers into display-server memory), so it could never have been
+//! implemented. Capture now owns a dedicated thread in `capture.rs` and needs
+//! no trait at all — there is exactly one implementation.
 
 use crate::types::Result;
-
-// ─── Capture ───
-
-/// A captured frame from the desktop.
-#[derive(Debug, Clone)]
-pub struct CapturedFrame {
-    pub width: u32,
-    pub height: u32,
-    /// BGRA pixel data (Windows) or RGBA (Linux).
-    pub data: Vec<u8>,
-    pub timestamp_ns: i64,
-}
-
-/// Capture backend trait — shared interface across platforms.
-pub trait CaptureBackend: Send + Sync {
-    /// Start capturing. Returns a frame stream consumer.
-    fn start(&mut self) -> Result<()>;
-
-    /// Grab the next frame from the desktop.
-    /// Returns raw pixel data (BGRA) + dimensions.
-    fn next_frame(&mut self) -> Result<CapturedFrame>;
-
-    /// Stop capturing and release resources.
-    fn stop(&mut self) -> Result<()>;
-}
-
-// ─── Input ───
 
 /// Mouse button identifiers — shared across all platforms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,20 +29,48 @@ pub enum InputState {
     Up,
 }
 
-/// Input backend trait — shared interface across platforms.
+/// Input injection.
 ///
-/// §2.4 — NEVER inject input before ACTIVE state confirmed via the host's
+/// §2.4 — NEVER inject input before ACTIVE state is confirmed via the host's
 /// own RTDB read, not the viewer's claim.
-pub trait InputBackend: Send + Sync {
+///
+/// `Send` but deliberately not `Sync`: injection is inherently serialized
+/// through one display connection, and the one instance lives behind a mutex.
+pub trait InputBackend: Send {
     /// Move the mouse to normalized coordinates (0–1 range, §1.4).
     fn mouse_move(&mut self, x: f64, y: f64) -> Result<()>;
 
-    /// Click a mouse button.
+    /// Press or release a mouse button.
     fn mouse_click(&mut self, button: InputButton, state: InputState) -> Result<()>;
 
-    /// Press or release a keyboard key by physical code (layout-independent).
+    /// Scroll by a browser wheel delta (pixels, deltaMode 0).
+    fn mouse_scroll(&mut self, dx: f64, dy: f64) -> Result<()>;
+
+    /// Press or release a key by physical code (layout-independent).
     fn key(&mut self, code: &str, state: InputState) -> Result<()>;
 
-    /// Set clipboard text.
+    /// Put text on the remote machine.
     fn set_clipboard(&mut self, text: &str) -> Result<()>;
+}
+
+/// §1.2 — the input backend for this machine.
+///
+/// One instance per session, shared for its whole life. The previous code
+/// built a fresh backend inside every dispatch function, opening a display
+/// connection for every individual mouse move — 60 handshakes a second to
+/// deliver 60 cursor positions.
+pub fn platform_input() -> Result<Box<dyn InputBackend>> {
+    // §0.2 — Wayland is view-only in the MVP. There is no portable way to
+    // inject input under a Wayland compositor without a portal handshake the
+    // agent does not implement, and enigo's X11 path silently does nothing
+    // when it is pointed at one. Refusing here is what turns that into an
+    // honest "view-only" session instead of a session where the viewer moves
+    // the mouse and nothing on the remote screen ever happens.
+    let platform = crate::types::HostPlatform::detect();
+    if !platform.supports_remote_input() {
+        return Err(crate::types::DuxoError::Input(format!(
+            "remote input is not supported on {platform} — this session is view-only"
+        )));
+    }
+    Ok(Box::new(crate::input::EnigoInput::new()))
 }

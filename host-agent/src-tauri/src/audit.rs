@@ -13,8 +13,8 @@
 //! Actions: login, session_start, session_end, permission_denied, totp_enabled
 
 use crate::types::{DuxoError, Result};
-use sha2::{Sha256, Digest};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 #[derive(Debug, Serialize)]
 pub struct AuditLogEntry {
@@ -25,9 +25,6 @@ pub struct AuditLogEntry {
     /// §7.3 — SHA-256 hex hash of the previous entry's content.
     /// First entry in the chain uses "0" as the previous hash.
     pub previous_hash: String,
-    /// This entry's own hash (for chaining by the next entry).
-    #[serde(skip)]
-    pub hash: String,
 }
 
 /// Compute the SHA-256 hash of an entry's content (excluding the hash field).
@@ -48,7 +45,8 @@ pub fn hash_entry(entry: &AuditLogEntry) -> String {
 /// Write an audit log entry to RTDB.
 ///
 /// §7.3 — Fetches the current chain tip hash, creates a new entry chained
-/// to it, and writes it to RTDB under auditLog/{uid}/entries/{entryId}.
+/// to it, writes it to RTDB under `auditLog/{uid}/{entryId}`, and advances
+/// `auditLog/{uid}/_tip` so the next append chains onto this one.
 pub async fn write_audit_entry(
     database_url: &str,
     id_token: &str,
@@ -58,9 +56,9 @@ pub async fn write_audit_entry(
     metadata: serde_json::Value,
 ) -> Result<String> {
     // Fetch the most recent entry's hash to continue the chain.
-    let previous_hash = get_tip_hash(
-        database_url, id_token, uid,
-    ).await.unwrap_or_else(|| "0".to_string());
+    let previous_hash = get_tip_hash(database_url, id_token, uid)
+        .await
+        .unwrap_or_else(|| "0".to_string());
 
     let entry = AuditLogEntry {
         uid: uid.to_string(),
@@ -68,19 +66,24 @@ pub async fn write_audit_entry(
         timestamp: chrono::Utc::now().timestamp_millis(),
         metadata,
         previous_hash: previous_hash.clone(),
-        hash: String::new(), // filled below
     };
 
     let hash = hash_entry(&entry);
 
-    let entry_id = format!("{}_{}", chrono::Utc::now().timestamp_millis(), uid.chars().take(4).collect::<String>());
+    let entry_id = format!(
+        "{}_{}",
+        chrono::Utc::now().timestamp_millis(),
+        uid.chars().take(4).collect::<String>()
+    );
 
     // Write to RTDB: auditLog/{uid}/{entry_id}
     let client = reqwest::Client::new();
     let url = format!(
         "{}/auditLog/{}/{}.json?auth={}",
         database_url.trim_end_matches('/'),
-        uid, entry_id, id_token
+        uid,
+        entry_id,
+        id_token
     );
 
     let body = serde_json::json!({
@@ -92,7 +95,11 @@ pub async fn write_audit_entry(
         "hash": hash,
     });
 
-    client.put(&url).json(&body).send().await?
+    client
+        .put(&url)
+        .json(&body)
+        .send()
+        .await?
         .error_for_status()
         .map_err(|e| DuxoError::Firebase(format!("Audit log write failed: {e}")))?;
 
@@ -100,9 +107,25 @@ pub async fn write_audit_entry(
     let tip_url = format!(
         "{}/auditLog/{}/_tip.json?auth={}",
         database_url.trim_end_matches('/'),
-        uid, id_token
+        uid,
+        id_token
     );
-    let _ = client.put(&tip_url).json(&serde_json::json!({ "hash": hash })).send().await;
+    // Not fatal — an entry that was written is still evidence — but not
+    // silent either: a tip that stops advancing is exactly how this chain
+    // was broken before, and a swallowed error is what hid it.
+    match client
+        .put(&tip_url)
+        .json(&serde_json::json!({ "hash": hash }))
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+    {
+        Ok(_) => {}
+        Err(e) => tracing::warn!(
+            error = %e,
+            "audit chain tip did not advance — the next entry will re-chain"
+        ),
+    }
 
     tracing::info!(
         action = action,
@@ -115,16 +138,13 @@ pub async fn write_audit_entry(
 }
 
 /// Fetch the hash of the most recent audit entry for a user.
-async fn get_tip_hash(
-    database_url: &str,
-    id_token: &str,
-    uid: &str,
-) -> Option<String> {
+async fn get_tip_hash(database_url: &str, id_token: &str, uid: &str) -> Option<String> {
     let client = reqwest::Client::new();
     let url = format!(
         "{}/auditLog/{}/_tip.json?auth={}",
         database_url.trim_end_matches('/'),
-        uid, id_token
+        uid,
+        id_token
     );
 
     let resp = client.get(&url).send().await.ok()?;

@@ -1,10 +1,31 @@
+# §6.4 / §7.1 — publish the host agent's static metadata to GitHub Pages.
+#
+# This workflow used to build the Next.js viewer and deploy `viewer/out`. That
+# could not work, for two independent reasons:
+#
+#   1. `output: "export"` is disabled in next.config.mjs, and deliberately —
+#      the app has API routes (/api/firebase-token, /api/link-device,
+#      /api/resolve-code) and those need a server runtime. So `npm run build`
+#      produces `.next/`, not `out/`, and the deploy had nothing to upload.
+#   2. Even with a static export, GitHub Pages cannot run those routes, so it
+#      would publish a site whose sign-in, device pairing and code lookup all
+#      404. The viewer's real deployment is Railway (viewer/railway.json).
+#
+# It had failed on all 31 of its runs since July, most recently at
+# `cache-dependency-path` — viewer/package-lock.json is not in the repo.
+#
+# What Pages is genuinely for here is the two static files the host agent
+# fetches by absolute URL, both of which have been 404 since they were written:
+#
+#   - minversion.json — §6.4, the minimum supported version gate (main.rs)
+#   - update.json     — §7.1, the Tauri updater endpoint (tauri.conf.json)
 name: Deploy to GitHub Pages
 
 on:
   push:
     branches: [main]
     paths:
-      - "viewer/**"
+      - "docs/**"
       - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
@@ -20,36 +41,67 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./viewer
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: ./viewer/package-lock.json
-
       - uses: actions/configure-pages@v5
 
-      - run: npm ci
+      # The host agent requests these by absolute URL, so a rename or a typo
+      # here is a silently broken update path — it fails as a warn-level log
+      # line on a machine nobody is watching. Assert the names and the shape.
+      - name: Verify the files the host agent fetches
+        run: |
+          set -euo pipefail
+          for f in minversion.json update.json; do
+            test -f "docs/$f" || { echo "::error::docs/$f is missing"; exit 1; }
+            python3 -m json.tool "docs/$f" > /dev/null
+          done
+          python3 - <<'PY'
+          import json
+          mv = json.load(open("docs/minversion.json"))
+          # These names must match MinVersionFile in host-agent's main.rs,
+          # which reads them camelCase via #[serde(rename_all)].
+          for key in ("minimumVersion", "minimumProtocolVersion", "message", "updatedAt"):
+              assert key in mv, f"minversion.json is missing {key}"
+          up = json.load(open("docs/update.json"))
+          for key in ("version", "platforms"):
+              assert key in up, f"update.json is missing {key}"
+          print("host agent metadata OK")
+          PY
 
-      # §7.5 — npm audit for known JS dependency vulnerabilities.
-      - name: Npm audit
-        run: npm audit --audit-level=high || true
-
-      - name: Build with memory limit
-        run: NODE_OPTIONS="--max-old-space-size=4096" npm run build
-        env:
-          NEXT_TELEMETRY_DISABLED: 1
-      - name: Add .nojekyll for GitHub Pages
-        run: touch ./out/.nojekyll
+      - name: Assemble the Pages site
+        run: |
+          mkdir -p _site
+          cp docs/minversion.json docs/update.json _site/
+          touch _site/.nojekyll
+          # Pages serves this host; a bare directory listing at the root
+          # invites the assumption that the app lives here. It does not.
+          cat > _site/index.html <<'HTML'
+          <!doctype html>
+          <meta charset="utf-8">
+          <title>Duxo — host agent metadata</title>
+          <meta name="viewport" content="width=device-width,initial-scale=1">
+          <style>
+            body { font-family: system-ui, sans-serif; max-width: 34rem;
+                   margin: 4rem auto; padding: 0 1.5rem; line-height: 1.6; }
+            code { background: #f4f4f5; padding: .15em .4em; border-radius: 3px; }
+          </style>
+          <h1>Duxo</h1>
+          <p>
+            This host serves the static metadata the Duxo host agent fetches:
+            <a href="minversion.json"><code>minversion.json</code></a> and
+            <a href="update.json"><code>update.json</code></a>.
+          </p>
+          <p>
+            The Duxo web app is not served from here — it needs a server
+            runtime for its API routes. See the
+            <a href="https://github.com/waleed260/Duxo">repository</a>.
+          </p>
+          HTML
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: ./viewer/out
+          path: ./_site
 
   deploy:
     runs-on: ubuntu-latest
@@ -58,5 +110,5 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/deploy-pages@v4
-        id: deployment
+      - id: deployment
+        uses: actions/deploy-pages@v4

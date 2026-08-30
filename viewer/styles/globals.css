@@ -190,3 +190,29 @@ body {
   white-space: nowrap;
   border: 0;
 }
+
+/*
+ * Full-screen overlay support (components/measured/MobileMenu).
+ * `.menu-open` is toggled by useBodyLock while the overlay is mounted.
+ */
+body.menu-open {
+  overflow: hidden;
+}
+
+@keyframes measured-slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes measured-slideUp {
+    from { opacity: 1; transform: none; }
+    to   { opacity: 1; transform: none; }
+  }
+}

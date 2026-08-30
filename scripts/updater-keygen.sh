@@ -15,24 +15,28 @@ fi
 
 mkdir -p "$KEY_DIR"
 
-# Use Tauri's built-in key generation via `tauri signer generate`,
-# or fall back to native OpenSSL.
-if command -v npx &>/dev/null && npx --yes @tauri-apps/cli@latest signer generate -h &>/dev/null; then
-    npx @tauri-apps/cli@latest signer generate \
-        -k "$KEY_DIR/duxo-updater.key" \
-        -p "$KEY_DIR/duxo-updater.pub"
-    echo "Keys generated with @tauri-apps/cli."
-else
-    # Fallback: generate Ed25519 with OpenSSL.
-    openssl genpkey -algorithm ed25519 -out "$KEY_DIR/duxo-updater.key"
-    openssl pkey -in "$KEY_DIR/duxo-updater.key" -pubout -out "$KEY_DIR/duxo-updater.pub"
-    echo "Keys generated with OpenSSL."
+# Tauri's updater verifies signatures with minisign, NOT raw OpenSSL Ed25519 —
+# an `openssl genpkey` keypair is silently incompatible and produces updates
+# the app will refuse. `tauri signer generate` is the only correct source.
+if ! command -v npx &>/dev/null; then
+    echo "npx not found. Install Node.js, then re-run this script." >&2
+    exit 1
 fi
+
+# --ci skips the interactive password prompt, which has no TTY to read from
+# when this is run from a script or a CI job and panics rather than falling
+# back. UPDATER_KEY_PASSWORD may be empty; an empty password is fine here
+# because the private key's protection is the file system and the CI secret
+# store, not a passphrase typed into a build log.
+npx --yes @tauri-apps/cli@latest signer generate \
+    --ci \
+    --password "${UPDATER_KEY_PASSWORD:-}" \
+    -w "$KEY_DIR/duxo-updater.key"
 
 echo ""
 echo "=== PUBLIC KEY (paste into tauri.conf.json -> plugins.updater.pubkey) ==="
-cat "$KEY_DIR/duxo-updater.pub"
+cat "$KEY_DIR/duxo-updater.key.pub"
 echo ""
 echo "=== KEEP PRIVATE KEY SAFE ==="
-echo "Private key: $KEY_DIR/duxo-updater.key"
+echo "Private key: $KEY_DIR/duxo-updater.key  (never commit — see .gitignore)"
 echo "Add it as a GitHub Actions secret named UPDATER_SIGNING_KEY"

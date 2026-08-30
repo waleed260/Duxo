@@ -2,7 +2,7 @@
   "name": "duxo-viewer",
   "version": "0.1.0",
   "private": true,
-  "description": "Duxo — web-based remote desktop viewer (Windows + Linux)",
+  "description": "Duxo \u2014 web-based remote desktop viewer (Windows + Linux)",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -11,7 +11,9 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:e2e": "playwright test",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "check:turn": "node scripts/check-turn.mjs",
+    "check:deploy": "node scripts/check-deployment.mjs"
   },
   "dependencies": {
     "@clerk/nextjs": "^5.7.6",

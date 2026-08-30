@@ -28,4 +28,7 @@ jobs:
           firebase deploy --only hosting --project "$FIREBASE_PROJECT_ID"
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
-          FIREBASE_PROJECT_ID: duxo-remote
+          # Not hardcoded: the id here was `duxo-remote`, while the app is
+          # configured against a different project entirely, so this job
+          # would have deployed to the wrong place — or to nothing.
+          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}

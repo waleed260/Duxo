@@ -158,7 +158,7 @@ export default function SettingsPage() {
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div>
-            <h1 className="text-2xl font-weight-emphasis">Settings</h1>
+            <h1 className="text-2xl font-emphasis">Settings</h1>
             <p className="text-sm text-text-secondary">
               Manage your profile, security, and connected devices.
             </p>
@@ -167,7 +167,7 @@ export default function SettingsPage() {
 
         <div className="flex flex-col gap-6">
           <section className="rounded-md border border-border-default bg-surface-raised p-6">
-            <h2 className="flex items-center gap-2 text-lg font-weight-emphasis mb-4">
+            <h2 className="flex items-center gap-2 text-lg font-emphasis mb-4">
               <UserIcon className="h-4 w-4 text-accent" aria-hidden="true" />
               Profile
             </h2>
@@ -208,7 +208,7 @@ export default function SettingsPage() {
           </section>
 
           <section className="rounded-md border border-border-default bg-surface-raised p-6">
-            <h2 className="flex items-center gap-2 text-lg font-weight-emphasis mb-4">
+            <h2 className="flex items-center gap-2 text-lg font-emphasis mb-4">
               <Shield className="h-4 w-4 text-accent" aria-hidden="true" />
               Security
             </h2>
@@ -219,7 +219,7 @@ export default function SettingsPage() {
           </section>
 
           <section className="rounded-md border border-border-default bg-surface-raised p-6">
-            <h2 className="flex items-center gap-2 text-lg font-weight-emphasis mb-4">
+            <h2 className="flex items-center gap-2 text-lg font-emphasis mb-4">
               <Laptop className="h-4 w-4 text-accent" aria-hidden="true" />
               Connected devices
             </h2>
@@ -236,7 +236,7 @@ export default function SettingsPage() {
                     className="flex items-center justify-between rounded-sm border border-border-default bg-surface-overlay px-4 py-3"
                   >
                     <div>
-                      <p className="text-sm font-weight-emphasis">
+                      <p className="text-sm font-emphasis">
                         {platformLabel(d.platform)}
                       </p>
                       <p className="text-xs text-text-secondary">
@@ -261,7 +261,7 @@ export default function SettingsPage() {
 
           <div className="flex items-center justify-between rounded-md border border-border-default bg-surface-raised p-6">
             <div>
-              <p className="text-sm font-weight-emphasis">Sign out</p>
+              <p className="text-sm font-emphasis">Sign out</p>
               <p className="text-xs text-text-secondary">
                 Sign out of this device. You&apos;ll need to log in again to
                 connect.

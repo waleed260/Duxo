@@ -26,10 +26,25 @@ pub enum SessionStatus {
 
 impl SessionStatus {
     /// §10.2 — these are the only valid values the RTDB rule allows.
+    ///
+    /// Test-only, and deliberately so: this list exists to be cross-checked
+    /// against the hard-coded enum in `firebase/database.rules.json`, which is
+    /// a thing to assert once rather than to consult at runtime. Marking it
+    /// `#[cfg(test)]` is what keeps it out of the shipped binary — `clippy
+    /// --all-targets` still compiles the bin target without `cfg(test)`, so a
+    /// `pub fn` whose only caller is a test module is dead code there no
+    /// matter how many targets are linted.
+    #[cfg(test)]
     pub fn valid_values() -> &'static [&'static str] {
         &[
-            "waiting", "requested", "allowed", "denied",
-            "connecting", "active", "ended", "expired",
+            "waiting",
+            "requested",
+            "allowed",
+            "denied",
+            "connecting",
+            "active",
+            "ended",
+            "expired",
         ]
     }
 }
@@ -98,84 +113,42 @@ pub struct ProtocolVersion {
 
 impl Default for ProtocolVersion {
     fn default() -> Self {
-        Self { major: 1, minor: 0, patch: 0 }
+        Self {
+            major: 1,
+            minor: 0,
+            patch: 0,
+        }
     }
 }
 
 impl ProtocolVersion {
     /// §6.1 — Parse a "major.minor.patch" string.
+    ///
+    /// A malformed version is its own failure, not a JSON failure: constructing
+    /// a `serde_json::Error` by hand needs `serde::de::Error` in scope and
+    /// mislabels the cause in every log line it reaches.
     pub fn parse(s: &str) -> Result<Self> {
         let parts: Vec<&str> = s.split('.').collect();
         if parts.len() != 3 {
-            return Err(DuxoError::Json(serde_json::Error::custom("invalid protocol version format")));
+            return Err(DuxoError::Protocol(format!(
+                "expected major.minor.patch, got {s:?}"
+            )));
         }
-        let major = parts[0].parse::<u32>()
-            .map_err(|_| DuxoError::Json(serde_json::Error::custom("invalid major version")))?;
-        let minor = parts[1].parse::<u32>()
-            .map_err(|_| DuxoError::Json(serde_json::Error::custom("invalid minor version")))?;
-        let patch = parts[2].parse::<u32>()
-            .map_err(|_| DuxoError::Json(serde_json::Error::custom("invalid patch version")))?;
-        Ok(Self { major, minor, patch })
+        let parse_part = |part: &str, which: &str| -> Result<u32> {
+            part.parse::<u32>()
+                .map_err(|_| DuxoError::Protocol(format!("invalid {which} version {part:?}")))
+        };
+        Ok(Self {
+            major: parse_part(parts[0], "major")?,
+            minor: parse_part(parts[1], "minor")?,
+            patch: parse_part(parts[2], "patch")?,
+        })
     }
 }
 
 impl std::fmt::Display for ProtocolVersion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
-    }
-}
-
-/// §1.4 — data channel message envelope (tagged JSON).
-/// Forward-compat: unhandled message types are logged, never panicked (§10.3b).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DataChannelMessage {
-    #[serde(rename = "type")]
-    pub msg_type: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub t: Option<i64>,
-    /// Remaining fields stored as raw JSON for flexible dispatch.
-    #[serde(flatten)]
-    pub extra: serde_json::Value,
-}
-
-/// Live session context — held in memory while the WebRTC connection is active.
-#[derive(Debug, Clone)]
-pub struct SessionContext {
-    pub session_id: String,
-    pub status: SessionStatus,
-    pub host_platform: HostPlatform,
-    pub viewer_id: Option<String>,
-    pub verified_viewer_email: Option<String>,  // From JWT claims, NOT from RTDB (§2.5).
-    pub protocol_version: ProtocolVersion,
-    pub created_at: i64,
-}
-
-impl SessionContext {
-    /// §2.4 / §10.3 — the single most important security gate.
-    /// Never auto-accept. Never inject input before this returns true.
-    pub fn can_open_data_channel(&self, verified_viewer_uid: &str) -> bool {
-        self.status == SessionStatus::Allowed
-            && self.viewer_id.as_deref() == Some(verified_viewer_uid)
-            && !self.is_expired()
-    }
-
-    /// §0.7 — 24-hour expiry check.
-    pub fn is_expired(&self) -> bool {
-        let now = chrono::Utc::now().timestamp_millis();
-        (now - self.created_at) > 24 * 60 * 60 * 1000
-    }
-
-    /// §7.2 — Clear sensitive data from memory when a session ends.
-    /// Called when the session transitions to ENDED or EXPIRED.
-    pub fn zeroize(&mut self) {
-        use zeroize::Zeroize;
-        self.session_id.zeroize();
-        if let Some(ref mut id) = self.viewer_id {
-            id.zeroize();
-        }
-        if let Some(ref mut email) = self.verified_viewer_email {
-            email.zeroize();
-        }
     }
 }
 
@@ -204,17 +177,34 @@ pub enum DuxoError {
     #[error("Viewer UID mismatch — potential spoofing attempt")]
     ViewerMismatch,
 
-    #[error("ICE connection failed after {attempts} attempts")]
-    IceConnectionFailed { attempts: u8 },
+    // §0.5 — webrtc-rs carries compressed media only; it does no encoding of
+    // its own, so VP8 compression is a stage the host agent owns (encoder.rs).
+    #[error("Video encoder error: {0}")]
+    Encoder(String),
 
-    #[error("ICE restart exhausted")]
-    IceRestartExhausted { attempts: u8 },
+    #[error("WebRTC error: {0}")]
+    WebRtc(String),
 
-    #[error("Data channel closed")]
-    DataChannelClosed,
+    #[error("Not signed in — link this device from the Duxo web app first")]
+    NotAuthenticated,
 
-    #[error("Capture backend unavailable for this platform")]
-    CaptureBackendUnavailable,
+    // §6.1 — protocol version parsing and capability negotiation.
+    #[error("Protocol error: {0}")]
+    Protocol(String),
+
+    #[error("Screen capture error: {0}")]
+    Capture(String),
+
+    #[error("Input injection error: {0}")]
+    Input(String),
+
+    /// Native window failures (§2.4 Allow/Deny, §3.4 code display).
+    ///
+    /// Deliberately a concrete error rather than `Box<dyn Error>`: the tray
+    /// handles these inside a spawned task, and `Box<dyn Error>` is not `Send`,
+    /// so holding one across an await makes the whole future unspawnable.
+    #[error("Window error: {0}")]
+    Window(String),
 
     #[error("Firebase/RTDB error: {0}")]
     Firebase(String),
@@ -231,3 +221,67 @@ pub enum DuxoError {
 
 /// Result alias used throughout the host agent.
 pub type Result<T> = std::result::Result<T, DuxoError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// §10.2 — the RTDB `status` rule is a hard-coded list of strings. If the
+    /// enum and that list ever disagree, the host writes a status the rules
+    /// reject and the session stalls in whatever state it was already in,
+    /// with nothing but a 401 in a log to say why. This is the check that
+    /// keeps `valid_values` honest against `Display`.
+    #[test]
+    fn every_status_serialises_to_a_value_the_rtdb_rule_admits() {
+        let all = [
+            SessionStatus::Waiting,
+            SessionStatus::Requested,
+            SessionStatus::Allowed,
+            SessionStatus::Denied,
+            SessionStatus::Connecting,
+            SessionStatus::Active,
+            SessionStatus::Ended,
+            SessionStatus::Expired,
+        ];
+        let allowed = SessionStatus::valid_values();
+        assert_eq!(
+            all.len(),
+            allowed.len(),
+            "a variant was added to SessionStatus without adding it to \
+             valid_values() and to firebase/database.rules.json"
+        );
+        for status in all {
+            let wire = status.to_string();
+            assert!(
+                allowed.contains(&wire.as_str()),
+                "{wire:?} is not in the RTDB status rule"
+            );
+        }
+    }
+
+    #[test]
+    fn protocol_version_round_trips() {
+        let v = ProtocolVersion::parse("1.2.0").expect("valid");
+        assert_eq!((v.major, v.minor, v.patch), (1, 2, 0));
+        assert_eq!(v.to_string(), "1.2.0");
+    }
+
+    #[test]
+    fn malformed_protocol_versions_are_rejected() {
+        for bad in ["1.2", "1.2.0.1", "a.b.c", "", "1.2.x"] {
+            assert!(
+                ProtocolVersion::parse(bad).is_err(),
+                "{bad:?} should not parse"
+            );
+        }
+    }
+
+    /// §0.2 — Wayland is view-only; this is the check `backend::platform_input`
+    /// consults before it hands out an input backend at all.
+    #[test]
+    fn wayland_does_not_support_remote_input() {
+        assert!(HostPlatform::Windows.supports_remote_input());
+        assert!(HostPlatform::LinuxX11.supports_remote_input());
+        assert!(!HostPlatform::LinuxWayland.supports_remote_input());
+    }
+}

@@ -187,7 +187,7 @@ export default function TOTPSetup() {
           <Shield className="h-5 w-5" />
         </CardIconBadge>
         <div>
-          <h2 className="text-lg font-weight-emphasis">Two-factor authentication</h2>
+          <h2 className="text-lg font-emphasis">Two-factor authentication</h2>
           <p className="mt-1 text-sm text-text-secondary">Loading…</p>
         </div>
       </Card>
@@ -200,7 +200,7 @@ export default function TOTPSetup() {
         <Shield className="h-5 w-5" />
       </CardIconBadge>
       <div>
-        <h2 className="text-lg font-weight-emphasis">Two-factor authentication</h2>
+        <h2 className="text-lg font-emphasis">Two-factor authentication</h2>
         <p className="mt-1 text-sm text-text-secondary">
           Add an extra layer of security to your account using a time-based
           one-time password (TOTP) from any authenticator app.
@@ -272,7 +272,7 @@ function TOTPContent({
       <div className="flex flex-col gap-4 pt-2">
         <div className="flex items-center gap-3 rounded-sm border border-success/30 bg-success/5 px-4 py-3 text-sm">
           <CheckCircle className="h-5 w-5 text-success flex-shrink-0" aria-hidden="true" />
-          <span className="text-text-primary font-weight-emphasis">
+          <span className="text-text-primary font-emphasis">
             Two-factor authentication is active.
           </span>
         </div>
@@ -289,7 +289,7 @@ function TOTPContent({
       <div className="flex flex-col gap-4 pt-2">
         <div className="flex items-center gap-3 rounded-sm border border-success/30 bg-success/5 px-4 py-3 text-sm">
           <CheckCircle className="h-5 w-5 text-success flex-shrink-0" aria-hidden="true" />
-          <span className="text-text-primary font-weight-emphasis">
+          <span className="text-text-primary font-emphasis">
             2FA is enabled
           </span>
         </div>
@@ -387,7 +387,7 @@ function TOTPContent({
         <div className="flex items-start gap-3 rounded-sm border border-accent/30 bg-accent/5 px-4 py-3 text-sm">
           <AlertTriangle className="h-5 w-5 text-accent flex-shrink-0 mt-0.5" aria-hidden="true" />
           <div>
-            <p className="font-weight-emphasis text-text-primary">
+            <p className="font-emphasis text-text-primary">
               Save these backup codes
             </p>
             <p className="mt-1 text-text-secondary">

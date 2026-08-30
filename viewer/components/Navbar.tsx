@@ -46,7 +46,7 @@ export const Navbar = React.memo(function Navbar({ className }: { className?: st
             className="inline-block h-2 w-2 rounded-pill bg-accent"
             aria-hidden="true"
           />
-          <span className="text-lg font-weight-emphasis">Duxo</span>
+          <span className="text-lg font-emphasis">Duxo</span>
         </Link>
 
         {/* Desktop nav */}
@@ -70,7 +70,7 @@ export const Navbar = React.memo(function Navbar({ className }: { className?: st
             </>
           )}
           <NavLink
-            href="https://github.com/duxo-org/duxo"
+            href="https://github.com/waleed260/Duxo"
             external
           >
             <Github className="mr-1 inline h-3.5 w-3.5" aria-hidden="true" />
@@ -130,7 +130,7 @@ export const Navbar = React.memo(function Navbar({ className }: { className?: st
               </>
             )}
             <MobileNavLink
-              href="https://github.com/duxo-org/duxo"
+              href="https://github.com/waleed260/Duxo"
               external
               onClick={() => setMobileOpen(false)}
             >

@@ -7,19 +7,16 @@
 //! "No installer" philosophy (§0.4): single binary, no admin for basic use.
 
 mod audit;
+mod auth;
 mod backend;
+mod capture;
 mod crash_recovery;
-#[cfg(target_os = "linux")]
-mod capture_linux_x11;
-#[cfg(target_os = "windows")]
-mod capture_windows;
+mod encoder;
 mod firebase;
-#[cfg(target_os = "linux")]
-mod input_linux_x11;
-#[cfg(target_os = "windows")]
-mod input_windows;
+mod input;
 mod security;
 mod session;
+mod signaling;
 mod tray;
 mod types;
 mod webrtc_host;
@@ -29,6 +26,12 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() {
+    // §7.6 — configuration comes from the environment. Tauri loads no .env of
+    // its own, so this is what stands between a configured host agent and one
+    // that starts up with every Firebase setting blank. A missing file is not
+    // an error: the real environment may already carry the variables.
+    load_env();
+
     // §1.6 — logging: local rotating file, no cloud logging bill.
     // Logs event types and timestamps only — never input content (keystrokes,
     // clipboard text) to avoid creating a keylogger artifact on disk.
@@ -55,7 +58,12 @@ async fn main() {
     // §1.5 — check for updates on launch (free GitHub Releases API).
     match check_for_update().await {
         Ok(Some(latest)) => {
-            tracing::info!(latest_version = %latest.tag, "update available");
+            tracing::info!(
+                latest_version = %latest.tag_name,
+                download_url = %latest.html_url,
+                notes = latest.body.as_deref().unwrap_or("(none)"),
+                "update available"
+            );
             // MVP: log + surface via tray. No auto-install until Tauri updater
             // is configured (§1.5 Phase 2).
         }
@@ -66,7 +74,13 @@ async fn main() {
     // §6.4 — check minimum supported version.
     match check_minimum_version().await {
         Ok(Some(msg)) => {
-            tracing::error!(message = %msg, "host agent below minimum supported version");
+            tracing::error!(
+                message = %msg.message,
+                minimum_version = %msg.minimum_version,
+                minimum_protocol_version = %msg.minimum_protocol_version,
+                published_at = %msg.updated_at,
+                "host agent below minimum supported version"
+            );
             // In production, this would show a blocking dialog to the user.
             // For MVP, we log it — the session state machine will reject
             // connections from incompatible versions via §6.1 negotiation.
@@ -99,10 +113,16 @@ async fn main() {
     // Launch the Tauri app with tray icon + code display.
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        // §7.1 — the updater plugin verifies release signatures against the
+        // minisign public key in tauri.conf.json. It was declared as a
+        // dependency and configured, but never registered, so the whole
+        // updater config was inert. The launch-time GitHub Releases check in
+        // `check_for_update` stays as the §1.5 MVP notification path; this is
+        // what makes an actual signed in-app update possible.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             // Initialize tray icon, code display window, and RTDB listeners.
-            tray::setup_tray(app.handle())
-                .map_err(|e| e.to_string())?;
+            tray::setup_tray(app.handle()).map_err(|e| e.to_string())?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -118,6 +138,18 @@ async fn main() {
         .expect("error while running duxo-host");
 }
 
+/// §7.6 — load `.env` from beside the executable, then from the working
+/// directory, so both a bundled install and `cargo tauri dev` find their
+/// configuration.
+fn load_env() {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let _ = dotenvy::from_path(dir.join(".env"));
+        }
+    }
+    let _ = dotenvy::dotenv();
+}
+
 /// §1.5 — Manual check + notify (recommended for MVP).
 /// Calls the public, unauthenticated GitHub Releases API.
 /// 60 requests/hour/IP unauthenticated — plenty for a periodic check.
@@ -127,7 +159,7 @@ async fn check_for_update() -> Result<Option<GitHubRelease>, Box<dyn std::error:
         .build()?;
 
     let resp = client
-        .get("https://api.github.com/repos/duxo-org/duxo/releases/latest")
+        .get("https://api.github.com/repos/waleed260/Duxo/releases/latest")
         .send()
         .await?;
 
@@ -149,7 +181,13 @@ async fn check_for_update() -> Result<Option<GitHubRelease>, Box<dyn std::error:
 }
 
 /// §6.4 — Minimum supported version file, served from GitHub Pages.
+/// The file is camelCase, matching every other JSON document in the project
+/// (RTDB nodes, update.json, the shared TS types). Without the rename this
+/// struct asks serde for `minimum_version` and the fetch fails to parse even
+/// when the file is served correctly — so §6.4 reported "meets minimum
+/// version" for a host agent it had never actually checked.
 #[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct MinVersionFile {
     minimum_version: String,
     minimum_protocol_version: String,
@@ -159,7 +197,7 @@ struct MinVersionFile {
 
 /// §6.4 — Check whether the running version meets the minimum supported version.
 /// Fetches minversion.json from the viewer's GitHub Pages deployment.
-async fn check_minimum_version() -> Result<Option<String>, Box<dyn std::error::Error>> {
+async fn check_minimum_version() -> Result<Option<MinVersionFile>, Box<dyn std::error::Error>> {
     let client = reqwest::Client::builder()
         .user_agent(format!("duxo-host/{}", env!("CARGO_PKG_VERSION")))
         .build()?;
@@ -179,7 +217,7 @@ async fn check_minimum_version() -> Result<Option<String>, Box<dyn std::error::E
     let minimum = semver::Version::parse(&min_ver.minimum_version)?;
 
     if current < minimum {
-        Ok(Some(min_ver.message))
+        Ok(Some(min_ver))
     } else {
         Ok(None)
     }

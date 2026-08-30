@@ -16,7 +16,7 @@ export function Footer() {
               className="inline-block h-2 w-2 rounded-pill bg-accent"
               aria-hidden="true"
             />
-            <span className="text-md font-weight-emphasis">Duxo</span>
+            <span className="text-md font-emphasis">Duxo</span>
           </div>
           <p className="mt-2 text-sm text-text-secondary">
             Remote access, built in the open. Zero-budget, end-to-end encrypted.
@@ -32,9 +32,9 @@ export function Footer() {
 
         <nav className="flex flex-col gap-2 text-sm">
           <FooterLink href="/#security">Security</FooterLink>
-          <FooterLink href="https://github.com/duxo-org/duxo">GitHub</FooterLink>
-          <FooterLink href="https://github.com/duxo-org/duxo/blob/main/SECURITY.md">Security policy</FooterLink>
-          <FooterLink href="https://github.com/duxo-org/duxo/blob/main/CONTRIBUTING.md">Contributing</FooterLink>
+          <FooterLink href="https://github.com/waleed260/Duxo">GitHub</FooterLink>
+          <FooterLink href="https://github.com/waleed260/Duxo/blob/main/SECURITY.md">Security policy</FooterLink>
+          <FooterLink href="https://github.com/waleed260/Duxo/blob/main/CONTRIBUTING.md">Contributing</FooterLink>
         </nav>
       </div>
       <div className="border-t border-border-default px-6 py-4 text-center text-xs text-text-secondary">

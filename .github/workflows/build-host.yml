@@ -2,7 +2,11 @@ name: Build Host Agent
 
 on:
   push:
-    branches: [main, master]
+    # Feature branches build too: the host agent needs Linux and Windows
+    # toolchains that a single dev machine rarely has both of, so CI is where
+    # a cross-platform break is actually caught — waiting for merge to main
+    # means finding it after it is already on the default branch.
+    branches: [main, master, "feat/**", "fix/**"]
     paths:
       - "host-agent/**"
       - ".github/workflows/build-host.yml"
@@ -46,13 +50,45 @@ jobs:
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
             build-essential \
+            pkg-config \
             libssl-dev \
             libgtk-3-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
             patchelf \
             libfuse2 \
-            file
+            file \
+            libvpx-dev \
+            libxdo-dev \
+            libxcb1-dev \
+            libxcb-shm0-dev \
+            libxcb-randr0-dev \
+            libdbus-1-dev \
+            clang \
+            libclang-dev
+
+      # §0.5 — libvpx for VP8 encoding (encoder.rs). webrtc-rs does no encoding
+      # of its own, so this is a hard requirement, not an optimisation.
+      # Windows has no system package manager for it, so vcpkg supplies it.
+      - name: Install libvpx (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          choco install llvm -y
+          vcpkg install libvpx:x64-windows-static-md
+          echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          echo "PKG_CONFIG_PATH=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static-md\lib\pkgconfig" >> $env:GITHUB_ENV
+
+      - name: Install pkg-config (Windows)
+        if: matrix.os == 'windows-latest'
+        run: choco install pkgconfiglite -y
+
+      # bindgen locates libclang through LIBCLANG_PATH or PATH. The runner
+      # ships LLVM but does not export either, so without this the
+      # ffi-generate build fails with "Unable to find libclang" — which reads
+      # as a missing package rather than a missing environment variable.
+      - name: Point bindgen at libclang (Windows)
+        if: matrix.os == 'windows-latest'
+        run: echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
 
       # §0.13 step 13 — confirm X11 via Xvfb for capture testing.
       - name: Install Xvfb (for X11 capture testing)
@@ -81,18 +117,35 @@ jobs:
       - name: Run Rust unit tests
         working-directory: host-agent/src-tauri
         run: cargo test --target ${{ matrix.target }}
+        env:
+          # The pure-logic tests (state machine, encoder colour conversion,
+          # filename sanitisation) need no display, but scrap links against X11
+          # and a missing DISPLAY makes the failure look like a test bug.
+          DISPLAY: ":99"
 
       # §7.5 — cargo audit for known Rust dependency vulnerabilities.
       - name: Cargo audit
         if: matrix.os == 'ubuntu-latest'
+        # Every other cargo step sets this. Without it, audit runs at the repo
+        # root — which has no Cargo.lock — and fails with "Couldn't load
+        # Cargo.lock", a message that reads like a missing lockfile rather
+        # than a missing working directory.
+        working-directory: host-agent/src-tauri
         run: |
           cargo install cargo-audit --locked || true
           cargo audit
 
       # §10.5 — clippy with -D warnings in CI to fail on any lint.
+      #
+      # --all-targets so tests and benches are linted too. Without it clippy
+      # sees only the binary, which has two consequences: test code is never
+      # linted at all, and a helper whose only caller is a #[cfg(test)] module
+      # is reported as dead code. `SessionStatus::valid_values` is exactly
+      # that — it exists to be cross-checked against the RTDB status rule, and
+      # a test is the only place that check belongs.
       - name: Clippy lint
         working-directory: host-agent/src-tauri
-        run: cargo clippy --target ${{ matrix.target }} -- -D warnings
+        run: cargo clippy --all-targets --target ${{ matrix.target }} -- -D warnings
 
       # §10.5 — rustfmt check.
       - name: Rustfmt check
