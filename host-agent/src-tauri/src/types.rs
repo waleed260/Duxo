@@ -26,6 +26,15 @@ pub enum SessionStatus {
 
 impl SessionStatus {
     /// §10.2 — these are the only valid values the RTDB rule allows.
+    ///
+    /// Test-only, and deliberately so: this list exists to be cross-checked
+    /// against the hard-coded enum in `firebase/database.rules.json`, which is
+    /// a thing to assert once rather than to consult at runtime. Marking it
+    /// `#[cfg(test)]` is what keeps it out of the shipped binary — `clippy
+    /// --all-targets` still compiles the bin target without `cfg(test)`, so a
+    /// `pub fn` whose only caller is a test module is dead code there no
+    /// matter how many targets are linted.
+    #[cfg(test)]
     pub fn valid_values() -> &'static [&'static str] {
         &[
             "waiting",

@@ -75,6 +75,28 @@ also cannot reach `REQUESTED` without the viewer-claim clause in
 `database.rules.json`, so an undeployed ruleset shows up as a viewer that
 enters a valid code and then hangs.
 
+### Checking a deployment
+
+The viewer runs on Railway (`viewer/railway.json` — Nixpacks build, `next start`).
+A build passing says the code compiles; it says nothing about whether the
+deployed instance has its environment set. To check a real deployment:
+
+```bash
+cd viewer
+npm run check:deploy -- https://your-app.up.railway.app
+```
+
+It drives a headless browser against the origin and asserts the things that
+only fail in a browser: that the app renders, that `/api/health` reports every
+required variable present, that the API routes refuse an anonymous caller with
+JSON rather than an HTML redirect, that `/dashboard` sends a signed-out
+visitor to `/login`, and that nothing throws in the console. Non-zero exit on
+failure, so it can gate a release.
+
+`GET /api/health` on its own answers most of it — it names any missing
+variables without returning their values, and answers 503 rather than 200 when
+the deploy is misconfigured, so an uptime check cannot read it as healthy.
+
 ### Viewer (Next.js)
 
 ```bash
