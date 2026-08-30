@@ -250,7 +250,20 @@ function SessionPage() {
           return;
         }
 
-        if (data.status === "allowed" && !conn.hasPeer()) {
+        // Every state at or past `allowed` means the host clicked Allow, and
+        // any of them can be the first one this listener sees. Triggering on
+        // `allowed` alone made the offer depend on catching one particular
+        // value in flight: the host writes `connecting` a few milliseconds
+        // later, and RTDB delivers the current value — not a replay of each
+        // one — to a listener that attached late, reconnected, or had the two
+        // writes coalesced. Missing it left the viewer waiting for a host
+        // that was waiting for the viewer's offer.
+        const hostApproved =
+          data.status === "allowed" ||
+          data.status === "connecting" ||
+          data.status === "active";
+
+        if (hostApproved && !conn.hasPeer()) {
           try {
             const offer = await conn.createOffer();
             await publishOffer(offer);

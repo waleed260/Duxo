@@ -64,6 +64,19 @@ const NETWORK_LOSS_GRACE: Duration = Duration::from_secs(60);
 /// §6.2 — how often the crash marker's `last_seen_at` is refreshed.
 const CRASH_MARKER_HEARTBEAT: Duration = Duration::from_secs(30);
 
+/// How long the host waits for an approved session to actually connect.
+///
+/// §1.1 bounds a session once it is ACTIVE — 30 minutes idle, 60 seconds of
+/// network loss — and bounds one nobody has claimed, via the 24h code
+/// lifetime. It says nothing about the gap in between, so a viewer who closed
+/// their tab in the second after the host clicked Allow left the host polling
+/// RTDB for the eight-hour maximum with a live code pointing at it.
+///
+/// Two minutes is several times the §6.5 establishment target (<5s local,
+/// <10s via TURN) and longer than the viewer's own ICE-restart budget, so
+/// nothing that is still trying is cut off.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(120);
+
 /// What the UI needs to know. The host agent's windows subscribe to these
 /// rather than polling shared state.
 #[derive(Debug, Clone)]
@@ -535,6 +548,13 @@ impl SessionDriver {
             // §7.4 — 8-hour hard cap. Auto-ends; the user reconnects.
             if session_start.elapsed() > MAX_SESSION_DURATION {
                 tracing::info!("session hit the 8-hour maximum duration (§7.4)");
+                break;
+            }
+
+            // An approved session that never connects is not a live session.
+            // Ending it retires the code, which is the part that matters.
+            if !is_active && session_start.elapsed() > CONNECT_TIMEOUT {
+                tracing::info!("the viewer never connected after Allow — ending the session");
                 break;
             }
 
