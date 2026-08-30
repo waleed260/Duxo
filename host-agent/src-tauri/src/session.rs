@@ -192,6 +192,75 @@ mod tests {
         }
     }
 
+    // ─── §6.1 protocol negotiation ───
+
+    fn decl(version: &str, caps: &[&str]) -> ViewerProtocolDecl {
+        ViewerProtocolDecl {
+            protocol_version: version.to_string(),
+            capabilities: caps.iter().map(|c| c.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn same_major_is_compatible() {
+        assert!(check_protocol_compatibility(&decl("1.2.0", &[])).is_ok());
+        // §6.1 — an older MINOR connects; it just negotiates fewer capabilities.
+        assert!(check_protocol_compatibility(&decl("1.0.0", &[])).is_ok());
+    }
+
+    #[test]
+    fn a_different_major_is_refused() {
+        // A MAJOR bump is by definition a wire change, so there is nothing to
+        // negotiate down to — refusing is the only honest answer.
+        assert!(check_protocol_compatibility(&decl("2.0.0", &[])).is_err());
+        assert!(check_protocol_compatibility(&decl("0.9.0", &[])).is_err());
+    }
+
+    #[test]
+    fn a_viewer_more_than_one_minor_ahead_is_refused() {
+        let ahead = HOST_PROTOCOL_VERSION.minor + 1;
+        assert!(check_protocol_compatibility(&decl(&format!("1.{ahead}.0"), &[])).is_ok());
+        assert!(check_protocol_compatibility(&decl(&format!("1.{}.0", ahead + 1), &[])).is_err());
+    }
+
+    #[test]
+    fn a_malformed_version_is_refused_rather_than_defaulted() {
+        // Falling back to a default here would let a viewer skip the check by
+        // sending garbage, which is worse than refusing it.
+        for bad in ["", "1.2", "x.y.z", "1.2.0-beta"] {
+            assert!(
+                check_protocol_compatibility(&decl(bad, &[])).is_err(),
+                "{bad:?} should be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_negotiate_down_to_the_intersection() {
+        let agreed = negotiated_capabilities(&[
+            "clipboard".to_string(),
+            "file_transfer".to_string(),
+            // A capability this host has never heard of must be dropped, not
+            // echoed back — echoing it would promise a feature we do not have.
+            "holographic_projection".to_string(),
+        ]);
+        assert_eq!(agreed, vec!["clipboard", "file_transfer"]);
+    }
+
+    #[test]
+    fn a_viewer_declaring_nothing_negotiates_nothing() {
+        assert!(negotiated_capabilities(&[]).is_empty());
+    }
+
+    #[test]
+    fn every_supported_capability_survives_negotiation_with_itself() {
+        let all: Vec<String> = SUPPORTED_CAPABILITIES
+            .iter()
+            .map(|c| c.to_string())
+            .collect();
+        assert_eq!(negotiated_capabilities(&all), all);
+    }
+
     #[test]
     fn test_illegal_transitions() {
         // Cannot jump from WAITING directly to ACTIVE.
