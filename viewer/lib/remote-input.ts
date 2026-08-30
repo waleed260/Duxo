@@ -97,6 +97,35 @@ export function displayedVideoRect(
  * Client coordinates → normalized 0-1 desktop coordinates, or null when the
  * point falls on a letterbox bar rather than on the remote screen.
  */
+/**
+ * §1.4 — wheel deltas, converted to the pixel units the host's notch maths
+ * assumes.
+ *
+ * `WheelEvent.deltaY` is only in pixels when `deltaMode` is 0. Chrome reports
+ * pixels (~100 per notch) and Firefox reports *lines* (`deltaMode === 1`,
+ * three per notch), and the raw number was being sent either way. The host
+ * divides by 100 to get notches, so a Firefox wheel notch arrived as 0.03 of
+ * one: with the remainder carried between events it took upwards of thirty
+ * notches to move the remote page once, which reads as scrolling being broken
+ * rather than slow. Firefox is a browser this project tests against.
+ *
+ * A line is taken as 40px — three lines to a notch then lands at 120px,
+ * within a fifth of a notch of Chrome's own 100. `deltaMode === 2` is pages,
+ * so the viewport itself is the unit.
+ */
+export const WHEEL_LINE_HEIGHT_PX = 40;
+
+export function wheelDeltaToPixels(
+  delta: number,
+  deltaMode: number,
+  pageSizePx: number,
+): number {
+  if (!Number.isFinite(delta)) return 0;
+  if (deltaMode === 1) return delta * WHEEL_LINE_HEIGHT_PX;
+  if (deltaMode === 2) return delta * (pageSizePx > 0 ? pageSizePx : 0);
+  return delta;
+}
+
 export function normalizePointer(
   rect: Box,
   videoWidth: number,
@@ -180,7 +209,13 @@ export function useRemoteInput({
       const p = normalize(e);
       if (!p) return;
       e.preventDefault();
-      connRef.current?.sendMouseScroll(e.deltaX, e.deltaY);
+      // The host counts notches from pixels, so the units have to be pixels
+      // before they leave here — see `wheelDeltaToPixels`.
+      const box = videoRef.current?.getBoundingClientRect();
+      connRef.current?.sendMouseScroll(
+        wheelDeltaToPixels(e.deltaX, e.deltaMode, box?.width ?? 0),
+        wheelDeltaToPixels(e.deltaY, e.deltaMode, box?.height ?? 0),
+      );
     }
 
     function onKeyDown(e: KeyboardEvent) {

@@ -33,6 +33,10 @@ use crate::types::{DuxoError, Result};
 /// §6.5 — capture cadence. 20fps is the top of the 15–20fps target band.
 pub const TARGET_FPS: u32 = 20;
 
+/// How long a session may go with no captured frame at all before the log
+/// says so. Generous: a first frame normally arrives within one interval.
+const NO_FRAME_WARNING: Duration = Duration::from_secs(5);
+
 /// Queue depth for encoded frames. Two is enough to absorb a scheduling
 /// hiccup; more would just mean showing the viewer older screen content.
 const FRAME_QUEUE_DEPTH: usize = 2;
@@ -167,6 +171,8 @@ fn capture_loop(
     // that actually happened rather than over loop iterations.
     let mut frames_at_last_log: u64 = 0;
     let mut dropped_at_last_log: u64 = 0;
+    // Whether the "nothing has been captured at all" warning has been said.
+    let mut reported_no_frames = false;
 
     tracing::info!(width, height, fps = TARGET_FPS, "capture thread started");
 
@@ -180,6 +186,25 @@ fn capture_loop(
                 // rather than idling a whole frame slot — sleeping the full
                 // interval here halves the effective rate on any screen that
                 // is not constantly repainting.
+                //
+                // On Windows this is the *normal* answer for a desktop that
+                // is not moving: scrap calls DXGI's AcquireNextFrame with a
+                // 0ms timeout, which reports a timeout unless something has
+                // been redrawn. That is fine once a first frame exists — the
+                // browser holds the last one it decoded — but until then the
+                // viewer is looking at a black <video> on a connection that
+                // reports itself healthy, which is the least diagnosable
+                // failure this pipeline has. Say it out loud, once.
+                if frames == 0 && !reported_no_frames && stream_start.elapsed() > NO_FRAME_WARNING {
+                    reported_no_frames = true;
+                    tracing::warn!(
+                        seconds = NO_FRAME_WARNING.as_secs(),
+                        "no frame has been captured yet — the display has not \
+                         redrawn since the session started. The viewer will \
+                         show a black screen until something on this desktop \
+                         changes."
+                    );
+                }
                 std::thread::sleep(Duration::from_millis(4));
                 continue;
             }

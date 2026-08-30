@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { displayedVideoRect, normalizePointer } from "@/lib/remote-input";
+import {
+  displayedVideoRect,
+  normalizePointer,
+  wheelDeltaToPixels,
+  WHEEL_LINE_HEIGHT_PX,
+} from "@/lib/remote-input";
 import { mouseButtonName } from "@/lib/webrtc";
 
 /**
@@ -106,5 +111,43 @@ describe("mouseButtonName", () => {
 
   it("treats unknown buttons as left rather than dropping them", () => {
     expect(mouseButtonName(4)).toBe("left");
+  });
+});
+
+/**
+ * §1.4 — the host turns these into notches by dividing by 100, so anything
+ * that is not already pixels arrives as a fraction of a notch and the wheel
+ * appears not to work. Firefox is the browser that exposes this, and it is
+ * one of the two Playwright targets.
+ */
+describe("wheelDeltaToPixels", () => {
+  it("passes pixel deltas through untouched", () => {
+    expect(wheelDeltaToPixels(100, 0, 720)).toBe(100);
+    expect(wheelDeltaToPixels(-53, 0, 720)).toBe(-53);
+  });
+
+  it("converts Firefox's line deltas into pixels", () => {
+    // One notch in Firefox is three lines. Raw, that is 3/100 of a notch on
+    // the host — roughly thirty notches to move the page once.
+    const oneNotch = wheelDeltaToPixels(3, 1, 720);
+    expect(oneNotch).toBe(3 * WHEEL_LINE_HEIGHT_PX);
+    expect(oneNotch / 100).toBeGreaterThan(0.5);
+    expect(oneNotch / 100).toBeLessThan(2);
+  });
+
+  it("scales page deltas by the viewport", () => {
+    expect(wheelDeltaToPixels(1, 2, 720)).toBe(720);
+    expect(wheelDeltaToPixels(-2, 2, 720)).toBe(-1440);
+  });
+
+  it("does not divide by an unmeasured element", () => {
+    // getBoundingClientRect can report 0 before layout; scrolling by NaN or
+    // Infinity would be worse than not scrolling.
+    expect(wheelDeltaToPixels(1, 2, 0)).toBe(0);
+    expect(wheelDeltaToPixels(Number.NaN, 0, 720)).toBe(0);
+  });
+
+  it("keeps the direction of the scroll", () => {
+    expect(wheelDeltaToPixels(-3, 1, 720)).toBeLessThan(0);
   });
 });
