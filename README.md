@@ -56,6 +56,25 @@ sudo apt install -y \
 only and does no video encoding, so VP8 compression is the host agent's own
 job (`src/encoder.rs`).
 
+### Security rules (do this before anything writes user data)
+
+The rules in `firebase/` are the only thing separating one account's sessions
+from another's, and they are **not** applied by deploying the viewer. Push to
+`main` runs `.github/workflows/deploy-rules.yml`, or do it by hand:
+
+```bash
+npm install -g firebase-tools
+firebase login
+firebase deploy --only database,firestore:rules,firestore:indexes \
+  --project <your-project-id>
+```
+
+Until this runs, the project is on whatever rules were last set in the
+console — for a new project, Firebase's defaults, which are open. A session
+also cannot reach `REQUESTED` without the viewer-claim clause in
+`database.rules.json`, so an undeployed ruleset shows up as a viewer that
+enters a valid code and then hangs.
+
 ### Viewer (Next.js)
 
 ```bash
