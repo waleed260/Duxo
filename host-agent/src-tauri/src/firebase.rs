@@ -18,6 +18,35 @@ pub fn generate_code() -> String {
     code.to_string()
 }
 
+/// Turn an RTDB HTTP failure into something that names the likely cause.
+///
+/// A 404 from the database root is the single most misleading response here:
+/// it does not mean "that path is empty", it means the *database instance*
+/// does not exist. A project can have Firebase enabled, a valid service
+/// account, and correct credentials, and still 404 every call because nobody
+/// ever created the Realtime Database — §0.13 item 4. Reported as a bare
+/// "Firebase error: 404 Not Found", that sends you looking at rules, tokens
+/// and paths, none of which are the problem.
+fn rtdb_error(context: &str, status: reqwest::StatusCode, database_url: &str) -> DuxoError {
+    if status == reqwest::StatusCode::NOT_FOUND {
+        return DuxoError::Firebase(format!(
+            "{context}: {database_url} returned 404. The Realtime Database for \
+             this project probably does not exist — create it in the Firebase \
+             console (Build → Realtime Database → Create Database). A 404 here \
+             is the whole instance missing, not an empty path."
+        ));
+    }
+    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+        return DuxoError::Firebase(format!(
+            "{context}: {database_url} returned {status}. Either this device's \
+             token has expired, or the security rules in firebase/ have not \
+             been deployed — an undeployed ruleset refuses writes the app \
+             depends on."
+        ));
+    }
+    DuxoError::Firebase(format!("{context}: {status}"))
+}
+
 /// §1.1 — Create the RTDB session skeleton when the host launches.
 /// Writes to sessions/{sessionId} and codes/{code} atomically via a
 /// multi-path PATCH against the RTDB REST API.
@@ -63,13 +92,14 @@ pub async fn create_session(
         "hostId": host_uid,
     });
 
-    client
-        .patch(&url)
-        .json(&body)
-        .send()
-        .await?
-        .error_for_status()
-        .map_err(|e| DuxoError::Firebase(e.to_string()))?;
+    let resp = client.patch(&url).json(&body).send().await?;
+    if !resp.status().is_success() {
+        return Err(rtdb_error(
+            "could not create the session node",
+            resp.status(),
+            database_url,
+        ));
+    }
 
     tracing::info!(
         session_id = %session_id,
@@ -327,4 +357,40 @@ pub async fn write_session_history(
 
     tracing::info!(duration_seconds, end_reason, "session history recorded");
     Ok(())
+}
+#[cfg(test)]
+mod rtdb_error_tests {
+    use super::*;
+
+    #[test]
+    fn a_404_names_the_missing_database_rather_than_the_path() {
+        // This is the failure a fresh project hits on its very first session,
+        // and "404 Not Found" on its own sends you auditing rules and tokens.
+        let e = rtdb_error(
+            "x",
+            reqwest::StatusCode::NOT_FOUND,
+            "https://db.example.com",
+        );
+        let msg = e.to_string();
+        assert!(msg.contains("does not exist"), "{msg}");
+        assert!(msg.contains("Firebase console"), "{msg}");
+    }
+
+    #[test]
+    fn a_401_points_at_tokens_and_undeployed_rules() {
+        for status in [
+            reqwest::StatusCode::UNAUTHORIZED,
+            reqwest::StatusCode::FORBIDDEN,
+        ] {
+            let msg = rtdb_error("x", status, "https://db.example.com").to_string();
+            assert!(msg.contains("deployed"), "{msg}");
+        }
+    }
+
+    #[test]
+    fn other_statuses_stay_terse() {
+        // Guessing a cause for a 500 would be worse than reporting the code.
+        let msg = rtdb_error("x", reqwest::StatusCode::INTERNAL_SERVER_ERROR, "u").to_string();
+        assert!(!msg.contains("Firebase console"), "{msg}");
+    }
 }
