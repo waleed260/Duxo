@@ -101,7 +101,12 @@ pub async fn write_audit_entry(
         .send()
         .await?
         .error_for_status()
-        .map_err(|e| DuxoError::Firebase(format!("Audit log write failed: {e}")))?;
+        .map_err(|e| {
+            DuxoError::Firebase(format!(
+                "Audit log write failed: {}",
+                crate::types::redact_secrets(&e.to_string())
+            ))
+        })?;
 
     // Update the chain tip pointer.
     let tip_url = format!(
@@ -122,7 +127,9 @@ pub async fn write_audit_entry(
     {
         Ok(_) => {}
         Err(e) => tracing::warn!(
-            error = %e,
+            // §7.2 — the URL this failed on carries `?auth=<ID token>`, and
+            // `reqwest::Error` renders the URL.
+            error = %crate::types::redact_secrets(&e.to_string()),
             "audit chain tip did not advance — the next entry will re-chain"
         ),
     }

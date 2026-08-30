@@ -230,7 +230,12 @@ pub async fn begin_pairing(
         .send()
         .await?
         .error_for_status()
-        .map_err(|e| DuxoError::Firebase(format!("could not start pairing: {e}")))?;
+        .map_err(|e| {
+            DuxoError::Firebase(format!(
+                "could not start pairing: {}",
+                crate::types::redact_secrets(&e.to_string())
+            ))
+        })?;
 
     tracing::info!(code = %code, "pairing started — waiting for web approval");
 

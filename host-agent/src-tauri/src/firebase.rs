@@ -145,7 +145,7 @@ pub async fn update_session_field(
         .send()
         .await?
         .error_for_status()
-        .map_err(|e| DuxoError::Firebase(e.to_string()))?;
+        .map_err(|e| DuxoError::Firebase(crate::types::redact_secrets(&e.to_string())))?;
 
     Ok(())
 }
@@ -265,7 +265,7 @@ pub async fn write_candidate(
         .send()
         .await?
         .error_for_status()
-        .map_err(|e| DuxoError::Firebase(e.to_string()))?;
+        .map_err(|e| DuxoError::Firebase(crate::types::redact_secrets(&e.to_string())))?;
 
     Ok(())
 }
@@ -295,7 +295,7 @@ pub async fn delete_code(database_url: &str, id_token: &str, code: &str) -> Resu
         .send()
         .await?
         .error_for_status()
-        .map_err(|e| DuxoError::Firebase(e.to_string()))?;
+        .map_err(|e| DuxoError::Firebase(crate::types::redact_secrets(&e.to_string())))?;
 
     Ok(())
 }

@@ -210,7 +210,7 @@ pub enum DuxoError {
     Firebase(String),
 
     #[error("Network error: {0}")]
-    Network(#[from] reqwest::Error),
+    Network(String),
 
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
@@ -219,12 +219,115 @@ pub enum DuxoError {
     Io(#[from] std::io::Error),
 }
 
+/// §7.2 — strip credentials out of anything on its way to a log or an error.
+///
+/// RTDB's REST API takes the caller's Firebase ID token as the `auth` query
+/// parameter, and `reqwest::Error` renders the URL it failed on — the whole
+/// URL, query string included. Every `?` on a Firebase call therefore carried
+/// a live one-hour credential into `DuxoError::Network`, and from there into
+/// `tracing::warn!(error = %e, "session poll failed — retrying")`, which is
+/// the *ordinary* path for a moment of packet loss during a session.
+///
+/// The logs are a daily rolling file on disk (main.rs), so §7.2's "the ID
+/// token is held in memory only and never written to disk" was not true: one
+/// dropped request wrote it there, and anything that reads a support log —
+/// a bug report, a screenshot — carried an account credential with it.
+///
+/// Redaction rather than moving the token to a header: the header form is not
+/// what Firebase documents for ID tokens, and there is no live database to
+/// prove it against yet. This is correct regardless of which one is used.
+pub fn redact_secrets(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+
+    loop {
+        // The *earliest* of the two, not whichever `find` is tried first: a
+        // message carrying both would otherwise keep the one that happened to
+        // come first in the URL.
+        let found = match (rest.find("auth="), rest.find("key=")) {
+            (Some(a), Some(k)) => a.min(k),
+            (Some(a), None) => a,
+            (None, Some(k)) => k,
+            (None, None) => break,
+        };
+
+        // `key=` also matches the tail of longer words, but the value is
+        // replaced either way, so a false positive costs nothing but noise.
+        let name_end = found + rest[found..].find('=').map_or(0, |i| i + 1);
+        out.push_str(&rest[..name_end]);
+        out.push_str("REDACTED");
+        let value = &rest[name_end..];
+        // A query value ends at the next separator; URLs here are followed by
+        // `&`, `)`, or the end of the message.
+        let end = value
+            .find(|c: char| c == '&' || c == ')' || c == ' ' || c == '"')
+            .unwrap_or(value.len());
+        rest = &value[end..];
+    }
+
+    out.push_str(rest);
+    out
+}
+
+impl From<reqwest::Error> for DuxoError {
+    fn from(error: reqwest::Error) -> Self {
+        DuxoError::Network(redact_secrets(&error.to_string()))
+    }
+}
+
 /// Result alias used throughout the host agent.
 pub type Result<T> = std::result::Result<T, DuxoError>;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// §7.2 — the host's ID token must not reach the log file. This is the
+    /// exact shape `reqwest::Error` produces, because that is the string that
+    /// was being logged.
+    #[test]
+    fn a_failed_request_does_not_log_the_id_token() {
+        let leaked = "error sending request for url (https://duxo-967f0-default-rtdb.                      firebaseio.com/sessions/abc.json?auth=eyJhbGciOiJSUzI1NiIsImtpZCI6                      InNlY3JldCJ9.payload.signature)";
+        let safe = redact_secrets(leaked);
+        assert!(
+            !safe.contains("eyJhbGciOiJSUzI1NiIsImtpZCI6"),
+            "token survived: {safe}"
+        );
+        assert!(safe.contains("auth=REDACTED"));
+        // The part that makes the log useful has to survive.
+        assert!(safe.contains("/sessions/abc.json"));
+        assert!(safe.ends_with(')'));
+    }
+
+    #[test]
+    fn the_api_key_goes_too() {
+        let safe = redact_secrets(
+            "HTTP status client error (400 Bad Request) for url              (https://securetoken.googleapis.com/v1/token?key=AIzaSyC-secret-value)",
+        );
+        assert!(!safe.contains("AIzaSyC-secret-value"));
+        assert!(safe.contains("key=REDACTED"));
+    }
+
+    #[test]
+    fn both_are_redacted_whichever_comes_first() {
+        // Redacting the later match first used to leave the earlier value in
+        // the output verbatim.
+        let safe = redact_secrets("https://x/y?key=SECRET_ONE&auth=SECRET_TWO");
+        assert!(!safe.contains("SECRET_ONE"), "{safe}");
+        assert!(!safe.contains("SECRET_TWO"), "{safe}");
+        assert_eq!(safe, "https://x/y?key=REDACTED&auth=REDACTED");
+    }
+
+    #[test]
+    fn text_without_credentials_is_untouched() {
+        let plain = "Realtime Database returned 404 — the instance does not exist";
+        assert_eq!(redact_secrets(plain), plain);
+    }
+
+    #[test]
+    fn an_empty_value_terminates() {
+        assert_eq!(redact_secrets("?auth=&next=1"), "?auth=REDACTED&next=1");
+    }
 
     /// §10.2 — the RTDB `status` rule is a hard-coded list of strings. If the
     /// enum and that list ever disagree, the host writes a status the rules
