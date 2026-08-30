@@ -181,7 +181,13 @@ async fn check_for_update() -> Result<Option<GitHubRelease>, Box<dyn std::error:
 }
 
 /// §6.4 — Minimum supported version file, served from GitHub Pages.
+/// The file is camelCase, matching every other JSON document in the project
+/// (RTDB nodes, update.json, the shared TS types). Without the rename this
+/// struct asks serde for `minimum_version` and the fetch fails to parse even
+/// when the file is served correctly — so §6.4 reported "meets minimum
+/// version" for a host agent it had never actually checked.
 #[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct MinVersionFile {
     minimum_version: String,
     minimum_protocol_version: String,
