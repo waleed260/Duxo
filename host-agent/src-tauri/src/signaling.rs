@@ -100,6 +100,19 @@ struct Verified {
 /// The host's Allow/Deny answer, delivered from the native popup (§2.4).
 pub type DecisionRx = mpsc::Receiver<bool>;
 
+/// §1.1 — "End session" from the tray.
+///
+/// Deliberately a signal rather than `JoinHandle::abort()`. Aborting drops the
+/// future exactly where it is, so `teardown` never runs: the session node is
+/// left un-ended and — the part that matters — its code is never retired. It
+/// stays redeemable in `codes/` pointing at a session nothing is driving, so a
+/// viewer who types it reaches a host that will never answer.
+pub type ShutdownRx = tokio::sync::watch::Receiver<bool>;
+
+fn is_shutting_down(rx: &ShutdownRx) -> bool {
+    *rx.borrow()
+}
+
 /// Everything one session needs. Built once by the tray, moved into the task.
 pub struct SessionDriver {
     auth: Arc<Mutex<HostAuth>>,
@@ -147,6 +160,7 @@ impl SessionDriver {
         code: String,
         events: mpsc::UnboundedSender<SessionEvent>,
         mut decision: DecisionRx,
+        shutdown: ShutdownRx,
     ) {
         let _ = events.send(SessionEvent::Created {
             session_id: session_id.clone(),
@@ -154,7 +168,9 @@ impl SessionDriver {
         });
         let _ = events.send(SessionEvent::Status(SessionStatus::Waiting));
 
-        let outcome = self.drive(&session_id, &events, &mut decision).await;
+        let outcome = self
+            .drive(&session_id, &events, &mut decision, &shutdown)
+            .await;
 
         if let Err(e) = &outcome {
             tracing::error!(error = %e, session_id = %session_id, "session failed");
@@ -173,13 +189,18 @@ impl SessionDriver {
         session_id: &str,
         events: &mpsc::UnboundedSender<SessionEvent>,
         decision: &mut DecisionRx,
+        shutdown: &ShutdownRx,
     ) -> Result<()> {
         // §1.1 — the host's own view of where this session is. Every write
         // goes through `set_status`, which refuses an illegal move.
         let mut status = SessionStatus::Waiting;
 
         // ── WAITING → REQUESTED ──────────────────────────────────────────
-        let viewer = self.await_viewer(session_id, events).await?;
+        let Some(viewer) = self.await_viewer(session_id, events, shutdown).await? else {
+            // Ended before any viewer arrived. `run` still calls `teardown`,
+            // which is the whole point: the code gets retired.
+            return Ok(());
+        };
         let viewer_uid = viewer.uid;
         status = session::transition(status, SessionStatus::Requested)?;
         let _ = events.send(SessionEvent::ViewerVerified {
@@ -232,7 +253,7 @@ impl SessionDriver {
         // ── ALLOWED → CONNECTING ─────────────────────────────────────────
         let started_at = chrono::Utc::now().timestamp_millis();
         let result = self
-            .connect_and_serve(session_id, &mut status, events)
+            .connect_and_serve(session_id, &mut status, events, shutdown)
             .await;
 
         // §6.3 — the durable record. Written whether the session ended cleanly
@@ -262,7 +283,8 @@ impl SessionDriver {
         &self,
         session_id: &str,
         _events: &mpsc::UnboundedSender<SessionEvent>,
-    ) -> Result<Verified> {
+        shutdown: &ShutdownRx,
+    ) -> Result<Option<Verified>> {
         let project_id = self.auth.lock().await.project_id().to_string();
         let certs = security::fetch_google_certs(&project_id).await?;
 
@@ -271,6 +293,13 @@ impl SessionDriver {
         loop {
             if started.elapsed() > CODE_LIFETIME {
                 return Err(DuxoError::SessionExpired);
+            }
+
+            // Not an error: the host chose to stop. Returning Err here would
+            // log "session failed" and surface a Failed event for what is a
+            // normal, deliberate end.
+            if is_shutting_down(shutdown) {
+                return Ok(None);
             }
 
             tokio::time::sleep(POLL_INTERVAL).await;
@@ -364,11 +393,11 @@ impl SessionDriver {
                 negotiated = ?capabilities,
                 "viewer identity verified"
             );
-            return Ok(Verified {
+            return Ok(Some(Verified {
                 uid: claims.sub.clone(),
                 email: claims.email.clone(),
                 capabilities,
-            });
+            }));
         }
     }
 
@@ -378,6 +407,7 @@ impl SessionDriver {
         session_id: &str,
         status: &mut SessionStatus,
         events: &mpsc::UnboundedSender<SessionEvent>,
+        shutdown: &ShutdownRx,
     ) -> Result<()> {
         // §0.2 — a host that cannot inject input still hosts a perfectly good
         // view-only session. Propagating this error instead would mean a
@@ -454,7 +484,9 @@ impl SessionDriver {
             })
         };
 
-        let result = self.serve(session_id, status, &peer, events).await;
+        let result = self
+            .serve(session_id, status, &peer, events, shutdown)
+            .await;
 
         candidate_task.abort();
         peer.close().await;
@@ -469,6 +501,7 @@ impl SessionDriver {
         status: &mut SessionStatus,
         peer: &Arc<HostPeer>,
         events: &mpsc::UnboundedSender<SessionEvent>,
+        shutdown: &ShutdownRx,
     ) -> Result<()> {
         let mut answered = false;
         let mut applied_candidates: std::collections::HashSet<String> =
@@ -483,6 +516,11 @@ impl SessionDriver {
 
         loop {
             tokio::time::sleep(POLL_INTERVAL).await;
+
+            if is_shutting_down(shutdown) {
+                tracing::info!("host ended the session");
+                break;
+            }
 
             // §7.4 — 8-hour hard cap. Auto-ends; the user reconnects.
             if session_start.elapsed() > MAX_SESSION_DURATION {

@@ -29,6 +29,10 @@ use crate::types::{HostPlatform, SessionStatus};
 use crate::webrtc_host::IceConfig;
 use crate::windows;
 
+/// How long "End session" waits for the driver to finish its teardown writes
+/// before giving up on a clean exit.
+const SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Firebase configuration, read from the environment at startup.
 pub struct FirebaseEnv {
     /// Web API key — needed for the public token endpoints (§8.3). This is not
@@ -75,6 +79,9 @@ pub struct AppState {
     /// `tauri::async_runtime::JoinHandle`, not tokio's: the two are distinct
     /// types even though Tauri's runtime is tokio underneath.
     pub session_task: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
+    /// §1.1 — asks the driver to wind the session down cleanly. Aborting the
+    /// task instead skips `teardown`, which is what retires the code.
+    pub shutdown: Mutex<Option<tokio::sync::watch::Sender<bool>>>,
 }
 
 impl AppState {
@@ -87,6 +94,7 @@ impl AppState {
             viewer_email: RwLock::new(None),
             status: RwLock::new(SessionStatus::Ended),
             session_task: Mutex::new(None),
+            shutdown: Mutex::new(None),
         }
     }
 }
@@ -287,8 +295,21 @@ async fn start_session(app: AppHandle) -> crate::types::Result<String> {
     };
 
     // One session at a time (§8.6: one session = one host + one viewer).
-    if let Some(existing) = state.session_task.lock().await.take() {
-        existing.abort();
+    //
+    // `abort()` drops the future where it stands, so the driver's `teardown`
+    // never runs: the previous session's node is left un-ended and, worse, its
+    // code is never retired — it stays redeemable in `codes/` pointing at a
+    // session nothing is driving any more. Ending it properly first is what
+    // makes "Start a session" twice in a row safe.
+    // Bind before the `if`: a MutexGuard temporary created inside the
+    // condition can live until the end of the enclosing statement, which
+    // includes the body — and `end_session` locks the same mutex. Holding it
+    // across that call is a deadlock that only shows up on the second
+    // "Start a session", where the UI simply stops responding.
+    let previous_session_running = state.session_task.lock().await.is_some();
+    if previous_session_running {
+        tracing::info!("ending the previous session before starting a new one");
+        let _ = end_session(app.clone()).await;
     }
 
     let driver = SessionDriver::new(auth, IceConfig::default());
@@ -308,6 +329,9 @@ async fn start_session(app: AppHandle) -> crate::types::Result<String> {
     // §2.4 — the decision channel exists only while a decision is pending.
     let (decision_tx, decision_rx) = mpsc::channel::<bool>(1);
     *state.decision.lock().await = Some(decision_tx);
+
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    *state.shutdown.lock().await = Some(shutdown_tx);
 
     let (events_tx, mut events_rx) = mpsc::unbounded_channel::<SessionEvent>();
 
@@ -366,7 +390,9 @@ async fn start_session(app: AppHandle) -> crate::types::Result<String> {
     });
 
     let task = tauri::async_runtime::spawn(async move {
-        driver.run(session_id, code, events_tx, decision_rx).await;
+        driver
+            .run(session_id, code, events_tx, decision_rx, shutdown_rx)
+            .await;
     });
 
     *state.session_task.lock().await = Some(task);
@@ -444,8 +470,26 @@ async fn send_decision(app: &AppHandle, allowed: bool) -> Result<(), String> {
 pub async fn end_session(app: AppHandle) -> Result<(), String> {
     let state: State<'_, AppState> = app.state();
 
+    // Ask first, abort only as a backstop. `teardown` is what writes the
+    // session to ENDED and retires the code so it can never be redeemed
+    // again; an abort skips it, leaving a live code pointing at a session
+    // nothing is driving.
+    if let Some(tx) = state.shutdown.lock().await.take() {
+        let _ = tx.send(true);
+    }
+
     if let Some(task) = state.session_task.lock().await.take() {
-        task.abort();
+        // The driver polls the signal once a second, so this is the time it
+        // needs to notice, finish its RTDB writes and return. If it overruns,
+        // fall back to abort rather than hanging the tray on a stuck network
+        // call — a leaked code is better than a frozen UI.
+        match tokio::time::timeout(SHUTDOWN_GRACE, task).await {
+            Ok(_) => tracing::info!("session ended cleanly"),
+            Err(_) => tracing::warn!(
+                "session did not wind down in {}s — the code may stay redeemable",
+                SHUTDOWN_GRACE.as_secs()
+            ),
+        }
     }
     *state.decision.lock().await = None;
     *state.display_code.write().await = None;

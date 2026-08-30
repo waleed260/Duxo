@@ -17,7 +17,16 @@ use crate::types::{DuxoError, Result};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// §3.4 — Open the code display window showing the 8-digit code.
+///
+/// Replaces any window already carrying this label. Tauri's builder fails on a
+/// duplicate label rather than reusing the window, and the caller only logs
+/// that failure — so a leftover window from a previous session would stay on
+/// screen showing *its* code while the new session waited for a different one.
+/// The user reads the stale code aloud and the viewer lands on a session
+/// nothing is driving.
 pub fn open_code_window(app: &AppHandle, code: &str) -> Result<()> {
+    close_window(app, "code-display");
+
     let _window = WebviewWindowBuilder::new(
         app,
         "code-display",
@@ -37,6 +46,11 @@ pub fn open_code_window(app: &AppHandle, code: &str) -> Result<()> {
 
 /// §2.4 — Open the Allow/Deny popup window.
 pub fn open_allow_deny_window(app: &AppHandle, viewer_email: &str) -> Result<()> {
+    // Same label collision as the code window, and worse here: a stale dialog
+    // shows the *previous* viewer's email, so the host would be approving a
+    // connection request while reading someone else's name.
+    close_window(app, "allow-deny");
+
     // The email comes from verified JWT claims (§2.5), but it still reaches the
     // window as a URL parameter, so it is encoded rather than interpolated raw.
     let url = format!(
