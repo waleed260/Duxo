@@ -56,6 +56,29 @@ sudo apt install -y \
 only and does no video encoding, so VP8 compression is the host agent's own
 job (`src/encoder.rs`).
 
+### Firebase project setup (§0.13 items 4–5)
+
+> **The Firebase backend does not exist yet.** Checked against the project in
+> `viewer/.env.local` (`duxo-967f0`) with its own service-account key — the key
+> authenticates, so the project is real, but every service the product runs on
+> answers "API has not been used in this project before, or it is disabled":
+>
+> | Service | State | What depends on it |
+> |---|---|---|
+> | Realtime Database | 404 — no instance | All signaling: `sessions/`, `codes/`, `pairings/`, `auditLog/` |
+> | Cloud Firestore | API never enabled | §6.3 durable records: session history, devices, profiles |
+> | Identity Toolkit (Auth) | 404 | §2.5 — the viewer ID tokens the host verifies |
+>
+> Until these are created, no session can be created, no device can be paired,
+> and no code can be redeemed, regardless of what the code does. Create them in
+> the [Firebase console](https://console.firebase.google.com/) — Build →
+> Realtime Database → Create Database, and Build → Firestore → Create Database.
+> The Spark (free) plan covers both, per §0.3.
+>
+> Set the `FIREBASE_PROJECT_ID` **repository variable** to the same project.
+> The workflows had it hardcoded to `duxo-remote`, which is not the project the
+> app is configured against.
+
 ### Security rules (do this before anything writes user data)
 
 The rules in `firebase/` are the only thing separating one account's sessions
