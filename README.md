@@ -203,6 +203,21 @@ npm install
 npm run dev                  # → http://localhost:3000
 ```
 
+Node 20, pinned in `viewer/.nvmrc`. CI and Railway's Nixpacks both read that
+file, and `package-lock.json` is only valid for the npm that wrote it — a
+lockfile generated on Node 24 fails `npm ci` under Node 20's npm 10, naming
+packages nothing depends on directly. If you regenerate the lockfile, do it on
+the pinned major.
+
+`.github/workflows/viewer.yml` type-checks, lints, tests and builds on every
+push touching `viewer/`. It builds twice: once with fake credentials, then
+again with the Firebase ones removed entirely. The second is a regression
+test, not a duplicate — `next build` evaluates every route module to collect
+page data, so anything initialised at module scope runs at build time, and a
+missing `FIREBASE_PRIVATE_KEY` used to fail the build rather than the request.
+That is why `lib/firebase-admin.ts` builds its app on first use instead of at
+import.
+
 ### Host agent (Tauri + Rust)
 
 ```bash

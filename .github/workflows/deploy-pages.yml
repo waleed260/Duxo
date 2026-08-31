@@ -12,7 +12,9 @@
 #      404. The viewer's real deployment is Railway (viewer/railway.json).
 #
 # It had failed on all 31 of its runs since July, most recently at
-# `cache-dependency-path` — viewer/package-lock.json is not in the repo.
+# `cache-dependency-path` — viewer/package-lock.json was gitignored and so
+# was not in the repo. It is committed now (see viewer.yml, which builds the
+# viewer properly), but this workflow still has no reason to install it.
 #
 # What Pages is genuinely for here is the two static files the host agent
 # fetches by absolute URL, both of which have been 404 since they were written:
