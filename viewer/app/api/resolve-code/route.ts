@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { getDatabase } from "firebase-admin/database";
-import { firebaseAdmin } from "@/lib/firebase-admin";
+import { getFirebaseAdmin } from "@/lib/firebase-admin";
 
 /**
  * §0.7 — resolve an 8-digit session code to its session id.
@@ -82,7 +82,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const db = getDatabase(firebaseAdmin);
+    const db = getDatabase(getFirebaseAdmin());
     const snapshot = await db.ref(`codes/${normalized}`).get();
 
     // §0.7 — the node is `{ sessionId, hostId }`; hostId is what lets the

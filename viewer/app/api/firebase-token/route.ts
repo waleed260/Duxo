@@ -1,7 +1,7 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { getAuth } from "firebase-admin/auth";
-import { firebaseAdmin } from "@/lib/firebase-admin";
+import { getFirebaseAdmin } from "@/lib/firebase-admin";
 
 const RATE_LIMIT = new Map<string, { count: number; resetAt: number }>();
 const MAX_REQUESTS = 10;
@@ -57,7 +57,7 @@ export async function POST() {
         primary.verification?.status === "verified";
     }
 
-    const adminAuth = getAuth(firebaseAdmin);
+    const adminAuth = getAuth(getFirebaseAdmin());
     const customToken = await adminAuth.createCustomToken(userId, claims);
     return NextResponse.json({ token: customToken });
   } catch (error) {

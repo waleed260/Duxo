@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getAuth } from "firebase-admin/auth";
 import { getDatabase } from "firebase-admin/database";
 import { getFirestore } from "firebase-admin/firestore";
-import { firebaseAdmin } from "@/lib/firebase-admin";
+import { getFirebaseAdmin } from "@/lib/firebase-admin";
 
 /**
  * Device pairing — the host agent's half of authentication.
@@ -75,7 +75,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const db = getDatabase(firebaseAdmin);
+    const db = getDatabase(getFirebaseAdmin());
     const nodeRef = db.ref(`pairings/${code}`);
     const snapshot = await nodeRef.get();
 
@@ -115,7 +115,7 @@ export async function POST(request: Request) {
     }
 
     // The uid comes from the Clerk session, never from the request.
-    const customToken = await getAuth(firebaseAdmin).createCustomToken(userId);
+    const customToken = await getAuth(getFirebaseAdmin()).createCustomToken(userId);
 
     await nodeRef.update({ claimed: true, customToken });
 
@@ -135,7 +135,7 @@ export async function POST(request: Request) {
       typeof pairing.platform === "string" ? pairing.platform : "unknown";
     try {
       const now = Date.now();
-      await getFirestore(firebaseAdmin)
+      await getFirestore(getFirebaseAdmin())
         .collection("devices")
         .add({
           ownerUid: userId,

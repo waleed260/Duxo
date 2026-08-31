@@ -18,7 +18,7 @@ vi.mock("@clerk/nextjs/server", () => ({
 vi.mock("firebase-admin/auth", () => ({
   getAuth: () => ({ createCustomToken }),
 }));
-vi.mock("@/lib/firebase-admin", () => ({ firebaseAdmin: {} }));
+vi.mock("@/lib/firebase-admin", () => ({ getFirebaseAdmin: () => ({}) }));
 
 function userWith(email: string | null, status: string) {
   if (email === null) return { emailAddresses: [], primaryEmailAddressId: null };

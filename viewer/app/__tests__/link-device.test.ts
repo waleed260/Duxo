@@ -36,7 +36,7 @@ vi.mock("firebase-admin/auth", () => ({
 vi.mock("firebase-admin/firestore", () => ({
   getFirestore: () => ({ collection }),
 }));
-vi.mock("@/lib/firebase-admin", () => ({ firebaseAdmin: {} }));
+vi.mock("@/lib/firebase-admin", () => ({ getFirebaseAdmin: () => ({}) }));
 
 function post(body: unknown) {
   return new Request("http://localhost/api/link-device", {

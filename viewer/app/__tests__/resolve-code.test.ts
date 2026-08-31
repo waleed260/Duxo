@@ -18,7 +18,7 @@ vi.mock("@clerk/nextjs/server", () => ({ auth: () => clerkAuth() }));
 vi.mock("firebase-admin/database", () => ({
   getDatabase: () => ({ ref: dbRef }),
 }));
-vi.mock("@/lib/firebase-admin", () => ({ firebaseAdmin: {} }));
+vi.mock("@/lib/firebase-admin", () => ({ getFirebaseAdmin: () => ({}) }));
 
 function post(body: unknown) {
   return new Request("http://localhost/api/resolve-code", {

@@ -1,4 +1,4 @@
-import { initializeApp, getApps, cert } from "firebase-admin/app";
+import { initializeApp, getApps, cert, type App } from "firebase-admin/app";
 
 /**
  * `databaseURL` is required for `getDatabase(firebaseAdmin)` — the device
@@ -17,14 +17,39 @@ function resolveDatabaseUrl(): string | undefined {
   return projectId ? `https://${projectId}-default-rtdb.firebaseio.com` : undefined;
 }
 
-const firebaseAdminConfig = {
-  credential: cert({
-    projectId: process.env.FIREBASE_PROJECT_ID!,
-    clientEmail: process.env.FIREBASE_CLIENT_EMAIL!,
-    privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-  }),
-  databaseURL: resolveDatabaseUrl(),
-};
+let cached: App | null = null;
 
-export const firebaseAdmin =
-  getApps().length === 0 ? initializeApp(firebaseAdminConfig) : getApps()[0];
+/**
+ * The Admin app, built on first use.
+ *
+ * Deliberately a function rather than an exported `const`. Initialising at
+ * module scope meant `cert()` parsed `FIREBASE_PRIVATE_KEY` the moment
+ * anything imported this file — and Next evaluates every route module during
+ * `next build` to collect page data. So a missing or malformed private key
+ * did not produce a route that fails when called; it failed the *build*, with
+ * "Failed to collect page data for /api/resolve-code" and a decoder error
+ * underneath it.
+ *
+ * That defeats the design the rest of the deployment rests on: `/api/health`
+ * exists to tell a misconfigured deploy from a working one, and Railway
+ * health-checks it precisely so a bad environment fails the deploy loudly
+ * instead of replacing a working instance. None of that can happen if the
+ * build dies first. It also meant the app could not be built at all without
+ * production credentials, which is why CI never built it.
+ */
+export function getFirebaseAdmin(): App {
+  if (cached) return cached;
+  const existing = getApps();
+  cached =
+    existing.length > 0
+      ? existing[0]
+      : initializeApp({
+          credential: cert({
+            projectId: process.env.FIREBASE_PROJECT_ID!,
+            clientEmail: process.env.FIREBASE_CLIENT_EMAIL!,
+            privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+          }),
+          databaseURL: resolveDatabaseUrl(),
+        });
+  return cached;
+}
