@@ -11,6 +11,14 @@
 #   2. GCP Service Account with roles/datastore.importExportAdmin, stored as
 #      FIREBASE_SERVICE_ACCOUNT secret (base64-encoded JSON key).
 #   3. GPG public key stored as BACKUP_GPG_PUBKEY secret.
+#   4. FIREBASE_STORAGE_BUCKET secret — the bucket the export is written to.
+#   5. FIREBASE_PROJECT_ID repository *variable* (not a secret), the same one
+#      deploy-rules.yml and rollback.yml read. A project id is not sensitive,
+#      and splitting it across both namespaces is how this job ended up
+#      running with an empty --project.
+#
+# The first step checks all of these and fails before touching Firestore, so a
+# missing one is named rather than surfacing as a gcloud usage error.
 #
 # Restore: decrypt the archive and use `gcloud firestore import` or
 #          the Firebase Console.
@@ -45,27 +53,68 @@ jobs:
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
 
+      # A backup job that fails late, after "successfully" exporting, is worse
+      # than one that never ran: the artifact list still fills up. Check the
+      # inputs before touching Firestore.
+      - name: Check backup configuration
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          # A repository *variable*, matching deploy-rules.yml and rollback.yml
+          # and what the README tells you to set. This read `secrets.` — a
+          # different namespace, so setting the documented variable left it
+          # empty and the export ran with `--project=`.
+          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+          BACKUP_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+        run: |
+          set -euo pipefail
+          missing=""
+          [ -n "${FIREBASE_PROJECT_ID:-}" ] || missing="$missing FIREBASE_PROJECT_ID(variable)"
+          [ -n "${FIREBASE_SERVICE_ACCOUNT:-}" ] || missing="$missing FIREBASE_SERVICE_ACCOUNT(secret)"
+          [ -n "${BACKUP_BUCKET:-}" ] || missing="$missing FIREBASE_STORAGE_BUCKET(secret)"
+          if [ -n "$missing" ]; then
+            echo "::error::Firestore backup is not configured. Missing:$missing"
+            exit 1
+          fi
+          echo "FIREBASE_PROJECT_ID=$FIREBASE_PROJECT_ID" >> "$GITHUB_ENV"
+          echo "BACKUP_BUCKET=$BACKUP_BUCKET" >> "$GITHUB_ENV"
+
       - name: Authenticate to GCP
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
+          set -euo pipefail
           echo "$FIREBASE_SERVICE_ACCOUNT" | base64 -d > /tmp/gcp-key.json
           gcloud auth activate-service-account --key-file=/tmp/gcp-key.json
 
+      # The export path is computed once and carried to the download step.
+      #
+      # Both steps used to run `date -u +%Y%m%d-%H%M%S` separately. They are
+      # different shells minutes apart — `gcloud firestore export` blocks
+      # until the export completes — so the two timestamps essentially never
+      # matched, and the download addressed a prefix that did not exist. The
+      # job either failed in `gsutil` or, worse, archived an empty directory
+      # and uploaded it as a 90-day backup artifact.
+      - name: Compute the export path
+        run: |
+          set -euo pipefail
+          echo "EXPORT_PREFIX=gs://${BACKUP_BUCKET}/backups/$(date -u +%Y%m%d-%H%M%S)" >> "$GITHUB_ENV"
+
       - name: Export Firestore
         run: |
-          TIMESTAMP=$(date -u +%Y%m%d-%H%M%S)
-          gcloud firestore export \
-            "gs://${{ secrets.FIREBASE_STORAGE_BUCKET }}/backups/${TIMESTAMP}" \
-            --project="${{ secrets.FIREBASE_PROJECT_ID }}"
+          set -euo pipefail
+          gcloud firestore export "$EXPORT_PREFIX" --project="$FIREBASE_PROJECT_ID"
 
       - name: Download export
         run: |
-          TIMESTAMP=$(date -u +%Y%m%d-%H%M%S)
+          set -euo pipefail
           mkdir -p "${BACKUP_DIR}"
-          gsutil -m cp -r \
-            "gs://${{ secrets.FIREBASE_STORAGE_BUCKET }}/backups/${TIMESTAMP}" \
-            "${BACKUP_DIR}/"
+          gsutil -m cp -r "$EXPORT_PREFIX" "${BACKUP_DIR}/"
+          # An empty archive encrypts and uploads perfectly happily, and is
+          # only discovered to be empty when someone needs to restore from it.
+          if [ -z "$(ls -A "${BACKUP_DIR}")" ]; then
+            echo "::error::Downloaded export is empty ($EXPORT_PREFIX)"
+            exit 1
+          fi
 
       - name: Encrypt backup
         env:
