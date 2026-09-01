@@ -10,7 +10,7 @@ import { Button } from "@/components/Button";
  * Duxo download page — §3.4 + §0.9.
  *
  * §3.4: auto-detect OS from user-agent, surface the right binary first
- * (Windows .exe vs Linux .AppImage), other still available below.
+ * (Windows .zip vs Linux .tar.gz), other still available below.
  *
  * §0.9: SmartScreen copy lives DIRECTLY on this page, not in a separate FAQ
  * users won't find. Uses the exact wording from the plan.
@@ -27,16 +27,22 @@ function detectOS(): DetectedOS {
   return "unknown";
 }
 
+// The labels name the file that is actually published. `release.yml` packages
+// the binary with 7z on Windows and tar on Linux, so the release page offers a
+// .zip and a .tar.gz — never the ".exe / .AppImage" this page used to promise.
+// Naming a format the download does not have is the kind of mismatch someone
+// only discovers after the download finishes, and it reads as a broken build
+// rather than as a wrong label.
 const DOWNLOADS = {
   windows: {
-    label: "Windows (.exe)",
+    label: "Windows (.zip)",
     href: "https://github.com/waleed260/Duxo/releases/latest",
-    note: "Portable .exe — no installer, no admin needed for basic use.",
+    note: "Unzip and run duxo-host.exe — no installer, no admin needed for basic use.",
   },
   linux: {
-    label: "Linux (.AppImage)",
+    label: "Linux (.tar.gz)",
     href: "https://github.com/waleed260/Duxo/releases/latest",
-    note: "chmod +x and run. No package manager, no root needed for X11.",
+    note: "Extract, chmod +x duxo-host and run. No package manager, no root needed for X11.",
   },
   mac: {
     label: "macOS",

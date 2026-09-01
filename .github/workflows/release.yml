@@ -85,8 +85,46 @@ jobs:
             host-agent/src-tauri/target/
           key: ${{ runner.os }}-cargo-release-${{ hashFiles('host-agent/src-tauri/Cargo.lock') }}
 
+      # A release archive is the binary and nothing else — no `.env` travels
+      # with it, and there is no documented place for a user to put one. So the
+      # host agent's public configuration is baked in at compile time
+      # (`option_env!` in tray.rs). Publishing a build without it produces an
+      # agent whose tray menu is entirely greyed out on every machine that
+      # downloads it, which is a worse outcome than not publishing: it is
+      # indistinguishable, to the user, from the app being broken.
+      #
+      # Repository *variables*, not secrets: these are the same public Firebase
+      # web-app values the viewer already ships in its client bundle.
+      - name: Is the release configured?
+        shell: bash
+        env:
+          DUXO_FIREBASE_API_KEY: ${{ vars.DUXO_FIREBASE_API_KEY }}
+          DUXO_FIREBASE_DATABASE_URL: ${{ vars.DUXO_FIREBASE_DATABASE_URL }}
+          DUXO_FIREBASE_PROJECT_ID: ${{ vars.DUXO_FIREBASE_PROJECT_ID }}
+          DUXO_WEB_APP_URL: ${{ vars.DUXO_WEB_APP_URL }}
+        run: |
+          set -euo pipefail
+          unset_vars=()
+          for v in DUXO_FIREBASE_API_KEY DUXO_FIREBASE_DATABASE_URL \
+                   DUXO_FIREBASE_PROJECT_ID DUXO_WEB_APP_URL; do
+            [ -n "${!v:-}" ] || unset_vars+=("$v")
+          done
+          if [ ${#unset_vars[@]} -gt 0 ]; then
+            echo "::error::Set these repository variables before releasing:" \
+                 "${unset_vars[*]}. They are baked into the binary, which is" \
+                 "the only configuration a downloaded release ever gets." \
+                 "DUXO_WEB_APP_URL is where device pairing sends the user, so" \
+                 "it must be the deployment the viewer actually runs on."
+            exit 1
+          fi
+
       - name: Build host agent (release)
         working-directory: host-agent/src-tauri
+        env:
+          DUXO_FIREBASE_API_KEY: ${{ vars.DUXO_FIREBASE_API_KEY }}
+          DUXO_FIREBASE_DATABASE_URL: ${{ vars.DUXO_FIREBASE_DATABASE_URL }}
+          DUXO_FIREBASE_PROJECT_ID: ${{ vars.DUXO_FIREBASE_PROJECT_ID }}
+          DUXO_WEB_APP_URL: ${{ vars.DUXO_WEB_APP_URL }}
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Run Rust unit tests

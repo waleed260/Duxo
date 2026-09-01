@@ -5,7 +5,8 @@ Open source (MIT), WebRTC-based, no telemetry, no credit card required.
 
 ## What it does
 
-Web-based viewer (browser) + portable host agent (.exe / .AppImage).
+Web-based viewer (browser) + portable host agent (Windows .zip / Linux .tar.gz,
+each holding a single self-contained binary).
 Full remote control on Windows and Linux X11. Wayland = view-only in MVP.
 
 | Platform | Screen | Input | Status |
@@ -226,6 +227,33 @@ cp .env.example .env         # Same Firebase project as the viewer
 cargo build --release
 ```
 
+**A released binary does not read that `.env`.** `release.yml` packages the
+executable and nothing else, so nothing travels beside it and there is nowhere
+for a user to put configuration. The four variables below are therefore read at
+*compile* time as well and baked into the binary — safe, because they are the
+same public Firebase web-app values the viewer already ships in its client
+bundle, and the host's only real credential is the refresh token in the OS
+keychain (§2.6).
+
+Set them as repository **variables** (not secrets), and **Release Host Agent**
+passes them to `cargo build`:
+
+| Variable | Notes |
+|---|---|
+| `DUXO_FIREBASE_API_KEY` | Public web API key |
+| `DUXO_FIREBASE_DATABASE_URL` | The RTDB instance all signaling lives in |
+| `DUXO_FIREBASE_PROJECT_ID` | Must match the viewer's project |
+| `DUXO_WEB_APP_URL` | Where pairing sends the user — the *deployed* viewer origin, since the agent shows them `<url>/link-device` |
+
+The release refuses to publish with any of them unset. That is deliberate: an
+unconfigured agent starts with its whole tray menu greyed out and a "Not
+configured" line in it, which is the honest outcome, but it is not something to
+hand to a user who just downloaded a release.
+
+A runtime value always beats the baked-in one, so `.env` still overrides
+everything for `cargo tauri dev`. A blank line in `.env` is not an override —
+an empty value falls through to the compiled-in default rather than clearing it.
+
 ### Running a session
 
 The host agent has no login screen of its own. It cannot: the viewer signs in
@@ -260,7 +288,7 @@ VIEWER                     WebRTC P2P                    HOST AGENT
  Next.js /          STUN + Metered TURN                    Windows:
  Vercel             + Oracle Coturn fallback (Path B)       .exe
                      │                                     Linux:
-                     │                                     AppImage
+                     │                                     tar.gz
                      └────────── Firebase RTDB ────────────┘
                         Auth / RTDB / Firestore
 ```

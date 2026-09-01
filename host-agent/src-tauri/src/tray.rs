@@ -44,19 +44,85 @@ pub struct FirebaseEnv {
     pub web_app_url: String,
 }
 
+/// Where a build with no configured web app sends someone who is pairing.
+///
+/// Only ever reached by a build that baked nothing in; a release sets
+/// `DUXO_WEB_APP_URL` to the deployment the viewer actually runs on.
+const DEFAULT_WEB_APP_URL: &str = "https://duxo.dev";
+
+/// Runtime environment first, then the value baked in at compile time.
+///
+/// §7.1/§7.6 — a downloaded release is a *bare binary*: `release.yml` packages
+/// the executable and nothing else, so there is no `.env` beside it and no
+/// documented place for a user to put one. `load_env()` therefore finds
+/// nothing, every value below comes back empty, and the agent starts up unable
+/// to reach Firebase at all. The configuration has to be able to travel inside
+/// the binary.
+///
+/// Baking it in is safe because none of it is secret: these are the same
+/// public Firebase web-app values the viewer already ships in its client
+/// bundle (see `.env.example`), and the only real credential the host ever
+/// holds is the refresh token in the OS keychain (§2.6).
+///
+/// Runtime still wins, so `.env` and `cargo tauri dev` keep overriding a
+/// baked-in default. An all-whitespace value counts as unset — an empty
+/// `DUXO_FIREBASE_API_KEY=` line in a `.env` should fall through to the baked
+/// value rather than blank it out.
+fn from_runtime_or_baked(var: &str, baked: Option<&str>) -> String {
+    if let Ok(value) = std::env::var(var) {
+        if !value.trim().is_empty() {
+            return value;
+        }
+    }
+    baked.unwrap_or_default().trim().to_string()
+}
+
 impl FirebaseEnv {
     fn from_env() -> Self {
+        // `option_env!` reads the variable when the crate is *compiled*.
+        // build.rs emits a `rerun-if-env-changed` for each of these, so
+        // changing one actually rebuilds instead of reusing a stale value.
+        let web_app_url =
+            from_runtime_or_baked("DUXO_WEB_APP_URL", option_env!("DUXO_WEB_APP_URL"));
         Self {
-            api_key: std::env::var("DUXO_FIREBASE_API_KEY").unwrap_or_default(),
-            database_url: std::env::var("DUXO_FIREBASE_DATABASE_URL").unwrap_or_default(),
-            project_id: std::env::var("DUXO_FIREBASE_PROJECT_ID").unwrap_or_default(),
-            web_app_url: std::env::var("DUXO_WEB_APP_URL")
-                .unwrap_or_else(|_| "https://duxo.dev".to_string()),
+            api_key: from_runtime_or_baked(
+                "DUXO_FIREBASE_API_KEY",
+                option_env!("DUXO_FIREBASE_API_KEY"),
+            ),
+            database_url: from_runtime_or_baked(
+                "DUXO_FIREBASE_DATABASE_URL",
+                option_env!("DUXO_FIREBASE_DATABASE_URL"),
+            ),
+            project_id: from_runtime_or_baked(
+                "DUXO_FIREBASE_PROJECT_ID",
+                option_env!("DUXO_FIREBASE_PROJECT_ID"),
+            ),
+            web_app_url: if web_app_url.is_empty() {
+                DEFAULT_WEB_APP_URL.to_string()
+            } else {
+                web_app_url
+            },
         }
     }
 
     fn is_configured(&self) -> bool {
-        !self.api_key.is_empty() && !self.database_url.is_empty() && !self.project_id.is_empty()
+        self.missing().is_empty()
+    }
+
+    /// The variables that still have no value, named so the failure can say
+    /// which ones rather than listing all three every time.
+    fn missing(&self) -> Vec<&'static str> {
+        let mut missing = Vec::new();
+        if self.api_key.is_empty() {
+            missing.push("DUXO_FIREBASE_API_KEY");
+        }
+        if self.database_url.is_empty() {
+            missing.push("DUXO_FIREBASE_DATABASE_URL");
+        }
+        if self.project_id.is_empty() {
+            missing.push("DUXO_FIREBASE_PROJECT_ID");
+        }
+        missing
     }
 }
 
@@ -106,34 +172,64 @@ impl AppState {
 /// looks like it failed to launch.
 pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let state = AppState::new();
-    let configured = state.firebase_config.is_configured();
+    let missing = state.firebase_config.missing();
+    let configured = missing.is_empty();
     app.manage(state);
 
-    let start = MenuItem::with_id(app, "start", "Start a session", true, None::<&str>)?;
-    let end = MenuItem::with_id(app, "end", "End session", true, None::<&str>)?;
-    let link = MenuItem::with_id(app, "link", "Link this device…", true, None::<&str>)?;
-    let unlink = MenuItem::with_id(app, "unlink", "Unlink this device", true, None::<&str>)?;
+    // §7.6 — every item is disabled on an unconfigured build. Leaving them
+    // enabled was the worst of both worlds: clicking "Link this device…" runs
+    // `begin_pairing` against an empty database URL, which fails inside
+    // reqwest and is reported as a `tracing::error!` to a log file nobody is
+    // watching. On screen, the menu item simply did nothing — the app looked
+    // broken rather than unconfigured, and the two have very different fixes.
+    let start = MenuItem::with_id(app, "start", "Start a session", configured, None::<&str>)?;
+    let end = MenuItem::with_id(app, "end", "End session", configured, None::<&str>)?;
+    let link = MenuItem::with_id(app, "link", "Link this device…", configured, None::<&str>)?;
+    let unlink = MenuItem::with_id(
+        app,
+        "unlink",
+        "Unlink this device",
+        configured,
+        None::<&str>,
+    )?;
     let separator = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Duxo", true, None::<&str>)?;
 
-    // `Menu::with_items` takes `&[&dyn IsMenuItem<R>]`. The array mixes
-    // MenuItem and PredefinedMenuItem, so each element needs the explicit
-    // unsized coercion — inference cannot pick a single concrete type here.
-    let menu = Menu::with_items(
+    // The tray menu is the only UI this app has, so it is also the only place
+    // the reason can be said. Disabled, because it is a statement rather than
+    // an action.
+    let status = MenuItem::with_id(
         app,
-        &[
-            &start as &dyn IsMenuItem<tauri::Wry>,
-            &end,
-            &link,
-            &unlink,
-            &separator,
-            &quit,
-        ],
+        "status",
+        "Not configured — see the Duxo README",
+        false,
+        None::<&str>,
     )?;
+
+    // `Menu::with_items` takes `&[&dyn IsMenuItem<R>]`. The list mixes
+    // MenuItem and PredefinedMenuItem, so the first element needs the explicit
+    // unsized coercion — inference cannot pick a single concrete type here.
+    let mut items: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![&start];
+    if !configured {
+        items.insert(0, &status);
+        items.insert(1, &separator);
+    }
+    items.extend([
+        &end as &dyn IsMenuItem<tauri::Wry>,
+        &link,
+        &unlink,
+        &separator,
+        &quit,
+    ]);
+    let menu = Menu::with_items(app, &items)?;
 
     let mut builder = TrayIconBuilder::with_id("duxo-tray")
         .menu(&menu)
-        .tooltip("Duxo — Remote Desktop Host")
+        .tooltip(if configured {
+            "Duxo — Remote Desktop Host"
+        } else {
+            "Duxo — not configured"
+        })
         .on_menu_event(move |app, event| {
             let app = app.clone();
             match event.id.as_ref() {
@@ -168,8 +264,10 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
     if !configured {
         tracing::error!(
-            "Firebase is not configured — set DUXO_FIREBASE_API_KEY, \
-             DUXO_FIREBASE_DATABASE_URL and DUXO_FIREBASE_PROJECT_ID"
+            missing = %missing.join(", "),
+            "Firebase is not configured, so no session or pairing can start. \
+             Set the listed variables in a .env beside the executable, or bake \
+             them in at build time (see release.yml)."
         );
         return Ok(());
     }
@@ -548,5 +646,83 @@ mod tests {
     fn format_code_leaves_other_lengths_alone() {
         // Pairing codes are six characters and must not be split.
         assert_eq!(format_code("AB3D9F"), "AB3D9F");
+    }
+
+    // Each test below uses its own variable name. `std::env::var` is process
+    // global and cargo runs tests in threads, so sharing one name between two
+    // tests makes them flake against each other rather than fail honestly.
+
+    #[test]
+    fn runtime_env_beats_the_baked_value() {
+        std::env::set_var("DUXO_TEST_RUNTIME_WINS", "from-runtime");
+        assert_eq!(
+            from_runtime_or_baked("DUXO_TEST_RUNTIME_WINS", Some("from-build")),
+            "from-runtime"
+        );
+        std::env::remove_var("DUXO_TEST_RUNTIME_WINS");
+    }
+
+    #[test]
+    fn baked_value_is_used_when_nothing_is_set() {
+        // This is the released-binary case: the archive carries no `.env`, so
+        // `load_env()` finds nothing and the compile-time value is all there is.
+        assert_eq!(
+            from_runtime_or_baked("DUXO_TEST_UNSET_ENTIRELY", Some("from-build")),
+            "from-build"
+        );
+    }
+
+    #[test]
+    fn an_empty_runtime_value_falls_through_to_the_baked_one() {
+        // `DUXO_FIREBASE_API_KEY=` on its own line in a .env — as .env.example
+        // ships it — sets the variable to "". Treating that as an override
+        // would let a copied template blank out a working baked-in build.
+        std::env::set_var("DUXO_TEST_BLANK_VALUE", "   ");
+        assert_eq!(
+            from_runtime_or_baked("DUXO_TEST_BLANK_VALUE", Some("from-build")),
+            "from-build"
+        );
+        std::env::remove_var("DUXO_TEST_BLANK_VALUE");
+    }
+
+    #[test]
+    fn nothing_anywhere_is_empty_not_a_panic() {
+        assert_eq!(from_runtime_or_baked("DUXO_TEST_NO_VALUE_AT_ALL", None), "");
+    }
+
+    #[test]
+    fn missing_names_only_the_variables_that_are_actually_unset() {
+        let env = FirebaseEnv {
+            api_key: "key".into(),
+            database_url: String::new(),
+            project_id: String::new(),
+            web_app_url: DEFAULT_WEB_APP_URL.into(),
+        };
+        assert_eq!(
+            env.missing(),
+            vec!["DUXO_FIREBASE_DATABASE_URL", "DUXO_FIREBASE_PROJECT_ID"]
+        );
+        assert!(!env.is_configured());
+    }
+
+    #[test]
+    fn a_fully_populated_env_is_configured() {
+        let env = FirebaseEnv {
+            api_key: "key".into(),
+            database_url: "https://x-default-rtdb.firebaseio.com".into(),
+            project_id: "duxo".into(),
+            web_app_url: "https://example.invalid".into(),
+        };
+        assert!(env.missing().is_empty());
+        assert!(env.is_configured());
+    }
+
+    #[test]
+    fn web_app_url_never_ends_up_empty() {
+        // auth.rs builds "{web_app_url}/link-device" and shows it to the person
+        // pairing the device. An empty base would render "/link-device", which
+        // is not somewhere anyone can go.
+        let env = FirebaseEnv::from_env();
+        assert!(!env.web_app_url.is_empty());
     }
 }

@@ -10,7 +10,7 @@ for the storage-layer deviations and the reasons for them.
 VIEWER                     WebRTC P2P                    HOST AGENT
 (Browser)      <──────────────────────────────────►   (Tauri/Rust)
 Next.js /          STUN + Metered TURN                    Windows: .exe
-Railway            + Oracle Coturn fallback                Linux: AppImage
+Railway            + Oracle Coturn fallback                Linux: tar.gz
                    │
                    └────────── Firebase RTDB ────────────┘
                       Auth / RTDB / Firestore
@@ -21,7 +21,8 @@ Railway            + Oracle Coturn fallback                Linux: AppImage
 - **WebRTC P2P** — video/input never touches our infrastructure
 - **Firebase RTDB** — signaling only (offer/answer/ICE candidates)
 - **Firestore** — durable records (session history, user profiles)
-- **Host agent** — native Tauri v2 app (Rust), portable .exe / .AppImage
+- **Host agent** — native Tauri v2 app (Rust), a single portable binary
+  shipped as a Windows .zip / Linux .tar.gz
 - **Viewer** — Next.js 14, server-rendered. *Not* a static export: the
   Clerk→Firebase token exchange and device pairing are API routes and need a
   server runtime.
