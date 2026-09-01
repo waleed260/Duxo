@@ -57,6 +57,28 @@ sudo apt install -y \
 only and does no video encoding, so VP8 compression is the host agent's own
 job (`src/encoder.rs`).
 
+### Provisioning, in one place
+
+Everything the backend needs is something only the project owner can do,
+because every step authenticates as *you* — nothing in this repo holds a
+credential that can create a database, expose a service or deploy a rule.
+`scripts/provision.sh` drives the CLIs that can, so the parts that are
+scriptable are commands rather than console navigation:
+
+```bash
+./scripts/provision.sh check      # what exists right now
+./scripts/provision.sh firebase   # Realtime Database + Firestore
+./scripts/provision.sh rules      # deploy the security rules
+./scripts/provision.sh railway    # generate the public domain
+```
+
+Each step prints what it is about to do and asks before doing it. Two things
+stay manual because no CLI exposes them, and the script prints the links:
+enabling Email/Password auth, and setting the GitHub secret and repository
+variables. The CLIs run through `npx`, so nothing is installed globally.
+
+The sections below are the same steps by hand, and the reasoning behind them.
+
 ### Firebase project setup (§0.13 items 4–5)
 
 > **The Firebase backend does not exist yet.** Three services are missing, each
