@@ -26,12 +26,31 @@ pub struct CrashMarker {
     /// field; those fall back to `started_at` via `last_seen()`.
     #[serde(default)]
     pub last_seen_at: Option<i64>,
+    /// §1.1 — the 8-digit code this session was published under.
+    ///
+    /// `teardown` retires the code on every path out of `run`, but a hard kill
+    /// never reaches it, and the marker was the only trace left behind. It
+    /// recorded the session id and not the code, so the next launch could not
+    /// retire the one thing that stays redeemable: the code kept resolving to
+    /// a session whose host is gone. Optional so a marker from an older build
+    /// still parses.
+    #[serde(default)]
+    pub code: Option<String>,
 }
 
 impl CrashMarker {
     /// The most recent moment this host is known to have been running.
     pub fn last_seen(&self) -> i64 {
         self.last_seen_at.unwrap_or(self.started_at)
+    }
+
+    /// §6.2 — is offering to resume this session still meaningful?
+    ///
+    /// A negative age means the clock moved backwards since the marker was
+    /// written, which makes the age meaningless rather than small.
+    pub fn is_resumable(&self) -> bool {
+        let age_ms = chrono::Utc::now().timestamp_millis() - self.last_seen();
+        (0..=RESUME_WINDOW_MS).contains(&age_ms)
     }
 }
 
@@ -96,25 +115,17 @@ pub fn read_marker() -> Result<Option<CrashMarker>> {
         }
     };
 
-    let now = chrono::Utc::now().timestamp_millis();
-    let age_ms = now - marker.last_seen();
-
-    // §6.2 — only offer resume if the marker is under 5 minutes old. A
-    // negative age means the clock moved backwards since the marker was
-    // written, which makes the age meaningless rather than small.
-    if !(0..=RESUME_WINDOW_MS).contains(&age_ms) {
-        tracing::info!(
-            age_ms = age_ms,
-            "crash marker stale (>5 min or negative) — removing"
-        );
-        let _ = std::fs::remove_file(&path);
-        return Ok(None);
-    }
-
+    // A stale marker used to be deleted here, which is why an abandoned
+    // session was never cleaned up unless the host happened to restart within
+    // five minutes: the only record of what to retire was thrown away before
+    // anything authenticated could act on it. Staleness now only decides
+    // whether a *resume* is worth offering — `is_resumable` — and the caller
+    // deletes the marker once it has finished retiring the session.
     tracing::info!(
         session_id = %marker.session_id,
-        age_ms = age_ms,
-        "crash marker found — previous session may have crashed"
+        age_ms = chrono::Utc::now().timestamp_millis() - marker.last_seen(),
+        resumable = marker.is_resumable(),
+        "crash marker found — previous session did not shut down cleanly"
     );
     Ok(Some(marker))
 }
@@ -160,6 +171,7 @@ mod tests {
             started_at,
             host_platform: "linux-x11".into(),
             last_seen_at,
+            code: Some("12345678".into()),
         }
     }
 
@@ -183,14 +195,14 @@ mod tests {
         let now = chrono::Utc::now().timestamp_millis();
         let eight_hours_ago = now - 8 * 60 * 60 * 1000;
         let m = marker(eight_hours_ago, Some(now - 10_000));
-        assert!((0..=RESUME_WINDOW_MS).contains(&(now - m.last_seen())));
+        assert!(m.is_resumable());
     }
 
     #[test]
     fn a_genuinely_old_marker_is_still_rejected() {
         let now = chrono::Utc::now().timestamp_millis();
         let m = marker(now - 60 * 60 * 1000, Some(now - 30 * 60 * 1000));
-        assert!(!(0..=RESUME_WINDOW_MS).contains(&(now - m.last_seen())));
+        assert!(!m.is_resumable());
     }
 
     #[test]
@@ -198,7 +210,7 @@ mod tests {
         // A clock that moved backwards makes the age meaningless, not small.
         let now = chrono::Utc::now().timestamp_millis();
         let m = marker(now, Some(now + 10 * 60 * 1000));
-        assert!(!(0..=RESUME_WINDOW_MS).contains(&(now - m.last_seen())));
+        assert!(!m.is_resumable());
     }
 
     #[test]
@@ -207,5 +219,27 @@ mod tests {
         let m: CrashMarker = serde_json::from_str(json).expect("older marker must still parse");
         assert_eq!(m.last_seen_at, None);
         assert_eq!(m.last_seen(), 1000);
+        // No code either — it must read as "nothing to retire", not as corrupt.
+        assert_eq!(m.code, None);
+    }
+
+    #[test]
+    fn a_marker_carries_the_code_so_it_can_be_retired_later() {
+        // The whole point of the field: after a hard kill, this is the only
+        // record of which code is still redeemable.
+        let m = marker(1_000, Some(2_000));
+        let round_tripped: CrashMarker =
+            serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
+        assert_eq!(round_tripped.code.as_deref(), Some("12345678"));
+    }
+
+    #[test]
+    fn a_stale_marker_is_still_returned_so_cleanup_can_happen() {
+        // Staleness decides whether to offer a resume, not whether the
+        // abandoned session is worth retiring. It is always worth retiring.
+        let now = chrono::Utc::now().timestamp_millis();
+        let m = marker(now - 24 * 60 * 60 * 1000, Some(now - 24 * 60 * 60 * 1000));
+        assert!(!m.is_resumable());
+        assert!(m.code.is_some());
     }
 }

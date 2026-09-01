@@ -105,12 +105,10 @@ impl FirebaseEnv {
         }
     }
 
-    fn is_configured(&self) -> bool {
-        self.missing().is_empty()
-    }
-
     /// The variables that still have no value, named so the failure can say
-    /// which ones rather than listing all three every time.
+    /// which ones rather than listing all three every time. Emptiness is the
+    /// "is this configured?" test — a second accessor for that would be dead
+    /// code in the binary, since nothing outside the tests would call it.
     fn missing(&self) -> Vec<&'static str> {
         let mut missing = Vec::new();
         if self.api_key.is_empty() {
@@ -288,8 +286,9 @@ async fn restore_pairing(app: AppHandle) {
     let cfg = &state.firebase_config;
 
     match HostAuth::restore(&cfg.api_key, &cfg.database_url, &cfg.project_id).await {
-        Ok(Some(auth)) => {
+        Ok(Some(mut auth)) => {
             tracing::info!(uid = %auth.uid(), "device already linked");
+            retire_abandoned_session(&mut auth).await;
             *state.auth.write().await = Some(Arc::new(Mutex::new(auth)));
         }
         Ok(None) => {
@@ -299,6 +298,55 @@ async fn restore_pairing(app: AppHandle) {
             tracing::warn!(error = %e, "could not restore pairing");
         }
     }
+}
+
+/// §1.1/§6.2 — retire whatever the previous run left behind in RTDB.
+///
+/// `SessionDriver::teardown` ends the session and deletes the code on every
+/// path out of `run`, but a hard kill — closing the lid, killing the process,
+/// losing power — reaches none of them. What survives is the crash marker, and
+/// this is the first moment there is a token to act on it with.
+///
+/// Both writes are best-effort. Failing to tidy up a dead session must not
+/// stop a device that is otherwise ready from linking.
+async fn retire_abandoned_session(auth: &mut HostAuth) {
+    let marker = match crate::crash_recovery::read_marker() {
+        Ok(Some(marker)) => marker,
+        Ok(None) => return,
+        Err(e) => {
+            tracing::warn!(error = %e, "could not read the crash marker");
+            return;
+        }
+    };
+
+    let Ok(token) = auth.id_token().await else {
+        // Deliberately leaves the marker in place: with no token nothing can
+        // be retired, and the next launch is the next chance to try.
+        tracing::warn!(
+            session_id = %marker.session_id,
+            "no token yet — leaving the abandoned session for the next launch"
+        );
+        return;
+    };
+    let db = auth.database_url().to_string();
+    let project = auth.project_id().to_string();
+
+    if let Err(e) = crate::firebase::end_session(&db, &token, &project, &marker.session_id).await {
+        tracing::warn!(error = %e, "could not end the abandoned session");
+    }
+
+    // A marker written by an older build carries no code. Nothing to retire.
+    if let Some(code) = marker.code.as_deref() {
+        if let Err(e) = crate::firebase::delete_code(&db, &token, code).await {
+            tracing::warn!(error = %e, "could not retire the abandoned code");
+        }
+    }
+
+    crate::crash_recovery::clear_marker();
+    tracing::info!(
+        session_id = %marker.session_id,
+        "retired the previous run's abandoned session"
+    );
 }
 
 /// Pair this device with the user's account (see `auth.rs` for the flow).
@@ -702,7 +750,6 @@ mod tests {
             env.missing(),
             vec!["DUXO_FIREBASE_DATABASE_URL", "DUXO_FIREBASE_PROJECT_ID"]
         );
-        assert!(!env.is_configured());
     }
 
     #[test]
@@ -714,7 +761,6 @@ mod tests {
             web_app_url: "https://example.invalid".into(),
         };
         assert!(env.missing().is_empty());
-        assert!(env.is_configured());
     }
 
     #[test]

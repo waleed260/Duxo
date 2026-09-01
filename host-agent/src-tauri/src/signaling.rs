@@ -187,6 +187,26 @@ impl SessionDriver {
         });
         let _ = events.send(SessionEvent::Status(SessionStatus::Waiting));
 
+        // §6.2 — a marker on disk is the only way the next launch can tell a
+        // hard kill from a clean exit, and the only record of what to retire.
+        // It is written here rather than on the transition to ACTIVE, for two
+        // reasons: this is the one scope holding both the session id and the
+        // code, and a host killed while still WAITING leaks a live code just
+        // as surely as one killed mid-call — that case previously wrote no
+        // marker at all, so nothing was ever cleaned up.
+        //
+        // `teardown` clears it on every path out of this function.
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        if let Err(e) = crate::crash_recovery::write_marker(&crate::crash_recovery::CrashMarker {
+            session_id: session_id.clone(),
+            started_at: now_ms,
+            host_platform: self.platform.to_string(),
+            last_seen_at: Some(now_ms),
+            code: Some(code.clone()),
+        }) {
+            tracing::warn!(error = %e, "could not write crash marker");
+        }
+
         let outcome = self
             .drive(&session_id, &events, &mut decision, &shutdown)
             .await;
@@ -646,20 +666,6 @@ impl SessionDriver {
                 self.set_status(session_id, status, SessionStatus::Active)
                     .await?;
                 let _ = events.send(SessionEvent::Status(SessionStatus::Active));
-
-                // §6.2 — a marker on disk is the only way the next launch can
-                // tell a crash from a clean exit. Written once the session is
-                // genuinely live, cleared by `teardown`.
-                let now_ms = chrono::Utc::now().timestamp_millis();
-                let marker = crate::crash_recovery::CrashMarker {
-                    session_id: session_id.to_string(),
-                    started_at: now_ms,
-                    host_platform: self.platform.to_string(),
-                    last_seen_at: Some(now_ms),
-                };
-                if let Err(e) = crate::crash_recovery::write_marker(&marker) {
-                    tracing::warn!(error = %e, "could not write crash marker");
-                }
 
                 // §2.4 — and only now does input become possible at all.
                 peer.set_input_allowed(true);

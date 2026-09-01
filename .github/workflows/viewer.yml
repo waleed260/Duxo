@@ -107,3 +107,94 @@ jobs:
           CLERK_SECRET_KEY: sk_test_ci000000000000000000000000000000
           NEXT_PUBLIC_FIREBASE_API_KEY: AIzaCI0000000000000000000000000000000
           NEXT_PUBLIC_FIREBASE_PROJECT_ID: duxo-ci
+
+  # The Playwright suite in viewer/e2e has existed since the start and has
+  # never run anywhere: `viewer.yml` did not invoke it and no other workflow
+  # mentions playwright. Thirteen specs covering the landing page, the download
+  # page, the static pages and the unauthenticated half of device pairing were
+  # accumulating rot with nothing to catch it.
+  #
+  # They cannot run on the fake credentials the build job uses. Clerk resolves
+  # an instance from the publishable key, and a fake one makes `clerkMiddleware`
+  # answer EVERY route — public marketing pages included — with Clerk's own
+  # "Invalid host" JSON instead of the page, so 11 of the 13 fail for a reason
+  # that has nothing to do with the code under test. That is a property of a
+  # bogus key, not a defect: a valid key never takes that path.
+  #
+  # So the job needs a real Clerk *test* instance. Rather than fail on every
+  # push until someone sets one up, it says loudly what is missing and skips —
+  # the same shape as release.yml's signing step. A permanently red required
+  # check teaches people to ignore CI, which costs more than these tests earn.
+  e2e:
+    name: End-to-end (Playwright)
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: viewer/.nvmrc
+          cache: npm
+          cache-dependency-path: viewer/package-lock.json
+
+      - name: Are there Clerk test credentials?
+        id: creds
+        env:
+          CLERK_PUBLISHABLE_KEY: ${{ secrets.E2E_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -n "${CLERK_PUBLISHABLE_KEY:-}" ] && [ -n "${CLERK_SECRET_KEY:-}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::The Playwright suite did not run. Set the" \
+                 "E2E_CLERK_PUBLISHABLE_KEY and E2E_CLERK_SECRET_KEY secrets" \
+                 "to a Clerk *test* instance to enable it. Without them every" \
+                 "route answers with Clerk's \"Invalid host\" error and the" \
+                 "failures would say nothing about this repo's code."
+          fi
+
+      - name: Install dependencies
+        if: steps.creds.outputs.enabled == 'true'
+        run: npm ci
+
+      # --with-deps pulls the system libraries the browsers need; the runner
+      # image does not carry all of them.
+      - name: Install Playwright browsers
+        if: steps.creds.outputs.enabled == 'true'
+        run: npx playwright install --with-deps chromium firefox
+
+      # Firebase stays fake here on purpose. These specs assert the shape of
+      # the *unauthenticated* responses — a 401 from /api/link-device, a
+      # redirect from /link-device to /login — and every one of those is
+      # decided before anything reaches Firebase. Pointing CI at the real
+      # project would add a live dependency without testing anything more.
+      - name: Run Playwright
+        if: steps.creds.outputs.enabled == 'true'
+        run: npm run test:e2e
+        env:
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.E2E_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY }}
+          NEXT_PUBLIC_CLERK_SIGN_IN_URL: /login
+          NEXT_PUBLIC_CLERK_SIGN_UP_URL: /signup
+          NEXT_PUBLIC_FIREBASE_API_KEY: AIzaCI0000000000000000000000000000000
+          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: duxo-ci.firebaseapp.com
+          NEXT_PUBLIC_FIREBASE_PROJECT_ID: duxo-ci
+          NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: duxo-ci.appspot.com
+          NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "1"
+          NEXT_PUBLIC_FIREBASE_APP_ID: "1:1:web:1"
+          FIREBASE_PROJECT_ID: duxo-ci
+          FIREBASE_CLIENT_EMAIL: ci@duxo-ci.iam.gserviceaccount.com
+          FIREBASE_PRIVATE_KEY: "-----BEGIN PRIVATE KEY-----\nci\n-----END PRIVATE KEY-----\n"
+
+      # The HTML report is the only way to see why a run failed after the
+      # runner is gone; traces are attached on the first retry.
+      - name: Upload the Playwright report
+        if: failure() && steps.creds.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: viewer/playwright-report/
+          retention-days: 7

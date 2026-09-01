@@ -89,18 +89,22 @@ async fn main() {
         Err(e) => tracing::warn!(error = %e, "minversion check failed (non-fatal)"),
     }
 
-    // §6.2 — Check for crash marker from a previous session.
+    // §6.2 — Check for a crash marker from a previous session.
+    //
+    // Reported here, retired in `tray::restore_pairing`. Clearing it here — as
+    // this used to — meant the abandoned session's RTDB node and its 8-digit
+    // code were orphaned on the spot: the code stayed redeemable, pointing at
+    // a session whose host was gone, and the only record of which code that
+    // was had just been deleted. Retiring it needs a Firebase token, and this
+    // runs before the keychain credential has been restored.
     match crash_recovery::read_marker() {
         Ok(Some(marker)) => {
             tracing::warn!(
                 session_id = %marker.session_id,
                 platform = %marker.host_platform,
-                "previous session crashed — resume available"
+                resumable = marker.is_resumable(),
+                "previous session did not shut down cleanly — will retire it once linked"
             );
-            // In a full implementation, the tray would show a "Resume previous session?"
-            // prompt. For MVP, we log it and clear the marker so it doesn't pile up.
-            // The user can manually start a new session.
-            crash_recovery::clear_marker();
         }
         Ok(None) => {
             tracing::info!("no crash marker found — clean startup");
