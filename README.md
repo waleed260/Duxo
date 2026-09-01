@@ -219,6 +219,32 @@ missing `FIREBASE_PRIVATE_KEY` used to fail the build rather than the request.
 That is why `lib/firebase-admin.ts` builds its app on first use instead of at
 import.
 
+**The Playwright suite needs a Clerk test instance.** `viewer/e2e/` holds
+thirteen specs — landing page, download page, static pages, and the
+unauthenticated half of device pairing — and until now nothing ran them
+anywhere. They cannot run on the fake credentials the build job uses: Clerk
+resolves an instance from the publishable key, and a fake one makes
+`clerkMiddleware` answer *every* route, public marketing pages included, with
+Clerk's own `"Invalid host"` JSON instead of the page. Eleven of the thirteen
+then fail for a reason that has nothing to do with the code under test. A valid
+key never takes that path, so this is a property of a bogus key rather than a
+defect.
+
+Set two secrets to turn the job on, from a Clerk **test** instance:
+
+| Secret | |
+|---|---|
+| `E2E_CLERK_PUBLISHABLE_KEY` | `pk_test_…` |
+| `E2E_CLERK_SECRET_KEY` | `sk_test_…` |
+
+Without them the job emits a warning naming both and skips, rather than failing
+on every push — a permanently red required check teaches people to ignore CI.
+Firebase stays fake in that job on purpose: these specs assert the shape of the
+*unauthenticated* responses, and every one of those is decided before anything
+reaches Firebase.
+
+Locally, `npm run test:e2e` uses `.env.local`, so it needs no extra setup.
+
 ### Host agent (Tauri + Rust)
 
 ```bash
