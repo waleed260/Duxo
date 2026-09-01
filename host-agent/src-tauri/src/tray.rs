@@ -46,9 +46,17 @@ pub struct FirebaseEnv {
 
 /// Where a build with no configured web app sends someone who is pairing.
 ///
-/// Only ever reached by a build that baked nothing in; a release sets
-/// `DUXO_WEB_APP_URL` to the deployment the viewer actually runs on.
-const DEFAULT_WEB_APP_URL: &str = "https://duxo.dev";
+/// The dev server, deliberately — matching `.env.example`. A release always
+/// sets `DUXO_WEB_APP_URL` explicitly and `release.yml` refuses to publish
+/// without it, so the only builds that can reach this fallback are local ones,
+/// and localhost is where those are pointed anyway.
+///
+/// It used to be `https://duxo.dev`, which does not resolve. `https://duxo.app`
+/// is not the answer either: it resolves, but it serves an unrelated product
+/// that shares the name, returning the same SPA shell for every path. Sending
+/// someone mid-pairing to a stranger's site is worse than sending them
+/// nowhere, so neither domain belongs here until Duxo actually owns one.
+const DEFAULT_WEB_APP_URL: &str = "http://localhost:3000";
 
 /// Runtime environment first, then the value baked in at compile time.
 ///

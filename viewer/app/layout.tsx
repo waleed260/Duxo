@@ -14,8 +14,26 @@ import { WebVitals } from "@/components/WebVitals";
  * keeps the Rs. 0 / offline-build promise intact (§0.3, §1.5).
  */
 
+/**
+ * The origin this deployment is served from. Every absolute URL in the
+ * metadata below — the canonical link, the Open Graph `url`, and the absolute
+ * form of the OG image — is resolved against it.
+ *
+ * It was hardcoded to `https://duxo.app`, which is not this product: that
+ * domain resolves, but it serves an unrelated application that shares the
+ * name, returning the same SPA shell for every path. So the canonical URL and
+ * every share card attributed Duxo's pages to someone else's site.
+ *
+ * A hardcoded origin is the wrong shape for this regardless of the value — the
+ * origin is a property of the deployment, not of the source. Set
+ * NEXT_PUBLIC_SITE_URL in the environment; the localhost fallback is what
+ * `next dev` should use anyway, and it makes a misconfigured deploy obvious in
+ * the rendered tags rather than silently correct-looking and pointed elsewhere.
+ */
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL?.trim() || "http://localhost:3000";
+
 export const metadata: Metadata = {
-  metadataBase: new URL("https://duxo.app"),
+  metadataBase: new URL(SITE_URL),
   title: "Duxo — Remote access, built in the open",
   description:
     "Open-source, end-to-end encrypted remote desktop for Windows and Linux. Zero-budget, zero telemetry.",
@@ -28,7 +46,7 @@ export const metadata: Metadata = {
     description:
       "Open-source, end-to-end encrypted remote desktop for Windows and Linux. Zero-budget, zero telemetry.",
     type: "website",
-    url: "https://duxo.app",
+    url: SITE_URL,
     siteName: "Duxo",
     images: [
       {

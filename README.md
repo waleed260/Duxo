@@ -134,6 +134,7 @@ secrets are set, so sign-in and the API routes work, but:
 |---|---|
 | `NEXT_PUBLIC_METERED_TURN_USERNAME` | §0.8 — sessions fail on restrictive networks (~10–15%), and they fail for the *remote* caller |
 | `NEXT_PUBLIC_METERED_TURN_CREDENTIAL` | Same |
+| `NEXT_PUBLIC_SITE_URL` | The canonical link and every share card resolve against `http://localhost:3000` instead of the real origin |
 
 `NEXT_PUBLIC_FIREBASE_DATABASE_URL` is also unset, and that is fine:
 `lib/firebase-client.ts` derives Firebase's default instance from the project
