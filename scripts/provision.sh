@@ -19,7 +19,9 @@
 #   - Enabling Email/Password auth. There is no CLI for it; the link is printed.
 #   - Setting the GitHub secret and repository variables. Links are printed.
 #
-# The CLIs are invoked with `npx`, so nothing is installed globally.
+# The CLIs are invoked with `npx`, so nothing is installed globally. Every
+# command and flag below was checked against `--help` on the current
+# firebase-tools and @railway/cli before being written down.
 set -euo pipefail
 
 PROJECT_ID="${DUXO_FIREBASE_PROJECT_ID:-duxo-967f0}"
@@ -142,17 +144,28 @@ TXT
     confirm "Generate a domain?" || return 0
 
     railway login
-    railway link --project "$RAILWAY_PROJECT" --service "$RAILWAY_SERVICE"
+    # --environment as well as --project/--service: without it the CLI prompts
+    # for which environment to link, which defeats the point of passing the
+    # other two. "production" is the environment in the dashboard dump
+    # (116859ed-8570-4b3b-bc8d-2775699b0b10).
+    railway link \
+        --project "$RAILWAY_PROJECT" \
+        --service "$RAILWAY_SERVICE" \
+        --environment production
+    # No argument: generates a Railway-provided service domain. Pass a hostname
+    # instead to attach a custom one, which also prints the DNS records to add.
     railway domain
 
     echo
     bold "That hostname is the origin everything else needs."
-    echo "Set it in two places, then redeploy — the NEXT_PUBLIC_* values are"
-    echo "inlined at build time, so a restart is not enough:"
+    echo "Set all three in one command. Setting a variable triggers a redeploy,"
+    echo "which is required rather than incidental: the NEXT_PUBLIC_* values are"
+    echo "inlined at build time, so a restart would not pick them up."
     echo
-    echo "  railway variables --set NEXT_PUBLIC_SITE_URL=https://<host>"
-    echo "  railway variables --set NEXT_PUBLIC_METERED_TURN_USERNAME=<user>"
-    echo "  railway variables --set NEXT_PUBLIC_METERED_TURN_CREDENTIAL=<pass>"
+    echo "  railway variables set \\"
+    echo "    NEXT_PUBLIC_SITE_URL=https://<host> \\"
+    echo "    NEXT_PUBLIC_METERED_TURN_USERNAME=<user> \\"
+    echo "    NEXT_PUBLIC_METERED_TURN_CREDENTIAL=<pass>"
     echo
     manual "TURN credentials (free, no card): https://www.metered.ca/tools/openrelay/"
     manual "DUXO_WEB_APP_URL=https://<host> at https://github.com/waleed260/Duxo/settings/variables/actions"
