@@ -7,7 +7,9 @@ export default defineConfig({
     globals: true,
     setupFiles: [],
     include: ["**/*.test.{ts,tsx}", "**/*.spec.{ts,tsx}"],
-    exclude: ["e2e/**", "node_modules/**"],
+    // rules-tests/** needs a running RTDB emulator, so it cannot be part of
+    // the default run — `npm run test:rules` starts one around it.
+    exclude: ["e2e/**", "node_modules/**", "rules-tests/**"],
   },
   esbuild: {
     jsx: "automatic",

@@ -15,12 +15,23 @@ name: Deploy Firebase Rules
 
 on:
   push:
-    branches: [main, master]
+    # Not just main. The validate job below exists to catch a broken ruleset
+    # before it is live, and it was only ever reachable on the default branch —
+    # so it ran after the merge it was meant to gate. The deploy job stays
+    # pinned to main by its own `if`.
+    branches: [main, master, "feat/**", "fix/**"]
     paths:
       - "firebase/**"
       - "firebase.json"
       - "viewer/firestore.indexes.json"
+      - "viewer/rules-tests/**"
+      - "viewer/vitest.rules.config.ts"
       - ".github/workflows/deploy-rules.yml"
+  pull_request:
+    paths:
+      - "firebase/**"
+      - "firebase.json"
+      - "viewer/rules-tests/**"
   workflow_dispatch:
 
 permissions:
@@ -56,6 +67,29 @@ jobs:
               "codes/$code must not be client-readable (§0.7)"
           print("database.rules.json OK")
           PY
+
+      # Structure is not semantics. Everything above asserts that a clause is
+      # present; none of it can tell whether the ruleset COMPILES, and one did
+      # not: `!newData.child('claimed').val()` is a type error, because `.val()`
+      # is null when the child is absent and RTDB's `!` only takes booleans.
+      # That rejected the whole file on deploy — not one rule, the file — and
+      # the only way to find out was to attempt a deploy, which had never
+      # succeeded. The emulator compiles the rules and runs them against real
+      # requests, and needs no credential to do it: a demo project id is enough.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: viewer/.nvmrc
+          cache: npm
+          cache-dependency-path: viewer/package-lock.json
+
+      - name: Install dependencies
+        working-directory: viewer
+        run: npm ci
+
+      # Java is preinstalled on ubuntu-latest; the database emulator is a JAR.
+      - name: Compile and exercise the rules
+        working-directory: viewer
+        run: npm run test:rules
 
   deploy:
     name: Deploy rules

@@ -88,7 +88,13 @@
       "$code": {
         // Create-only while unclaimed; once the server marks it claimed, the
         // host can no longer overwrite it and neither can anyone else.
-        ".write": "(!data.exists() && !newData.child('claimed').val()) || auth != null",
+        //
+        // `!= true` rather than `!...val()`: a pairing the host is creating has
+        // no `claimed` child at all, so `.val()` is null, and RTDB's `!` is
+        // typed — "! only operates on booleans" — which made the whole ruleset
+        // fail to compile. Not this rule: the file. Every deploy would have
+        // been rejected, and the only way to find out was to attempt one.
+        ".write": "(!data.exists() && newData.child('claimed').val() != true) || auth != null",
         ".validate": "newData.hasChildren(['deviceName', 'platform', 'createdAt'])",
         "deviceName": { ".validate": "newData.isString() && newData.val().length <= 120" },
         "platform":   { ".validate": "newData.val() == 'windows' || newData.val() == 'linux-x11' || newData.val() == 'linux-wayland'" },

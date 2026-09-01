@@ -14,7 +14,8 @@
     "type-check": "tsc --noEmit",
     "check:turn": "node scripts/check-turn.mjs",
     "check:backend": "node scripts/check-backend.mjs",
-    "check:deploy": "node scripts/check-deployment.mjs"
+    "check:deploy": "node scripts/check-deployment.mjs",
+    "test:rules": "npx -y firebase-tools@14 emulators:exec --only database --project demo-duxo --config ../firebase.json \"npx vitest run --config vitest.rules.config.ts\""
   },
   "dependencies": {
     "@clerk/nextjs": "^5.7.6",
@@ -70,6 +71,7 @@
     "vaul": "^1.1.2"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.4",
     "@playwright/test": "^1.61.1",
     "@testing-library/jest-dom": "^6.4.6",
     "@testing-library/react": "^16.0.0",
