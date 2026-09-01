@@ -180,6 +180,12 @@ so it currently lands on an empty page. Publishing one is a manual
 `workflow_dispatch` on **Release Host Agent** with a version like `v0.1.0`; it
 builds and uploads a Linux `.tar.gz` and a Windows `.zip`.
 
+**It will refuse to run until the four `DUXO_*` repository variables are set**
+(see [Host agent](#host-agent-tauri--rust) above). They are baked into the
+binary, and they are the only configuration a downloaded release ever gets —
+publishing without them ships an agent whose tray menu is greyed out on every
+machine that installs it, which is worse than not publishing at all.
+
 In-app updates additionally need the minisign key pair the updater verifies
 against. `tauri.conf.json` already carries the public half, and
 `scripts/updater-keygen.sh` generates a pair if you need a new one. Set:
