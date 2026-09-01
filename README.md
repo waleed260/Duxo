@@ -126,9 +126,28 @@ enters a valid code and then hangs.
 
 ### Railway environment
 
-`GET /api/health` on the live deployment reports what is missing. As of the
-last check the production instance is missing three variables — all server
-secrets are set, so sign-in and the API routes work, but:
+> **The service is not exposed, so there is no live deployment to check.**
+> Railway builds it and the last deploy succeeded, but the service is marked
+> **Unexposed** — no public domain was ever generated, so nothing routes to it
+> from the internet. That is why no `*.up.railway.app` hostname appears
+> anywhere in this repo, and why `check:deploy` and the `NEXT_PUBLIC_SITE_URL`
+> row below have no origin to point at.
+>
+> This is the first thing to fix, because the origin it produces is what
+> `NEXT_PUBLIC_SITE_URL` and the host agent's `DUXO_WEB_APP_URL` both need:
+> Railway → the **Duxo** service → Settings → Networking → **Generate Domain**
+> (or attach a custom one).
+>
+> Do not reach for `duxo.app` or `duxo.dev`. `duxo.app` resolves but serves an
+> unrelated product that shares the name, answering every path — `/login` and
+> `/download` included — with the same SPA shell, so a 200 from it means
+> nothing. `duxo.dev` does not resolve at all.
+>
+> *(Observed 2026-07-30 in a captured dashboard dump, `railway-service.txt`.
+> Re-check the Networking tab before trusting it.)*
+
+Once a domain exists, `GET /api/health` on it reports what is missing. Three
+variables are expected to be unset:
 
 | Missing | Effect |
 |---|---|
@@ -156,7 +175,8 @@ block a release.
 
 The viewer runs on Railway (`viewer/railway.json` — Nixpacks build, `next start`).
 A build passing says the code compiles; it says nothing about whether the
-deployed instance has its environment set. To check a real deployment:
+deployed instance has its environment set. This needs a public domain to exist
+first — see the Railway note above. To check a real deployment:
 
 ```bash
 cd viewer
