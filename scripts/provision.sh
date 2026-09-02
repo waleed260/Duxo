@@ -10,10 +10,15 @@
 # about to do, and stops on the first failure rather than continuing against a
 # half-built backend:
 #
+#   ./scripts/provision.sh all        # firebase -> rules -> railway, one pass
 #   ./scripts/provision.sh firebase   # RTDB + Firestore            (gate 01)
 #   ./scripts/provision.sh rules      # deploy the security rules   (gate 02)
 #   ./scripts/provision.sh railway    # generate a public domain    (gate 03)
 #   ./scripts/provision.sh check      # verify what is done so far
+#
+# 'all' is the three gates back to back with a 'check' between each, so a
+# partial run is visible before the next step builds on it. Every sub-step
+# still asks before doing anything; Ctrl-C between them is safe.
 #
 # NOT automated, because neither CLI can do it:
 #   - Enabling Email/Password auth. There is no CLI for it; the link is printed.
@@ -171,6 +176,20 @@ TXT
     manual "DUXO_WEB_APP_URL=https://<host> at https://github.com/waleed260/Duxo/settings/variables/actions"
 }
 
+provision_all() {
+    step "Full provisioning run — firebase, then rules, then railway"
+    warn "This is the three gates in order. Each still asks first. If you decline"
+    warn "one, later gates that depend on it will fail fast rather than run against"
+    warn "a half-built backend — that is intended."
+    provision_firebase
+    run_checks
+    deploy_rules
+    provision_railway
+    echo
+    bold "Provisioning run finished. Final state:"
+    run_checks
+}
+
 run_checks() {
     step "Checking what actually exists"
     # The probe is the source of truth, not this script's own output: it talks
@@ -184,6 +203,7 @@ run_checks() {
 }
 
 case "${1:-}" in
+    all)      provision_all ;;
     firebase) provision_firebase ;;
     rules)    deploy_rules ;;
     railway)  provision_railway ;;

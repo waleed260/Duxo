@@ -67,6 +67,7 @@ scriptable are commands rather than console navigation:
 
 ```bash
 ./scripts/provision.sh check      # what exists right now
+./scripts/provision.sh all        # the three below, in order, checks between
 ./scripts/provision.sh firebase   # Realtime Database + Firestore
 ./scripts/provision.sh rules      # deploy the security rules
 ./scripts/provision.sh railway    # generate the public domain
