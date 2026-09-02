@@ -44,7 +44,7 @@ jobs:
     name: Type-check, test and build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Node version comes from viewer/.nvmrc, not a literal here. Nixpacks
       # reads the same file when Railway builds, so CI and production run the
@@ -54,7 +54,7 @@ jobs:
       # @emnapi/core from lock file" — a sync error naming packages nobody
       # depends on directly, which reads as a corrupt lockfile rather than a
       # toolchain mismatch.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version-file: viewer/.nvmrc
           cache: npm
@@ -130,9 +130,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: check
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version-file: viewer/.nvmrc
           cache: npm
