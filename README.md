@@ -78,7 +78,9 @@ stay manual because no CLI exposes them, and the script prints the links:
 enabling Email/Password auth, and setting the GitHub secret and repository
 variables. The CLIs run through `npx`, so nothing is installed globally.
 
-The sections below are the same steps by hand, and the reasoning behind them.
+[`docs/DEPLOY.md`](docs/DEPLOY.md) is the same steps as one linear checklist
+with every command spelled out. The sections below are the reasoning behind
+them.
 
 ### Firebase project setup (§0.13 items 4–5)
 
@@ -378,6 +380,7 @@ VIEWER                     WebRTC P2P                    HOST AGENT
 
 ## Documentation
 
+- [DEPLOY.md](docs/DEPLOY.md) — linear runbook from code-complete to running product
 - [Architecture](docs/architecture.md) — technical deep-dive
 - [Data Schema](docs/data-schema.md) — RTDB + Firestore structure
 - [Protocol Versions](docs/protocol-versions.md) — compatibility matrix
