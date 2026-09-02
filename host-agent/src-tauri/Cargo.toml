@@ -70,7 +70,7 @@ rand = "0.8"
 chrono = "0.4"
 
 # §10.3b — error derivation
-thiserror = "1"
+thiserror = "2"
 
 # §1.5 — semver for version comparison in update check
 semver = "1"
@@ -79,7 +79,7 @@ semver = "1"
 tauri-plugin-updater = "2"
 
 # §1.6 — log directory resolution
-dirs = "5"
+dirs = "6"
 
 # §7.6 — separate .env.development / .env.production. Tauri does not load a
 # .env on its own, so without this the host agent starts with every Firebase
