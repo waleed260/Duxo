@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Download, Github, Menu, X, LayoutDashboard, Settings } from "lucide-react";
+import { Download, Menu, X, LayoutDashboard, Settings } from "lucide-react";
+import { GithubIcon } from "@/components/icons/GithubIcon";
 import { useUser } from "@clerk/nextjs";
 import { Button } from "./Button";
 import { cn } from "@/lib/utils";
@@ -73,7 +74,7 @@ export const Navbar = React.memo(function Navbar({ className }: { className?: st
             href="https://github.com/waleed260/Duxo"
             external
           >
-            <Github className="mr-1 inline h-3.5 w-3.5" aria-hidden="true" />
+            <GithubIcon className="mr-1 inline h-3.5 w-3.5" aria-hidden="true" />
             GitHub
           </NavLink>
           {user ? (
@@ -132,7 +133,7 @@ export const Navbar = React.memo(function Navbar({ className }: { className?: st
               external
               onClick={() => setMobileOpen(false)}
             >
-              <Github className="mr-1.5 inline h-3.5 w-3.5" aria-hidden="true" />
+              <GithubIcon className="mr-1.5 inline h-3.5 w-3.5" aria-hidden="true" />
               GitHub
             </MobileNavLink>
             <div className="mt-3">

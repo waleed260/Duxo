@@ -1,7 +1,6 @@
 import Link from "next/link";
 import {
   Download,
-  Github,
   Shield,
   MonitorSmartphone,
   Lock,
@@ -15,6 +14,7 @@ import {
   Zap,
   Quote,
 } from "lucide-react";
+import { GithubIcon } from "@/components/icons/GithubIcon";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/Button";
@@ -86,7 +86,7 @@ function Hero() {
               rel="noopener noreferrer"
               className="inline-flex w-fit items-center gap-2 rounded-pill border border-border-default bg-surface-raised px-4 py-2 text-xs text-text-secondary transition-colors duration-instant hover:border-border-strong hover:text-text-primary"
             >
-              <Github className="h-3.5 w-3.5" aria-hidden="true" />
+              <GithubIcon className="h-3.5 w-3.5" aria-hidden="true" />
               Open source on GitHub
               <ExternalLink className="h-3 w-3" aria-hidden="true" />
             </a>
@@ -373,7 +373,7 @@ function Features() {
    ════════════════════════════════════════════════ */
 function HowItWorks() {
   const stats = [
-    { icon: Github, value: 100, suffix: "%", label: "Open source" },
+    { icon: GithubIcon, value: 100, suffix: "%", label: "Open source" },
     { icon: Zap, value: 0, prefix: "$", suffix: "", label: "Cost to use" },
     { icon: EyeOff, value: 0, suffix: "", label: "Telemetry events" },
     { icon: Layers, value: 2, suffix: "", label: "Platforms" },
