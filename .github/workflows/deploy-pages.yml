@@ -46,7 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
 
       # The host agent requests these by absolute URL, so a rename or a typo
       # here is a silently broken update path — it fails as a warn-level log
@@ -101,7 +101,7 @@ jobs:
           </p>
           HTML
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: ./_site
 

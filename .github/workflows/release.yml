@@ -75,7 +75,7 @@ jobs:
             libfuse2
 
       - name: Cache Rust dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/bin/
@@ -182,7 +182,7 @@ jobs:
       # filesystem. The signature travels as an artifact.
       - name: Upload the signature for the manifest job
         if: steps.signing.outputs.enabled == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: signature-${{ matrix.target }}
           path: ${{ env.archive }}.sig
@@ -202,7 +202,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Collect the archive signatures
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: signature-*
           path: signatures
