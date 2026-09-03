@@ -1,6 +1,9 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/* Tailwind v4 reads the v3-style token config (theme.extend, content,
+ * darkMode, plugins) through this directive — the design-token source of
+ * truth in §9.2 stays in one typed file. */
+@config "../tailwind.config.ts";
 
 /*
  * Duxo — global styles.
