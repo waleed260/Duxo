@@ -20,7 +20,7 @@ name: Viewer
 
 on:
   push:
-    branches: [main, master, "feat/**", "fix/**"]
+    branches: [main, master, "feat/**", "fix/**", "chore/**", "deps/**"]
     paths:
       - "viewer/**"
       - ".github/workflows/viewer.yml"

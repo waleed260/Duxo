@@ -19,7 +19,7 @@ on:
     # before it is live, and it was only ever reachable on the default branch —
     # so it ran after the merge it was meant to gate. The deploy job stays
     # pinned to main by its own `if`.
-    branches: [main, master, "feat/**", "fix/**"]
+    branches: [main, master, "feat/**", "fix/**", "chore/**", "deps/**"]
     paths:
       - "firebase/**"
       - "firebase.json"
