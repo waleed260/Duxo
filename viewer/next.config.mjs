@@ -1,3 +1,8 @@
+import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
+
+const projectDir = dirname(fileURLToPath(import.meta.url));
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -8,6 +13,19 @@ const nextConfig = {
   },
   experimental: {
     optimizePackageImports: ["lucide-react"],
+  },
+
+  // Next 16 auto-writes AGENTS.md / CLAUDE.md into this dir on dev/build. The
+  // repo carries its own agent conventions under .claude/, so keep these from
+  // being generated rather than gitignoring regenerated churn.
+  agentRules: false,
+
+  // Turbopack otherwise walks up to find a workspace root and trips over a
+  // stray package-lock.json in ~/Downloads (a parent of this checkout),
+  // logging "ignored package-lock.json ... outside the current Git repository"
+  // on every start. Pin the root to the viewer package.
+  turbopack: {
+    root: projectDir,
   },
 
   /**
