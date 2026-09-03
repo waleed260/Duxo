@@ -26,7 +26,7 @@ const createCustomToken = vi.fn();
 const collectionAdd = vi.fn();
 const collection = vi.fn(() => ({ add: collectionAdd }));
 
-vi.mock("@clerk/nextjs/server", () => ({ auth: () => clerkAuth() }));
+vi.mock("@clerk/nextjs/server", () => ({ auth: () => Promise.resolve(clerkAuth()) }));
 vi.mock("firebase-admin/database", () => ({
   getDatabase: () => ({ ref: dbRef }),
 }));

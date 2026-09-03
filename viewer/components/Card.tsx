@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
  * carries its own states independently.
  */
 export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
-  as?: keyof JSX.IntrinsicElements;
+  as?: keyof React.JSX.IntrinsicElements;
 }
 
 export const Card = React.forwardRef<HTMLElement, CardProps>(

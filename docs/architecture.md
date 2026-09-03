@@ -23,7 +23,7 @@ Railway            + Oracle Coturn fallback                Linux: tar.gz
 - **Firestore** — durable records (session history, user profiles)
 - **Host agent** — native Tauri v2 app (Rust), a single portable binary
   shipped as a Windows .zip / Linux .tar.gz
-- **Viewer** — Next.js 14, server-rendered. *Not* a static export: the
+- **Viewer** — Next.js 16, server-rendered. *Not* a static export: the
   Clerk→Firebase token exchange and device pairing are API routes and need a
   server runtime.
 - **Video encoding is ours.** webrtc-rs is transport only and does no
@@ -48,7 +48,7 @@ Any state → (24h timeout) → EXPIRED
 
 | Layer | Choice |
 |---|---|
-| Viewer UI | Next.js 14 + Tailwind CSS + shadcn/ui |
+| Viewer UI | Next.js 16 + Tailwind CSS + shadcn/ui |
 | Host Agent | Tauri v2 + Rust |
 | Viewer auth | Clerk → Firebase custom token (`/api/firebase-token`) |
 | Host auth | Device pairing → Firebase refresh token in the OS keychain |

@@ -42,7 +42,7 @@ const LOCAL_ESCAPE_HATCH_KEYS = new Set([
 
 export interface RemoteInputOptions {
   /** The <video> showing the remote screen. */
-  videoRef: React.RefObject<HTMLVideoElement>;
+  videoRef: React.RefObject<HTMLVideoElement | null>;
   /** The connection to send on; null while connecting. */
   connRef: React.RefObject<DuxoConnection | null>;
   /**

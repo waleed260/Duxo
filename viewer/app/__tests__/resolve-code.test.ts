@@ -14,7 +14,7 @@ const clerkAuth = vi.fn();
 const dbGet = vi.fn();
 const dbRef = vi.fn(() => ({ get: dbGet }));
 
-vi.mock("@clerk/nextjs/server", () => ({ auth: () => clerkAuth() }));
+vi.mock("@clerk/nextjs/server", () => ({ auth: () => Promise.resolve(clerkAuth()) }));
 vi.mock("firebase-admin/database", () => ({
   getDatabase: () => ({ ref: dbRef }),
 }));

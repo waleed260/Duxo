@@ -12,7 +12,7 @@ const clerkCurrentUser = vi.fn();
 const createCustomToken = vi.fn();
 
 vi.mock("@clerk/nextjs/server", () => ({
-  auth: () => clerkAuth(),
+  auth: () => Promise.resolve(clerkAuth()),
   currentUser: () => clerkCurrentUser(),
 }));
 vi.mock("firebase-admin/auth", () => ({

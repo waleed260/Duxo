@@ -20,10 +20,10 @@ const isProtectedRoute = createRouteMatcher([
   "/link-device(.*)",
 ]);
 
-export default clerkMiddleware((auth, req) => {
+export default clerkMiddleware(async (auth, req) => {
   if (!isProtectedRoute(req)) return;
 
-  if (!auth().userId) {
+  if (!(await auth()).userId) {
     const signIn = new URL("/login", req.url);
     signIn.searchParams.set("redirect_url", req.nextUrl.pathname + req.nextUrl.search);
     return NextResponse.redirect(signIn);
