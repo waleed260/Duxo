@@ -26,12 +26,17 @@ on:
       - "viewer/firestore.indexes.json"
       - "viewer/rules-tests/**"
       - "viewer/vitest.rules.config.ts"
+      - "viewer/package.json"
+      - "viewer/package-lock.json"
       - ".github/workflows/deploy-rules.yml"
   pull_request:
     paths:
       - "firebase/**"
       - "firebase.json"
       - "viewer/rules-tests/**"
+      - "viewer/vitest.rules.config.ts"
+      - "viewer/package.json"
+      - "viewer/package-lock.json"
   workflow_dispatch:
 
 permissions:
