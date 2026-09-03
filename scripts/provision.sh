@@ -163,14 +163,15 @@ TXT
 
     echo
     bold "That hostname is the origin everything else needs."
-    echo "Set all three in one command. Setting a variable triggers a redeploy,"
+    echo "Set them in one command. Setting a variable triggers a redeploy,"
     echo "which is required rather than incidental: the NEXT_PUBLIC_* values are"
     echo "inlined at build time, so a restart would not pick them up."
     echo
-    echo "  railway variables set \\"
-    echo "    NEXT_PUBLIC_SITE_URL=https://<host> \\"
-    echo "    NEXT_PUBLIC_METERED_TURN_USERNAME=<user> \\"
-    echo "    NEXT_PUBLIC_METERED_TURN_CREDENTIAL=<pass>"
+    echo "  railway variables \\"
+    echo "    --set NEXT_PUBLIC_SITE_URL=https://<host> \\"
+    echo "    --set NEXT_PUBLIC_METERED_TURN_URLS=<urls> \\"
+    echo "    --set NEXT_PUBLIC_METERED_TURN_USERNAME=<user> \\"
+    echo "    --set NEXT_PUBLIC_METERED_TURN_CREDENTIAL=<pass>"
     echo
     manual "TURN credentials (free, no card): https://www.metered.ca/tools/openrelay/"
     manual "DUXO_WEB_APP_URL=https://<host> at https://github.com/waleed260/Duxo/settings/variables/actions"
