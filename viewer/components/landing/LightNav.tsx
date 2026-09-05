@@ -78,7 +78,9 @@ export function LightNav({ alwaysSolid = false }: { alwaysSolid?: boolean }) {
           </Link>
           <Link
             href="/download"
-            className={`touch-manipulation inline-flex items-center gap-1.5 rounded px-5 py-2.5 text-xs font-medium uppercase tracking-[0.1em] transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${
+            /* border-transparent matches the outlined Log in button's box
+               height — without it the filled button sits 2px shorter. */
+            className={`touch-manipulation inline-flex items-center gap-1.5 rounded border border-transparent px-5 py-2.5 text-xs font-medium uppercase tracking-[0.1em] transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${
               scrolled
                 ? "bg-black text-white hover:bg-[#2a2a28] focus-visible:outline-black"
                 : "bg-white text-black hover:bg-white/90 focus-visible:outline-white"

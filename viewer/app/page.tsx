@@ -66,14 +66,20 @@ export default function LandingPage() {
 /* ─────────────────────────────────────────────
    Shared style atoms
    ───────────────────────────────────────────── */
-const ghostBtnDark =
-  "touch-manipulation inline-flex items-center gap-1.5 rounded border border-black px-6 py-3.5 text-xs font-medium uppercase tracking-[0.1em] text-black transition-colors duration-150 hover:bg-black hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2";
+/**
+ * Buttons all carry a 1px border — transparent on the filled variants — so a
+ * filled and an outlined button sitting side by side resolve to the same box
+ * height. Without it the outlined one is 2px taller and the pair reads as
+ * misaligned.
+ */
+const btnBase =
+  "touch-manipulation inline-flex items-center gap-1.5 rounded border px-6 py-3.5 text-xs font-medium uppercase tracking-[0.1em] transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2";
 
-const filledBtnLight =
-  "touch-manipulation inline-flex items-center gap-1.5 rounded bg-white px-6 py-3.5 text-xs font-medium uppercase tracking-[0.1em] text-black transition-colors duration-150 hover:bg-white/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2";
+const ghostBtnDark = `${btnBase} border-black text-black hover:bg-black hover:text-white focus-visible:outline-black`;
 
-const filledBtnDark =
-  "touch-manipulation inline-flex items-center gap-1.5 rounded bg-black px-6 py-3.5 text-xs font-medium uppercase tracking-[0.1em] text-white transition-colors duration-150 hover:bg-[#2a2a28] focus-visible:outline focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2";
+const filledBtnLight = `${btnBase} border-transparent bg-white text-black hover:bg-white/90 focus-visible:outline-white`;
+
+const filledBtnDark = `${btnBase} border-transparent bg-black text-white hover:bg-[#2a2a28] focus-visible:outline-black`;
 
 /** Display heading — weight 400, closed-up tracking. §see file header. */
 const displayH2 =
@@ -312,7 +318,7 @@ function WhyDuxo() {
         </ScrollReveal>
 
         <ScrollReveal delay={150}>
-          <div className="flex flex-col gap-5 md:pt-2">
+          <div className="flex max-w-[58ch] flex-col gap-5 md:pt-2">
             <p className={`text-[#575551] ${bodyLead}`}>
               Most remote desktop tools quietly route your session through a
               server they control, log connection metadata, and charge a
@@ -794,7 +800,10 @@ function FAQ() {
                 <h3 className="text-[19px] font-normal leading-[1.25] tracking-[-0.025em] text-black sm:w-[38%]">
                   {item.q}
                 </h3>
-                <p className="text-[15px] leading-[1.55] tracking-[-0.01em] text-[#575551] sm:w-[62%]">
+                {/* Capped at ~62ch: the 62% column runs to ~97 characters per
+                    line at the 1280px container, well past a comfortable
+                    measure, and the answers are the longest prose on the page. */}
+                <p className="max-w-[62ch] text-[16px] leading-[1.6] tracking-[-0.01em] text-[#575551] sm:w-[62%]">
                   {item.a}
                 </p>
               </div>
