@@ -7,17 +7,17 @@ test.describe("Landing page (§11)", () => {
 
   test("renders hero section with title and CTA", async ({ page }) => {
     await expect(page.locator("h1")).toBeVisible();
-    await expect(page.getByText("Download host agent")).toBeVisible();
+    await expect(page.getByRole("link", { name: /download duxo/i })).toBeVisible();
   });
 
   test("navigation links work", async ({ page }) => {
     await expect(page.getByRole("link", { name: /features/i }).first()).toBeVisible();
     await expect(page.getByRole("link", { name: /how it works/i }).first()).toBeVisible();
-    await expect(page.getByRole("link", { name: /github/i }).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: /view source/i }).first()).toBeVisible();
   });
 
   test("navigates to login page", async ({ page }) => {
-    await page.getByRole("link", { name: /sign in to connect/i }).click();
+    await page.getByRole("link", { name: /log in/i }).first().click();
     // The first visit to /login compiles it, Clerk included. Firefox pays it
     // in full — around ten seconds against the dev server.
     await expect(page).toHaveURL(/\/login/, { timeout: 30_000 });

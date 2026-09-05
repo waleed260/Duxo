@@ -3,17 +3,12 @@
 import * as React from "react";
 import Link from "next/link";
 import { Download, Menu, X, LayoutDashboard, Settings } from "lucide-react";
-import { GithubIcon } from "@/components/icons/GithubIcon";
 import { useUser } from "@clerk/nextjs";
 import { Button } from "./Button";
 import { cn } from "@/lib/utils";
 
 /**
  * Duxo Navbar — §3.4 + §9.3 wireframe.
- *
- * "View source on GitHub" link near the TOP, not buried in a footer — trust
- * signal placement matters as much as the pitch for a remote-control product
- * built on Rs. 0 (§3.1).
  *
  * Mobile: hamburger menu for narrow viewports (§9.3b #11).
  */
@@ -70,13 +65,6 @@ export const Navbar = React.memo(function Navbar({ className }: { className?: st
               <NavLink href="/#demo">How it works</NavLink>
             </>
           )}
-          <NavLink
-            href="https://github.com/waleed260/Duxo"
-            external
-          >
-            <GithubIcon className="mr-1 inline h-3.5 w-3.5" aria-hidden="true" />
-            GitHub
-          </NavLink>
           {user ? (
             <Button asChild size="md">
               <Link href="/dashboard">Dashboard</Link>
@@ -128,14 +116,6 @@ export const Navbar = React.memo(function Navbar({ className }: { className?: st
                 </MobileNavLink>
               </>
             )}
-            <MobileNavLink
-              href="https://github.com/waleed260/Duxo"
-              external
-              onClick={() => setMobileOpen(false)}
-            >
-              <GithubIcon className="mr-1.5 inline h-3.5 w-3.5" aria-hidden="true" />
-              GitHub
-            </MobileNavLink>
             <div className="mt-3">
               {user ? (
                 <Button asChild className="w-full">

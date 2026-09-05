@@ -1,364 +1,325 @@
 import Link from "next/link";
 import {
-  Download,
   Shield,
   MonitorSmartphone,
   Lock,
   Fingerprint,
-  EyeOff,
+  Check,
+  X,
   Layers,
-  Terminal,
-  ExternalLink,
   Server,
-  Globe,
-  Zap,
-  Quote,
+  ChevronRight,
 } from "lucide-react";
 import { GithubIcon } from "@/components/icons/GithubIcon";
-import { Navbar } from "@/components/Navbar";
-import { Footer } from "@/components/Footer";
-import { Button } from "@/components/Button";
-import { AnimatedCounter } from "@/components/AnimatedCounter";
 import { ScrollReveal } from "@/components/ScrollReveal";
+import { MobileNav } from "@/components/landing/MobileNav";
 
+/**
+ * Duxo marketing homepage.
+ *
+ * Visual language is intentionally isolated from the shared app chrome
+ * (Navbar/Footer stay dark for the authenticated product). This page is a
+ * self-contained monochrome-editorial surface — obsidian / paper-white /
+ * graphite / warm-stone, with a single small chromatic accent (ember) used
+ * only inside illustrations, never on text or CTAs.
+ *
+ * Anchor ids (#features, #demo, #security) are kept stable because the
+ * shared Navbar/Footer (used on /download, /login, etc.) still deep-link
+ * to them.
+ */
 export default function LandingPage() {
   return (
-    <>
-      <Navbar />
+    <div className="min-h-screen bg-white text-[#121211] antialiased" style={{ colorScheme: "light" }}>
+      <LightNav />
       <main>
         <Hero />
-        <Manifesto />
+        <StatsGrid />
+        <WhyDuxo />
         <Features />
         <HowItWorks />
-        <FinalSection />
+        <Trust />
+        <FinalCTA />
       </main>
-      <Footer />
-    </>
+      <LightFooter />
+    </div>
   );
 }
 
-/* ─── Tag chip ─── */
-function Tag({ children, icon }: { children: React.ReactNode; icon?: React.ReactNode }) {
+/* ─────────────────────────────────────────────
+   Shared style atoms
+   ───────────────────────────────────────────── */
+const ghostBtnDark =
+  "inline-flex items-center gap-1.5 rounded border border-black px-5 py-3 text-xs font-medium uppercase tracking-[0.1em] text-black transition-colors duration-150 hover:bg-black hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2";
+
+const ghostBtnLight =
+  "inline-flex items-center gap-1.5 rounded border border-white px-5 py-3 text-xs font-medium uppercase tracking-[0.1em] text-white transition-colors duration-150 hover:bg-white hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2";
+
+const filledBtnDark =
+  "inline-flex items-center gap-1.5 rounded bg-black px-5 py-3 text-xs font-medium uppercase tracking-[0.1em] text-white transition-colors duration-150 hover:bg-[#2a2a28] focus-visible:outline focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2";
+
+function Eyebrow({ light = false, children }: { light?: boolean; children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-pill border border-border-default bg-surface-overlay/60 px-3 py-1 text-xs text-text-secondary">
-      {icon}
+    <span
+      className={`text-[10px] font-medium uppercase tracking-[0.1em] ${
+        light ? "text-white/80" : "text-[#575551]"
+      }`}
+    >
       {children}
     </span>
   );
 }
 
 /* ════════════════════════════════════════════════
-   HERO — asymmetric editorial layout
-   Left: bold headline, copy, CTAs, GitHub link
-   Right: code-window visual element
+   NAV — full-width white bar, hairline bottom border.
+   ════════════════════════════════════════════════ */
+function LightNav() {
+  const links = [
+    { href: "/#features", label: "Features" },
+    { href: "/#demo", label: "How it works" },
+    { href: "/#security", label: "Security" },
+  ];
+
+  return (
+    <header className="sticky top-0 z-20 border-b border-black bg-white">
+      <nav className="mx-auto flex h-16 w-full max-w-[1280px] items-center justify-between px-6 sm:h-[72px]">
+        <Link href="/" className="text-lg font-medium tracking-[-0.03em] text-black" aria-label="Duxo home">
+          Duxo
+        </Link>
+
+        <div className="hidden items-center gap-8 md:flex">
+          {links.map((l) => (
+            <Link
+              key={l.label}
+              href={l.href}
+              className="text-sm tracking-[-0.02em] text-[#121211] transition-colors duration-150 hover:text-[#575551]"
+            >
+              {l.label}
+            </Link>
+          ))}
+        </div>
+
+        <div className="hidden items-center gap-3 md:flex">
+          <Link href="/login" className={filledBtnDark}>
+            Log in
+          </Link>
+          <Link href="/download" className={ghostBtnDark}>
+            Download
+            <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+          </Link>
+        </div>
+
+        <MobileNav links={links} />
+      </nav>
+    </header>
+  );
+}
+
+/* ════════════════════════════════════════════════
+   HERO — cinematic dark band, CSS-only (no external
+   photography), fading to white below.
    ════════════════════════════════════════════════ */
 function Hero() {
   return (
-    <section className="relative overflow-hidden border-b border-border-default">
-      {/* CSS dot-grid texture */}
-      <div className="pointer-events-none absolute inset-0 z-0 opacity-[0.025]">
-        <div
-          className="h-full w-full"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle at 1px 1px, #ffffff 1px, transparent 0)",
-            backgroundSize: "28px 28px",
-          }}
-        />
-      </div>
-
-      {/* Decorative accent blob — top right */}
+    <section className="relative overflow-hidden bg-black">
       <div
-        className="pointer-events-none absolute -right-40 -top-40 z-0 h-[500px] w-[500px] rounded-full opacity-[0.06]"
+        className="pointer-events-none absolute inset-0"
         style={{
           background:
-            "radial-gradient(circle, #ef443b 0%, transparent 70%)",
+            "radial-gradient(120% 90% at 15% 15%, rgba(232,85,43,0.16) 0%, transparent 55%)," +
+            "radial-gradient(90% 70% at 85% 10%, rgba(149,141,126,0.18) 0%, transparent 60%)," +
+            "linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.75) 55%, #000000 100%)",
         }}
+        aria-hidden="true"
+      />
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.05]"
+        style={{
+          backgroundImage: "radial-gradient(circle at 1px 1px, #ffffff 1px, transparent 0)",
+          backgroundSize: "24px 24px",
+        }}
+        aria-hidden="true"
       />
 
-      <div className="relative z-10 mx-auto grid max-w-6xl grid-cols-1 gap-8 px-6 pt-16 pb-12 md:grid-cols-5 md:pt-20 md:pb-16">
-        {/* Left column: headline + CTAs (3/5) */}
-        <div className="flex flex-col gap-6 md:col-span-3">
-          <ScrollReveal>
+      <div className="relative mx-auto flex max-w-[1280px] flex-col gap-6 px-6 py-24 sm:py-32 md:w-[55%] md:py-40">
+        <ScrollReveal>
+          <Eyebrow light>Open source remote access</Eyebrow>
+        </ScrollReveal>
+
+        <ScrollReveal delay={100}>
+          <h1 className="text-[40px] font-medium leading-[1.1] tracking-[-0.035em] text-white sm:text-[52px] sm:tracking-[-0.04em] md:text-[60px] md:tracking-[-0.045em]">
+            Remote access, without the trust exercise.
+          </h1>
+        </ScrollReveal>
+
+        <ScrollReveal delay={200}>
+          <p className="max-w-md text-lg leading-[1.4] tracking-[-0.01em] text-white/80">
+            Duxo connects two machines directly over an encrypted
+            peer-to-peer channel — no servers in the middle, no account
+            required to receive a session, no cost.
+          </p>
+        </ScrollReveal>
+
+        <ScrollReveal delay={300}>
+          <div className="flex flex-wrap items-center gap-4 pt-2">
+            <Link href="/download" className={ghostBtnLight}>
+              Download Duxo
+              <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+            </Link>
             <a
               href="https://github.com/waleed260/Duxo"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex w-fit items-center gap-2 rounded-pill border border-border-default bg-surface-raised px-4 py-2 text-xs text-text-secondary transition-colors duration-instant hover:border-border-strong hover:text-text-primary"
+              className="inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.1em] text-white/70 transition-colors duration-150 hover:text-white"
             >
               <GithubIcon className="h-3.5 w-3.5" aria-hidden="true" />
-              Open source on GitHub
-              <ExternalLink className="h-3 w-3" aria-hidden="true" />
+              View source
             </a>
-          </ScrollReveal>
-
-          <ScrollReveal delay={100}>
-            <h1 className="text-3xl font-emphasis leading-tight tracking-tight text-text-primary sm:text-4xl md:text-5xl lg:text-6xl">
-              Remote access{" "}
-              <span className="block text-accent">you can trust.</span>
-            </h1>
-          </ScrollReveal>
-
-          <ScrollReveal delay={200}>
-            <p className="max-w-lg text-md leading-relaxed text-text-secondary">
-              End-to-end encrypted remote desktop for Windows and Linux.
-              Open source, zero telemetry, no account required to connect.
-            </p>
-          </ScrollReveal>
-
-          <ScrollReveal delay={300}>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button asChild size="lg" leadingIcon={<Download className="h-5 w-5" />}>
-                <Link href="/download">Download host agent</Link>
-              </Button>
-              <Button asChild variant="secondary" size="lg">
-                <Link href="/login">Sign in to connect</Link>
-              </Button>
-            </div>
-          </ScrollReveal>
-
-          <ScrollReveal delay={400}>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-text-secondary">
-              <Tag icon={<Lock className="h-3 w-3" aria-hidden="true" />}>
-                E2E encrypted over WebRTC
-              </Tag>
-              <Tag icon={<Fingerprint className="h-3 w-3" aria-hidden="true" />}>
-                Permission gate
-              </Tag>
-              <Tag icon={<Zap className="h-3 w-3" aria-hidden="true" />}>
-                Zero cost
-              </Tag>
-            </div>
-          </ScrollReveal>
-        </div>
-
-        {/* Right column: code-window visual (2/5) */}
-        <div className="relative md:col-span-2 md:-mr-6 md:mt-4">
-          <ScrollReveal delay={200} variant="scale">
-            <div className="rounded-sm border border-border-default bg-surface-overlay/60 backdrop-blur-sm shadow-2xl shadow-accent/5">
-              {/* Terminal header */}
-              <div className="flex items-center justify-between border-b border-border-default px-4 py-2.5">
-                <div className="flex items-center gap-2 text-xs text-text-secondary">
-                  <Terminal className="h-3 w-3 text-accent" aria-hidden="true" />
-                  <span className="font-mono">duxo session</span>
-                </div>
-                <div className="flex gap-1.5" aria-hidden="true">
-                  <span className="h-2 w-2 rounded-pill bg-accent/80" />
-                  <span className="h-2 w-2 rounded-pill bg-text-secondary/30" />
-                  <span className="h-2 w-2 rounded-pill bg-text-secondary/30" />
-                </div>
-              </div>
-
-              {/* Code content */}
-              <div className="p-5 font-mono text-xs leading-relaxed sm:p-6">
-                <div className="text-text-secondary">
-                  <span className="text-accent">$</span>{" "}
-                  <span className="text-text-primary">./duxo-host</span>
-                </div>
-                <div className="mt-1.5 text-text-secondary">
-                  <span className="text-success">OK</span> Session created
-                </div>
-                <div className="mt-1.5 flex items-center gap-3">
-                  <span className="text-text-secondary">Code:</span>
-                  {/* §0.6 — codes are eight digits, grouped XXXX XXXX. The
-                      mock used to show letters, which sets the wrong
-                      expectation for what the host will read out. */}
-                  <span className="text-2xl font-emphasis tracking-[0.15em] text-accent">
-                    4207 9835
-                  </span>
-                </div>
-                <div className="mt-1.5 flex items-center gap-2 text-text-secondary">
-                  <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-pill bg-accent" />
-                  Waiting for connection…
-                </div>
-
-                <div className="my-4 border-t border-border-default" />
-
-                <div className="text-text-secondary">
-                  <span className="text-text-primary">viewer@remote</span> connected
-                </div>
-                <div className="text-text-secondary">
-                  <span className="text-accent">$</span>{" "}
-                  <span className="text-text-primary">Full control</span>{" "}
-                  <span className="text-success">[active]</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Decorative accent dot behind the window */}
-            <div
-              className="pointer-events-none absolute -bottom-3 -right-3 -z-10 h-24 w-24 rounded-full opacity-[0.08]"
-              style={{
-                background:
-                  "radial-gradient(circle, #ef443b 0%, transparent 70%)",
-              }}
-            />
-          </ScrollReveal>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ════════════════════════════════════════════════
-   MANIFESTO — editorial two-column statement
-   Why remote access should be open
-   ════════════════════════════════════════════════ */
-function Manifesto() {
-  return (
-    <section className="border-b border-border-default bg-surface-raised/50">
-      <div className="mx-auto max-w-6xl px-6 py-16 sm:py-20">
-        <ScrollReveal>
-          <div className="mb-8 flex items-center gap-3 text-xs uppercase tracking-[0.15em] text-text-secondary">
-            <Quote className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
-            <span>Philosophy</span>
           </div>
         </ScrollReveal>
-
-        <ScrollReveal delay={100}>
-          <blockquote className="max-w-3xl text-2xl font-emphasis leading-snug text-text-primary sm:text-3xl md:text-4xl">
-            Remote access shouldn&apos;t require{" "}
-            <span className="text-accent">trusting a corporation</span>
-            {" "}with your screen.
-          </blockquote>
-        </ScrollReveal>
-
-        <div className="mt-8 grid gap-8 md:grid-cols-2 md:gap-12">
-          <ScrollReveal delay={200}>
-            <div className="flex flex-col gap-4">
-              <p className="text-md leading-relaxed text-text-secondary">
-                Every major remote desktop tool routes your session through
-                servers you don&apos;t control. They log connection metadata,
-                inject telemetry, and charge recurring fees for basic features.
-              </p>
-              <p className="text-md leading-relaxed text-text-secondary">
-                Duxo was built differently. Your screen data never touches our
-                infrastructure — WebRTC connects peers directly, end-to-end
-                encrypted by default. The only thing we see is a session ID
-                and an 8-digit code.
-              </p>
-            </div>
-          </ScrollReveal>
-
-          <ScrollReveal delay={300}>
-            <div className="flex flex-col gap-4">
-              <p className="text-md leading-relaxed text-text-secondary">
-                No telemetry. No account required to connect. No VC-funded
-                roadmap that deprioritizes self-hosting. Open source (MIT)
-                means the code you run is the code you can audit.
-              </p>
-              <p className="text-md leading-relaxed text-text-secondary">
-                This isn&apos;t a charity — it&apos;s a statement that secure
-                remote access is infrastructure, not a product to be metered.
-              </p>
-            </div>
-          </ScrollReveal>
-        </div>
       </div>
     </section>
   );
 }
 
 /* ════════════════════════════════════════════════
-   FEATURES — asymmetric grid with scroll reveals
-   Wraps the entire grid section for reveal, not individual cards
-   to avoid breaking the grid layout.
+   STATS GRID — hairline-bordered table, standing in
+   for a customer-logo grid Duxo doesn't have.
+   ════════════════════════════════════════════════ */
+function StatsGrid() {
+  const stats = [
+    { value: "100%", label: "Open source" },
+    { value: "$0", label: "Cost to use" },
+    { value: "0", label: "Telemetry events" },
+    { value: "2", label: "Platforms supported" },
+  ];
+
+  return (
+    <section className="border-b border-black bg-white">
+      <div className="mx-auto grid max-w-[1280px] grid-cols-2 border-l border-black sm:grid-cols-4">
+        {stats.map((s) => (
+          <div
+            key={s.label}
+            className="flex min-h-[140px] flex-col items-center justify-center gap-1 border-b border-r border-black px-4 py-8 text-center sm:border-b-0"
+          >
+            <span className="text-3xl font-medium tracking-[-0.03em] text-black">{s.value}</span>
+            <span className="text-xs tracking-[-0.01em] text-[#575551]">{s.label}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* ════════════════════════════════════════════════
+   WHY DUXO — section heading pair.
+   ════════════════════════════════════════════════ */
+function WhyDuxo() {
+  return (
+    <section className="border-b border-black bg-white">
+      <div className="mx-auto grid max-w-[1280px] gap-8 px-6 py-16 sm:py-20 md:grid-cols-2 md:gap-16 md:py-24">
+        <ScrollReveal>
+          <Eyebrow>Why Duxo exists</Eyebrow>
+          <h2 className="mt-4 text-[32px] font-medium leading-[1.15] tracking-[-0.03em] text-black sm:text-[42px] sm:tracking-[-0.035em]">
+            Remote access shouldn&apos;t require trusting a corporation with
+            your screen.
+          </h2>
+        </ScrollReveal>
+
+        <ScrollReveal delay={150}>
+          <div className="flex flex-col gap-4 pt-1">
+            <p className="text-lg leading-[1.4] tracking-[-0.01em] text-[#575551]">
+              Most remote desktop tools quietly route your session through a
+              server they control, log connection metadata, and charge a
+              subscription for basic features. Duxo connects two machines
+              directly — the only things that ever reach our infrastructure
+              are a session ID and an 8-digit code.
+            </p>
+            <p className="text-lg leading-[1.4] tracking-[-0.01em] text-[#575551]">
+              No telemetry, no account required to receive a connection, and
+              a full MIT-licensed source tree anyone can read and audit.
+            </p>
+          </div>
+        </ScrollReveal>
+      </div>
+    </section>
+  );
+}
+
+/* ════════════════════════════════════════════════
+   FEATURES — 3-column cards with a small mockup
+   illustration, tinted panel, no shadow.
    ════════════════════════════════════════════════ */
 const features = [
   {
     icon: Lock,
     title: "End-to-end encrypted",
-    body: "DTLS-SRTP over WebRTC. Even TURN relays can't decrypt your traffic. Your session, your data.",
-    tags: ["WebRTC", "DTLS-SRTP", "Privacy"],
-    gradient: "from-accent/10 to-transparent",
+    body: "DTLS-SRTP over WebRTC secures every session. Even the relay that helps two machines find each other can't decrypt your traffic.",
+  },
+  {
+    icon: Fingerprint,
+    title: "Explicit consent",
+    body: "Every connection needs an Allow click on the host machine. No silent takeovers, no backdoor for anyone.",
   },
   {
     icon: MonitorSmartphone,
     title: "Cross-platform",
-    body: "Full control on Windows and Linux X11. Wayland ships view-only, honestly scoped. One binary, any machine.",
-    tags: ["Windows", "Linux", "X11"],
-    gradient: "from-accent/8 to-transparent",
-  },
-  {
-    icon: Fingerprint,
-    title: "Permission gate",
-    body: "Every connection requires an explicit Allow click from the host. No silent takeovers, no backdoors.",
-    tags: ["Security", "Access control"],
-    gradient: "from-accent/10 to-transparent",
+    body: "Full mouse and keyboard control on Windows and Linux (X11), shipped as one portable binary with no installer.",
   },
   {
     icon: Shield,
     title: "Zero-budget security",
-    body: "JWT verification client-side, OS keychain storage, rate-limited codes, SHA-256 audit chain. No paid services needed.",
-    tags: ["JWT", "Keychain", "Audit"],
-    gradient: "from-accent/8 to-transparent",
+    body: "Client-side token verification, OS keychain storage, rate-limited codes, and a SHA-256 audit chain.",
   },
   {
     icon: Server,
     title: "Self-healing connection",
-    body: "ICE restart with exponential backoff reconnects after transient drops — no new 8-digit code needed mid-session.",
-    tags: ["ICE restart", "Resilient"],
-    gradient: "from-accent/10 to-transparent",
+    body: "A dropped network reconnects automatically via ICE restart — no new code, no re-approval needed.",
   },
   {
     icon: Layers,
-    title: "Two platforms, one binary",
-    body: "Windows DXGI and Linux X11 capture paths in a single portable binary. No installers, no admin needed.",
-    tags: ["Portable", "No installer"],
-    gradient: "from-accent/8 to-transparent",
+    title: "One binary, no installer",
+    body: "Windows and Linux capture paths ship together. Nothing to install, no admin rights required.",
   },
 ];
 
+function MockupPanel({ Icon }: { Icon: React.ComponentType<{ className?: string }> }) {
+  return (
+    <div className="flex h-32 flex-col justify-between rounded bg-[#f0eeea] p-4">
+      <div className="flex items-center justify-between">
+        <div className="flex h-8 w-8 items-center justify-center rounded bg-white">
+          <Icon className="h-4 w-4 text-black" aria-hidden="true" />
+        </div>
+        <span className="rounded-full bg-[#e8552b] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-white">
+          Active
+        </span>
+      </div>
+      <div className="h-px w-full bg-black/10" />
+      <div className="flex gap-1.5">
+        <span className="h-2 w-10 rounded-full bg-black/10" />
+        <span className="h-2 w-6 rounded-full bg-black/10" />
+      </div>
+    </div>
+  );
+}
+
 function Features() {
   return (
-    <section id="features" className="border-b border-border-default scroll-mt-20">
-      <div className="mx-auto max-w-6xl px-6 py-16 sm:py-20">
+    <section id="features" className="scroll-mt-16 border-b border-black bg-white">
+      <div className="mx-auto max-w-[1280px] px-6 py-16 sm:py-20 md:py-24">
         <ScrollReveal>
-          <div className="mb-4 flex items-center gap-3 text-xs uppercase tracking-[0.15em] text-text-secondary">
-            <Zap className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
-            <span>Capabilities</span>
-          </div>
-        </ScrollReveal>
-
-        <ScrollReveal delay={100}>
-          <h2 className="max-w-2xl text-2xl font-emphasis sm:text-3xl md:text-4xl">
-            Built for the{" "}
-            <span className="text-accent">edge case you didn&apos;t think of.</span>
+          <Eyebrow>Capabilities</Eyebrow>
+          <h2 className="mt-4 max-w-2xl text-[32px] font-medium leading-[1.15] tracking-[-0.03em] text-black sm:text-[42px]">
+            Everything a remote session needs.
           </h2>
         </ScrollReveal>
 
-        <ScrollReveal delay={200}>
-          <div className="mt-10 grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {features.map((f, i) => (
-              <div
-                key={f.title}
-                className={`group relative overflow-hidden rounded-sm border border-border-default bg-surface-raised p-6 transition-all duration-300 hover:border-border-strong ${
-                  /* Asymmetric overlap offsets — staggered vertical rhythm */
-                  i % 3 === 0 ? "md:-mt-4 md:mb-4" : ""
-                } ${i % 3 === 2 ? "md:mt-4 md:-mb-4" : ""}`}
-              >
-                {/* Hover gradient */}
-                <div
-                  className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${f.gradient} opacity-0 transition-opacity duration-500 group-hover:opacity-100`}
-                />
-
-                {/* Decorative corner */}
-                <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full border border-accent/5" />
-
-                <div className="relative z-10 flex flex-col gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-sm bg-accent/10 text-accent">
-                    <f.icon className="h-4 w-4" />
-                  </div>
-                  <h3 className="text-lg font-emphasis">{f.title}</h3>
-                  <p className="text-sm leading-relaxed text-text-secondary">
-                    {f.body}
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {f.tags.map((t) => (
-                      <Tag key={t}>{t}</Tag>
-                    ))}
-                  </div>
-                </div>
+        <ScrollReveal delay={150}>
+          <div className="mt-12 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {features.map((f) => (
+              <div key={f.title} className="flex flex-col gap-4 rounded-lg bg-[#f5f5f3] p-6">
+                <MockupPanel Icon={f.icon} />
+                <h3 className="text-lg font-medium tracking-[-0.01em] text-black">{f.title}</h3>
+                <p className="text-sm leading-[1.43] tracking-[-0.01em] text-[#575551]">{f.body}</p>
               </div>
             ))}
           </div>
@@ -369,121 +330,81 @@ function Features() {
 }
 
 /* ════════════════════════════════════════════════
-   HOW IT WORKS — architectural flow + stats
+   HOW IT WORKS — architecture panel + three steps.
    ════════════════════════════════════════════════ */
 function HowItWorks() {
-  const stats = [
-    { icon: GithubIcon, value: 100, suffix: "%", label: "Open source" },
-    { icon: Zap, value: 0, prefix: "$", suffix: "", label: "Cost to use" },
-    { icon: EyeOff, value: 0, suffix: "", label: "Telemetry events" },
-    { icon: Layers, value: 2, suffix: "", label: "Platforms" },
-  ];
-
   return (
-    <section id="demo" className="border-b border-border-default scroll-mt-20">
-      {/* Stats bar */}
-      <div className="border-b border-border-default bg-surface-raised">
-        <div className="mx-auto grid max-w-6xl grid-cols-2 gap-4 px-6 py-10 sm:grid-cols-4">
-          {stats.map((s) => (
-            <div key={s.label} className="flex flex-col items-center gap-1.5 text-center">
-              <s.icon className="h-4 w-4 text-accent" aria-hidden="true" />
-              <span className="text-2xl font-emphasis text-accent tabular-nums">
-                {s.prefix || ""}<AnimatedCounter value={s.value} />{s.suffix}
-              </span>
-              <span className="text-xs text-text-secondary">{s.label}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Architectural flow diagram */}
-      <div className="mx-auto max-w-6xl px-6 py-16 sm:py-20">
+    <section id="demo" className="scroll-mt-16 border-b border-black bg-white">
+      <div className="mx-auto max-w-[1280px] px-6 py-16 sm:py-20 md:py-24">
         <ScrollReveal>
-          <div className="mb-4 flex items-center gap-3 text-xs uppercase tracking-[0.15em] text-text-secondary">
-            <Globe className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
-            <span>Architecture</span>
-          </div>
-        </ScrollReveal>
-
-        <ScrollReveal delay={100}>
-          <h2 className="max-w-2xl text-2xl font-emphasis sm:text-3xl md:text-4xl">
-            Peer-to-peer by default,{" "}
-            <span className="text-accent">relay when needed.</span>
+          <Eyebrow>How it works</Eyebrow>
+          <h2 className="mt-4 max-w-2xl text-[32px] font-medium leading-[1.15] tracking-[-0.03em] text-black sm:text-[42px]">
+            Peer-to-peer by default, relay only when needed.
           </h2>
         </ScrollReveal>
 
-        <ScrollReveal delay={200}>
-          <div className="mt-10 rounded-sm border border-border-default bg-surface-raised p-6 sm:p-8">
-            <div className="flex flex-col items-center gap-5 sm:flex-row sm:gap-6">
-              {/* Viewer */}
-              <div className="flex w-full flex-col items-center gap-2 sm:w-auto">
-                <div className="flex h-16 w-16 items-center justify-center rounded-sm border border-accent/30 bg-surface-overlay">
-                  <MonitorSmartphone className="h-8 w-8 text-accent" />
+        <ScrollReveal delay={150}>
+          <div className="mt-10 rounded-lg border border-black p-6 sm:p-10">
+            <div className="flex flex-col items-center gap-6 sm:flex-row sm:justify-between">
+              <div className="flex flex-col items-center gap-2">
+                <div className="flex h-16 w-16 items-center justify-center rounded border border-black">
+                  <MonitorSmartphone className="h-7 w-7 text-black" aria-hidden="true" />
                 </div>
-                <span className="text-xs font-emphasis text-text-primary">Viewer</span>
-                <span className="text-[10px] text-text-secondary">Browser / Next.js</span>
+                <span className="text-xs font-medium tracking-[-0.01em] text-black">Viewer</span>
+                <span className="text-[11px] text-[#958d7e]">Browser</span>
               </div>
 
-              {/* Connection line */}
-              <div className="flex w-full flex-col items-center gap-1 sm:w-auto">
-                <div className="flex items-center gap-2 text-xs text-text-secondary">
-                  <Lock className="h-3 w-3 text-success" aria-hidden="true" />
-                  <span>WebRTC P2P</span>
-                  <Lock className="h-3 w-3 text-success" aria-hidden="true" />
+              <div className="flex flex-1 flex-col items-center gap-2 px-4">
+                <div className="flex items-center gap-2 text-[11px] tracking-[-0.01em] text-[#575551]">
+                  <Lock className="h-3 w-3" aria-hidden="true" />
+                  WebRTC, end-to-end encrypted
+                  <Lock className="h-3 w-3" aria-hidden="true" />
                 </div>
-                <div className="flex w-full items-center gap-2 sm:flex-col">
-                  <div className="h-px flex-1 bg-gradient-to-r from-accent/0 via-accent/40 to-accent/0 sm:h-16 sm:w-px sm:from-accent/0 sm:via-accent/40 sm:to-accent/0" />
-                </div>
-                <div className="flex items-center gap-2 text-[10px] text-text-secondary">
-                  <span>STUN</span>
-                  <span className="text-text-secondary/40">|</span>
-                  <span>Metered TURN</span>
-                  <span className="text-text-secondary/40">|</span>
-                  <span>Oracle Coturn</span>
+                <div className="h-px w-full bg-black/20 sm:h-px" />
+                <div className="text-[10px] tracking-[-0.01em] text-[#958d7e]">
+                  STUN &middot; Metered TURN &middot; Oracle Coturn
                 </div>
               </div>
 
-              {/* Host */}
-              <div className="flex w-full flex-col items-center gap-2 sm:w-auto">
-                <div className="flex h-16 w-16 items-center justify-center rounded-sm border border-border-strong bg-surface-overlay">
-                  <Server className="h-8 w-8 text-text-primary" />
+              <div className="flex flex-col items-center gap-2">
+                <div className="flex h-16 w-16 items-center justify-center rounded border border-black">
+                  <Server className="h-7 w-7 text-black" aria-hidden="true" />
                 </div>
-                <span className="text-xs font-emphasis text-text-primary">Host</span>
-                <span className="text-[10px] text-text-secondary">Tauri / Rust</span>
+                <span className="text-xs font-medium tracking-[-0.01em] text-black">Host</span>
+                <span className="text-[11px] text-[#958d7e]">Tauri / Rust</span>
               </div>
             </div>
 
-            <div className="mt-6 text-center text-xs text-text-secondary">
-              Signaling via Firebase RTDB &middot;{" "}
-              Video/input never touches our infrastructure
-            </div>
+            <p className="mt-8 text-center text-xs tracking-[-0.01em] text-[#575551]">
+              Signaling via Firebase Realtime Database &middot; video and
+              input never touch our infrastructure
+            </p>
           </div>
         </ScrollReveal>
 
-        {/* Three steps */}
-        <div className="mt-10 grid gap-6 sm:grid-cols-3">
+        <div className="mt-10 grid gap-px overflow-hidden rounded-lg border border-black bg-black sm:grid-cols-3">
           {[
             {
               step: "01",
               title: "Generate a code",
-              desc: "Launch Duxo on the host machine. An 8-digit code appears — share it with your viewer.",
+              desc: "Launch the Duxo host agent on the machine you want to reach. An 8-digit code appears.",
             },
             {
               step: "02",
               title: "Connect & approve",
-              desc: "Enter the code from any browser. The host sees your email and must click Allow.",
+              desc: "Enter the code from any browser — no install needed. The host must click Allow.",
             },
             {
               step: "03",
               title: "Full remote control",
-              desc: "Real-time screen, mouse, keyboard, clipboard — all over an encrypted P2P connection.",
+              desc: "Real-time screen, mouse, keyboard, and clipboard, all over one encrypted connection.",
             },
           ].map((item) => (
             <ScrollReveal key={item.step} delay={Number.parseInt(item.step) * 80}>
-              <div className="flex flex-col gap-3 rounded-sm border border-border-default bg-surface-raised p-5">
-                <span className="text-xs font-mono text-accent">{item.step}</span>
-                <h3 className="text-md font-emphasis">{item.title}</h3>
-                <p className="text-sm leading-relaxed text-text-secondary">{item.desc}</p>
+              <div className="flex h-full flex-col gap-3 bg-white p-6">
+                <span className="text-xs tracking-[-0.01em] text-[#958d7e]">{item.step}</span>
+                <h3 className="text-base font-medium tracking-[-0.01em] text-black">{item.title}</h3>
+                <p className="text-sm leading-[1.43] tracking-[-0.01em] text-[#575551]">{item.desc}</p>
               </div>
             </ScrollReveal>
           ))}
@@ -494,52 +415,189 @@ function HowItWorks() {
 }
 
 /* ════════════════════════════════════════════════
-   FINAL SECTION — combined CTA + trust signals
+   TRUST — "always / never" guarantees, monochrome.
    ════════════════════════════════════════════════ */
-function FinalSection() {
-  return (
-    <section className="relative overflow-hidden">
-      {/* Decorative accent blob */}
-      <div
-        className="pointer-events-none absolute -left-40 -bottom-40 z-0 h-[500px] w-[500px] rounded-full opacity-[0.04]"
-        style={{
-          background:
-            "radial-gradient(circle, #ef443b 0%, transparent 70%)",
-        }}
-      />
+function Trust() {
+  const does = [
+    "Encrypts every session end-to-end with DTLS-SRTP over WebRTC",
+    "Requires an explicit Allow click on the host before any control begins",
+    "Stores secrets in your OS keychain, never in plaintext on disk",
+    "Verifies every session with a signed token before video ever streams",
+    "Rate-limits connection codes to stop brute-force guessing",
+    "Publishes its full source under the MIT license for anyone to audit",
+  ];
 
-      <div className="relative z-10 mx-auto max-w-6xl px-6 py-16 text-center sm:py-20">
+  const never = [
+    "Never routes your screen or input through Duxo's servers",
+    "Never collects analytics, usage tracking, or telemetry of any kind",
+    "Never requires the person receiving a connection to have an account",
+    "Never shows ads or sells data — there is nothing to sell",
+    "Never starts a session without a human approving it on the host",
+    "Never charges for core remote access features",
+  ];
+
+  return (
+    <section id="security" className="scroll-mt-16 border-b border-black bg-white">
+      <div className="mx-auto max-w-[1280px] px-6 py-16 sm:py-20 md:py-24">
         <ScrollReveal>
-          <div className="mx-auto flex max-w-xl flex-col items-center gap-5">
-            <h2 className="text-2xl font-emphasis sm:text-3xl md:text-4xl">
-              Start connecting.
-            </h2>
-            <p className="text-md leading-relaxed text-text-secondary">
-              No sign-up required to download. Generate a code, share it,
-              connect from any browser. It&apos;s that simple.
-            </p>
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              <Button asChild size="lg" leadingIcon={<Download className="h-5 w-5" />}>
-                <Link href="/download">Download for free</Link>
-              </Button>
-              <Button asChild variant="secondary" size="lg">
-                <Link href="/login">Sign in</Link>
-              </Button>
+          <Eyebrow>Security & privacy</Eyebrow>
+          <h2 className="mt-4 max-w-2xl text-[32px] font-medium leading-[1.15] tracking-[-0.03em] text-black sm:text-[42px]">
+            What Duxo does — and what it never will.
+          </h2>
+        </ScrollReveal>
+
+        <div className="mt-10 grid overflow-hidden rounded-lg border border-black md:grid-cols-2">
+          <ScrollReveal delay={150}>
+            <div className="flex h-full flex-col gap-4 border-b border-black p-6 sm:p-8 md:border-b-0 md:border-r">
+              <h3 className="flex items-center gap-2 text-sm font-medium uppercase tracking-[0.08em] text-black">
+                <Check className="h-4 w-4" aria-hidden="true" />
+                Always
+              </h3>
+              <ul className="flex flex-col gap-3">
+                {does.map((item) => (
+                  <li key={item} className="flex gap-2.5 text-sm leading-[1.43] tracking-[-0.01em] text-[#575551]">
+                    <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-black" aria-hidden="true" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
-            <p className="mt-4 text-xs text-text-secondary">
-              Open source (MIT) &mdash; no telemetry, no account needed.{" "}
-              <a
-                href="https://github.com/waleed260/Duxo"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-text-primary transition-colors duration-instant"
-              >
-                View on GitHub
-              </a>
-            </p>
+          </ScrollReveal>
+
+          <ScrollReveal delay={250}>
+            <div className="flex h-full flex-col gap-4 p-6 sm:p-8">
+              <h3 className="flex items-center gap-2 text-sm font-medium uppercase tracking-[0.08em] text-[#958d7e]">
+                <X className="h-4 w-4" aria-hidden="true" />
+                Never
+              </h3>
+              <ul className="flex flex-col gap-3">
+                {never.map((item) => (
+                  <li key={item} className="flex gap-2.5 text-sm leading-[1.43] tracking-[-0.01em] text-[#575551]">
+                    <X className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#958d7e]" aria-hidden="true" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </ScrollReveal>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ════════════════════════════════════════════════
+   FINAL CTA — centered narrow block.
+   ════════════════════════════════════════════════ */
+function FinalCTA() {
+  return (
+    <section className="bg-white">
+      <div className="mx-auto flex max-w-xl flex-col items-center gap-5 px-6 py-20 text-center sm:py-28">
+        <ScrollReveal>
+          <Eyebrow>Get started</Eyebrow>
+          <h2 className="mt-4 text-[32px] font-medium leading-[1.15] tracking-[-0.03em] text-black sm:text-[42px]">
+            Start connecting.
+          </h2>
+          <p className="mt-4 text-lg leading-[1.4] tracking-[-0.01em] text-[#575551]">
+            No sign-up required to download. Generate a code, share it,
+            connect from any browser.
+          </p>
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+            <Link href="/download" className={filledBtnDark}>
+              Download for free
+            </Link>
+            <Link href="/login" className={ghostBtnDark}>
+              Sign in
+            </Link>
           </div>
+          <p className="mt-6 text-xs tracking-[-0.01em] text-[#958d7e]">
+            Open source (MIT) — no telemetry, no account needed.{" "}
+            <a
+              href="https://github.com/waleed260/Duxo"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-black"
+            >
+              View on GitHub
+            </a>
+          </p>
         </ScrollReveal>
       </div>
     </section>
+  );
+}
+
+/* ════════════════════════════════════════════════
+   FOOTER — link groups, hairline top border.
+   ════════════════════════════════════════════════ */
+function LightFooter() {
+  return (
+    <footer className="border-t border-black bg-white">
+      <div className="mx-auto grid w-full max-w-[1280px] gap-10 px-6 py-16 sm:grid-cols-3">
+        <div>
+          <span className="text-lg font-medium tracking-[-0.03em] text-black">Duxo</span>
+          <p className="mt-3 text-sm leading-[1.43] tracking-[-0.01em] text-[#575551]">
+            Remote access, built in the open. Zero-budget, end-to-end
+            encrypted.
+          </p>
+        </div>
+
+        <FooterGroup
+          title="Product"
+          links={[
+            { href: "/download", label: "Download" },
+            { href: "/#features", label: "Features" },
+            { href: "/#demo", label: "How it works" },
+            { href: "/login", label: "Sign in" },
+          ]}
+        />
+
+        <FooterGroup
+          title="Resources"
+          links={[
+            { href: "/#security", label: "Security" },
+            {
+              href: "https://github.com/waleed260/Duxo/blob/main/SECURITY.md",
+              label: "Security policy",
+            },
+            {
+              href: "https://github.com/waleed260/Duxo/blob/main/CONTRIBUTING.md",
+              label: "Contributing",
+            },
+          ]}
+        />
+      </div>
+      <div className="border-t border-black px-6 py-5 text-center text-xs tracking-[-0.01em] text-[#958d7e]">
+        © {new Date().getFullYear()} Duxo — open source, MIT licensed.
+      </div>
+    </footer>
+  );
+}
+
+function FooterGroup({
+  title,
+  links,
+}: {
+  title: string;
+  links: { href: string; label: string }[];
+}) {
+  return (
+    <nav className="flex flex-col gap-2.5">
+      <span className="text-xs font-medium uppercase tracking-[0.1em] text-[#575551]">{title}</span>
+      {links.map((l) => {
+        const isExternal = l.href.startsWith("http");
+        return (
+          <Link
+            key={l.label}
+            href={l.href}
+            target={isExternal ? "_blank" : undefined}
+            rel={isExternal ? "noopener noreferrer" : undefined}
+            className="text-sm tracking-[-0.01em] text-black transition-colors duration-150 hover:text-[#575551]"
+          >
+            {l.label}
+          </Link>
+        );
+      })}
+    </nav>
   );
 }
