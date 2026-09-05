@@ -68,6 +68,17 @@ export default function RootLayout({
           httpEquiv="Content-Security-Policy"
           content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.firebaseio.com https://*.googleapis.com https://*.clerk.com https://*.clerk.accounts.dev; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.googleapis.com https://*.gstatic.com https://*.clerk.com https://*.clerk.accounts.dev; connect-src 'self' https://*.firebaseio.com https://*.googleapis.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com https://*.clerk.com https://*.clerk.accounts.dev; frame-src 'self' https://*.firebaseapp.com https://*.clerk.com https://*.clerk.accounts.dev; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; worker-src 'self' blob:"
         />
+        {/*
+          Marks the document as JS-capable before first paint. The landing
+          page's `.reveal` animations only take their hidden opacity:0 start
+          state under `html.js`, so a failed or disabled bundle degrades to
+          fully visible content instead of a stack of blank sections.
+        */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: "document.documentElement.classList.add('js')",
+          }}
+        />
       </head>
       <body className="min-h-screen bg-surface-base text-text-primary antialiased">
         <ClerkProvider>

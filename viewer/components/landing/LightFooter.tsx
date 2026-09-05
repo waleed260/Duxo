@@ -7,7 +7,7 @@ import Link from "next/link";
  */
 export function LightFooter() {
   return (
-    <footer className="border-t border-black bg-white">
+    <footer className="border-t border-[#e4e2dd] bg-white">
       <div className="mx-auto grid w-full max-w-[1280px] gap-10 px-6 py-16 sm:grid-cols-3">
         <div>
           <span className="text-lg font-medium tracking-[-0.03em] text-black">Duxo</span>
@@ -43,13 +43,16 @@ export function LightFooter() {
         />
       </div>
 
-      <div className="border-t border-black px-6 py-10 text-center sm:py-14">
-        <span className="text-[15vw] font-medium leading-none tracking-[-0.04em] text-black sm:text-[100px]">
+      {/* Closing statement — set at the widest the container allows, weight
+          400 with heavy negative tracking, so the wordmark-scale type reads
+          as a sign-off rather than as another heading. */}
+      <div className="border-t border-[#e4e2dd] px-6 py-14 text-center sm:py-20">
+        <span className="block text-[14vw] font-normal leading-[0.92] tracking-[-0.055em] text-black sm:text-[112px] lg:text-[136px]">
           Connect freely.
         </span>
       </div>
 
-      <div className="border-t border-black px-6 py-5 text-center text-xs tracking-[-0.01em] text-[#958d7e]">
+      <div className="border-t border-[#e4e2dd] px-6 py-6 text-center text-xs tracking-[-0.01em] text-[#8a857d]">
         © {new Date().getFullYear()} Duxo — open source, MIT licensed.
       </div>
     </footer>

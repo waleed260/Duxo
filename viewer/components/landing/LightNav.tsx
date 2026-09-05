@@ -35,7 +35,7 @@ export function LightNav({ alwaysSolid = false }: { alwaysSolid?: boolean }) {
   return (
     <header
       className={`fixed top-0 z-30 w-full transition-colors duration-200 ${
-        scrolled ? "border-b border-black bg-white" : "border-b border-transparent bg-transparent"
+        scrolled ? "border-b border-[#e4e2dd] bg-white" : "border-b border-transparent bg-transparent"
       }`}
     >
       <nav className="relative mx-auto flex h-16 w-full max-w-[1280px] items-center justify-between px-6 sm:h-20">

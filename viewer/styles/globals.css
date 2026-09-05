@@ -121,60 +121,59 @@ body {
 
 
 /*
- * Scroll reveal animations — used by the landing page
- * Triggered by useScrollReveal hook setting data-revealed="true"
+ * Scroll reveal animations — used by the landing page.
+ * Triggered by the useScrollReveal hook setting data-revealed="true".
+ *
+ * The hidden start state is gated behind `html.js`, which the inline script
+ * in app/layout.tsx sets before first paint. Without that gate, a failed or
+ * disabled JS bundle leaves every below-the-fold section permanently at
+ * opacity:0 — the page renders as a stack of blank bands, and that is also
+ * exactly what a full-page screenshot captures, since IntersectionObserver
+ * never fires for content the viewport never actually reaches.
  */
-.reveal {
+.reveal,
+.reveal-left,
+.reveal-right,
+.reveal-scale {
+  transition: opacity 700ms cubic-bezier(0.16, 1, 0.3, 1),
+              transform 700ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.js .reveal {
   opacity: 0;
   transform: translateY(32px);
-  transition: opacity 700ms cubic-bezier(0.16, 1, 0.3, 1),
-              transform 700ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.reveal[data-revealed="true"] {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-/* Direction variants */
-.reveal-left {
+.js .reveal-left {
   opacity: 0;
   transform: translateX(-32px);
-  transition: opacity 700ms cubic-bezier(0.16, 1, 0.3, 1),
-              transform 700ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.reveal-left[data-revealed="true"] {
-  opacity: 1;
-  transform: translateX(0);
-}
-
-.reveal-right {
+.js .reveal-right {
   opacity: 0;
   transform: translateX(32px);
-  transition: opacity 700ms cubic-bezier(0.16, 1, 0.3, 1),
-              transform 700ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.reveal-right[data-revealed="true"] {
-  opacity: 1;
-  transform: translateX(0);
-}
-
-.reveal-scale {
+.js .reveal-scale {
   opacity: 0;
   transform: scale(0.92);
   transition: opacity 800ms cubic-bezier(0.16, 1, 0.3, 1),
               transform 800ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.reveal-scale[data-revealed="true"] {
+.js .reveal[data-revealed="true"],
+.js .reveal-left[data-revealed="true"],
+.js .reveal-right[data-revealed="true"],
+.js .reveal-scale[data-revealed="true"] {
   opacity: 1;
-  transform: scale(1);
+  transform: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .reveal, .reveal-left, .reveal-right, .reveal-scale {
+  .js .reveal,
+  .js .reveal-left,
+  .js .reveal-right,
+  .js .reveal-scale {
     opacity: 1;
     transform: none;
     transition: none;
