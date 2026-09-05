@@ -36,8 +36,8 @@ export function LightNav() {
       <nav className="relative mx-auto flex h-16 w-full max-w-[1280px] items-center justify-between px-6 sm:h-20">
         <Link
           href="/"
-          className={`text-lg font-medium tracking-[-0.03em] transition-colors duration-200 ${
-            scrolled ? "text-black" : "text-white"
+          className={`rounded text-lg font-medium tracking-[-0.03em] transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${
+            scrolled ? "text-black focus-visible:outline-black" : "text-white focus-visible:outline-white"
           }`}
           aria-label="Duxo home"
         >
@@ -49,8 +49,10 @@ export function LightNav() {
             <Link
               key={l.label}
               href={l.href}
-              className={`text-sm tracking-[-0.02em] transition-colors duration-200 ${
-                scrolled ? "text-[#121211] hover:text-[#575551]" : "text-white/85 hover:text-white"
+              className={`rounded text-sm tracking-[-0.02em] transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${
+                scrolled
+                  ? "text-[#121211] hover:text-[#575551] focus-visible:outline-black"
+                  : "text-white/85 hover:text-white focus-visible:outline-white"
               }`}
             >
               {l.label}
@@ -61,7 +63,7 @@ export function LightNav() {
         <div className="hidden items-center gap-3 md:flex">
           <Link
             href="/login"
-            className={`rounded border px-5 py-2.5 text-xs font-medium uppercase tracking-[0.1em] transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${
+            className={`touch-manipulation rounded border px-5 py-2.5 text-xs font-medium uppercase tracking-[0.1em] transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${
               scrolled
                 ? "border-black text-black hover:bg-black hover:text-white focus-visible:outline-black"
                 : "border-white/70 text-white hover:bg-white hover:text-black focus-visible:outline-white"
@@ -71,7 +73,7 @@ export function LightNav() {
           </Link>
           <Link
             href="/download"
-            className={`inline-flex items-center gap-1.5 rounded px-5 py-2.5 text-xs font-medium uppercase tracking-[0.1em] transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${
+            className={`touch-manipulation inline-flex items-center gap-1.5 rounded px-5 py-2.5 text-xs font-medium uppercase tracking-[0.1em] transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${
               scrolled
                 ? "bg-black text-white hover:bg-[#2a2a28] focus-visible:outline-black"
                 : "bg-white text-black hover:bg-white/90 focus-visible:outline-white"

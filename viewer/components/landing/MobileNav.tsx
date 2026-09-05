@@ -54,7 +54,7 @@ export function MobileNav({
                 key={l.label}
                 href={l.href}
                 onClick={() => setOpen(false)}
-                className="text-sm tracking-[-0.02em] text-black"
+                className="rounded text-sm tracking-[-0.02em] text-black transition-colors duration-150 hover:text-[#575551] focus-visible:outline focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2"
               >
                 {l.label}
               </Link>
@@ -63,14 +63,14 @@ export function MobileNav({
               <Link
                 href="/login"
                 onClick={() => setOpen(false)}
-                className="inline-flex items-center justify-center rounded bg-black px-5 py-3 text-xs font-medium uppercase tracking-[0.1em] text-white"
+                className="inline-flex items-center justify-center rounded bg-black px-5 py-3 text-xs font-medium uppercase tracking-[0.1em] text-white transition-colors duration-150 hover:bg-[#2a2a28] focus-visible:outline focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2"
               >
                 Log in
               </Link>
               <Link
                 href="/download"
                 onClick={() => setOpen(false)}
-                className="inline-flex items-center justify-center gap-1.5 rounded border border-black px-5 py-3 text-xs font-medium uppercase tracking-[0.1em] text-black"
+                className="inline-flex items-center justify-center gap-1.5 rounded border border-black px-5 py-3 text-xs font-medium uppercase tracking-[0.1em] text-black transition-colors duration-150 hover:bg-black hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2"
               >
                 Download
                 <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />

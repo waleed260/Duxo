@@ -30,8 +30,14 @@ import { LightNav } from "@/components/landing/LightNav";
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-white text-[#121211] antialiased" style={{ colorScheme: "light" }}>
+      <a
+        href="#main-content"
+        className="fixed left-4 top-4 z-50 -translate-y-20 rounded bg-black px-4 py-2 text-sm text-white transition-transform duration-150 focus-visible:translate-y-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2"
+      >
+        Skip to content
+      </a>
       <LightNav />
-      <main>
+      <main id="main-content">
         <Hero />
         <StatsGrid />
         <WhyDuxo />
@@ -51,13 +57,13 @@ export default function LandingPage() {
    Shared style atoms
    ───────────────────────────────────────────── */
 const ghostBtnDark =
-  "inline-flex items-center gap-1.5 rounded border border-black px-5 py-3 text-xs font-medium uppercase tracking-[0.1em] text-black transition-colors duration-150 hover:bg-black hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2";
+  "touch-manipulation inline-flex items-center gap-1.5 rounded border border-black px-5 py-3 text-xs font-medium uppercase tracking-[0.1em] text-black transition-colors duration-150 hover:bg-black hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2";
 
 const filledBtnLight =
-  "inline-flex items-center gap-1.5 rounded bg-white px-6 py-3.5 text-xs font-medium uppercase tracking-[0.1em] text-black transition-colors duration-150 hover:bg-white/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2";
+  "touch-manipulation inline-flex items-center gap-1.5 rounded bg-white px-6 py-3.5 text-xs font-medium uppercase tracking-[0.1em] text-black transition-colors duration-150 hover:bg-white/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2";
 
 const filledBtnDark =
-  "inline-flex items-center gap-1.5 rounded bg-black px-5 py-3 text-xs font-medium uppercase tracking-[0.1em] text-white transition-colors duration-150 hover:bg-[#2a2a28] focus-visible:outline focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2";
+  "touch-manipulation inline-flex items-center gap-1.5 rounded bg-black px-5 py-3 text-xs font-medium uppercase tracking-[0.1em] text-white transition-colors duration-150 hover:bg-[#2a2a28] focus-visible:outline focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2";
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
   return (
@@ -140,7 +146,7 @@ function Hero() {
         </ScrollReveal>
 
         <ScrollReveal delay={100}>
-          <h1 className="text-[42px] font-medium leading-[1.08] tracking-[-0.035em] text-white sm:text-[56px] sm:tracking-[-0.04em] md:text-[64px] md:tracking-[-0.045em]">
+          <h1 className="text-balance text-[42px] font-medium leading-[1.08] tracking-[-0.035em] text-white sm:text-[56px] sm:tracking-[-0.04em] md:text-[64px] md:tracking-[-0.045em]">
             Remote access, without the trust exercise.
           </h1>
         </ScrollReveal>
@@ -163,7 +169,7 @@ function Hero() {
               href="https://github.com/waleed260/Duxo"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.1em] text-white/65 transition-colors duration-150 hover:text-white"
+              className="inline-flex items-center gap-1.5 rounded text-xs font-medium uppercase tracking-[0.1em] text-white/65 transition-colors duration-150 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2"
             >
               <GithubIcon className="h-3.5 w-3.5" aria-hidden="true" />
               View source
@@ -213,8 +219,8 @@ function WhyDuxo() {
       <div className="mx-auto grid max-w-[1280px] gap-8 px-6 py-16 sm:py-20 md:grid-cols-2 md:gap-16 md:py-24">
         <ScrollReveal>
           <Eyebrow>Why Duxo exists</Eyebrow>
-          <h2 className="mt-4 text-[32px] font-medium leading-[1.15] tracking-[-0.03em] text-black sm:text-[42px] sm:tracking-[-0.035em]">
-            Remote access shouldn&apos;t require trusting a corporation with
+          <h2 className="text-balance mt-4 text-[32px] font-medium leading-[1.15] tracking-[-0.03em] text-black sm:text-[42px] sm:tracking-[-0.035em]">
+            Remote access shouldn’t require trusting a corporation with
             your screen.
           </h2>
         </ScrollReveal>
@@ -247,7 +253,7 @@ const features = [
   {
     icon: Lock,
     title: "End-to-end encrypted",
-    body: "DTLS-SRTP over WebRTC secures every session. Even the relay that helps two machines find each other can't decrypt your traffic.",
+    body: "DTLS-SRTP over WebRTC secures every session. Even the relay that helps two machines find each other can’t decrypt your traffic.",
   },
   {
     icon: Fingerprint,
@@ -302,7 +308,7 @@ function Features() {
       <div className="mx-auto max-w-[1280px] px-6 py-16 sm:py-20 md:py-24">
         <ScrollReveal>
           <Eyebrow>Capabilities</Eyebrow>
-          <h2 className="mt-4 max-w-2xl text-[32px] font-medium leading-[1.15] tracking-[-0.03em] text-black sm:text-[42px]">
+          <h2 className="text-balance mt-4 max-w-2xl text-[32px] font-medium leading-[1.15] tracking-[-0.03em] text-black sm:text-[42px]">
             Everything a remote session needs.
           </h2>
         </ScrollReveal>
@@ -336,7 +342,7 @@ function Architecture() {
           <span className="text-[10px] font-medium uppercase tracking-[0.1em] text-white/60">
             How it works
           </span>
-          <h2 className="mx-auto mt-4 max-w-2xl text-[32px] font-medium leading-[1.15] tracking-[-0.03em] text-white sm:text-[42px]">
+          <h2 className="text-balance mx-auto mt-4 max-w-2xl text-[32px] font-medium leading-[1.15] tracking-[-0.03em] text-white sm:text-[42px]">
             Peer-to-peer by default, relay only when needed.
           </h2>
         </ScrollReveal>
@@ -432,7 +438,7 @@ function Trust() {
   ];
 
   const never = [
-    "Never routes your screen or input through Duxo's servers",
+    "Never routes your screen or input through Duxo’s servers",
     "Never collects analytics, usage tracking, or telemetry of any kind",
     "Never requires the person receiving a connection to have an account",
     "Never shows ads or sells data — there is nothing to sell",
@@ -445,7 +451,7 @@ function Trust() {
       <div className="mx-auto max-w-[1280px] px-6 py-16 sm:py-20 md:py-24">
         <ScrollReveal>
           <Eyebrow>Security & privacy</Eyebrow>
-          <h2 className="mt-4 max-w-2xl text-[32px] font-medium leading-[1.15] tracking-[-0.03em] text-black sm:text-[42px]">
+          <h2 className="text-balance mt-4 max-w-2xl text-[32px] font-medium leading-[1.15] tracking-[-0.03em] text-black sm:text-[42px]">
             What Duxo does — and what it never will.
           </h2>
         </ScrollReveal>
@@ -498,7 +504,7 @@ function FAQ() {
   const faqs = [
     {
       q: "Is Duxo actually free, or is there a catch?",
-      a: "It's free because it's open source (MIT licensed) — there's no paid tier, no usage limits, and no feature gated behind a subscription. You can also read the source yourself to confirm that.",
+      a: "It’s free because it’s open source (MIT licensed) — there’s no paid tier, no usage limits, and no feature gated behind a subscription. You can also read the source yourself to confirm that.",
     },
     {
       q: "What operating systems does it support?",
@@ -510,7 +516,7 @@ function FAQ() {
     },
     {
       q: "What happens if my network connection drops mid-session?",
-      a: "Duxo attempts an ICE restart with exponential backoff to reconnect automatically, using the same session — you won't need a new code or to re-approve the connection.",
+      a: "Duxo attempts an ICE restart with exponential backoff to reconnect automatically, using the same session — you won’t need a new code or to re-approve the connection.",
     },
     {
       q: "Can I self-host or audit the infrastructure myself?",
@@ -523,7 +529,7 @@ function FAQ() {
       <div className="mx-auto max-w-[1280px] px-6 py-16 sm:py-20 md:py-24">
         <ScrollReveal>
           <Eyebrow>Questions</Eyebrow>
-          <h2 className="mt-4 max-w-2xl text-[32px] font-medium leading-[1.15] tracking-[-0.03em] text-black sm:text-[42px]">
+          <h2 className="text-balance mt-4 max-w-2xl text-[32px] font-medium leading-[1.15] tracking-[-0.03em] text-black sm:text-[42px]">
             Answers before you download.
           </h2>
         </ScrollReveal>
@@ -556,7 +562,7 @@ function FinalCTA() {
       <div className="mx-auto flex max-w-xl flex-col items-center gap-5 px-6 py-20 text-center sm:py-28">
         <ScrollReveal>
           <Eyebrow>Get started</Eyebrow>
-          <h2 className="mt-4 text-[32px] font-medium leading-[1.15] tracking-[-0.03em] text-black sm:text-[42px]">
+          <h2 className="text-balance mt-4 text-[32px] font-medium leading-[1.15] tracking-[-0.03em] text-black sm:text-[42px]">
             Start connecting.
           </h2>
           <p className="mt-4 text-lg leading-[1.4] tracking-[-0.01em] text-[#575551]">
@@ -577,7 +583,7 @@ function FinalCTA() {
               href="https://github.com/waleed260/Duxo"
               target="_blank"
               rel="noopener noreferrer"
-              className="underline hover:text-black"
+              className="rounded underline hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2"
             >
               View on GitHub
             </a>
@@ -660,7 +666,7 @@ function FooterGroup({
             href={l.href}
             target={isExternal ? "_blank" : undefined}
             rel={isExternal ? "noopener noreferrer" : undefined}
-            className="text-sm tracking-[-0.01em] text-black transition-colors duration-150 hover:text-[#575551]"
+            className="rounded text-sm tracking-[-0.01em] text-black transition-colors duration-150 hover:text-[#575551] focus-visible:outline focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2"
           >
             {l.label}
           </Link>
