@@ -15,7 +15,7 @@
     "check:turn": "node scripts/check-turn.mjs",
     "check:backend": "node scripts/check-backend.mjs",
     "check:deploy": "node scripts/check-deployment.mjs",
-    "test:rules": "npx -y firebase-tools@14 emulators:exec --only database --project demo-duxo --config ../firebase.json \"npx vitest run --config vitest.rules.config.ts\""
+    "test:rules": "npx -y firebase-tools@14 emulators:exec --only database,firestore --project demo-duxo --config ../firebase.json \"npx vitest run --config vitest.rules.config.ts\""
   },
   "dependencies": {
     "@clerk/nextjs": "^7.9.0",

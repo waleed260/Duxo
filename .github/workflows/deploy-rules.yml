@@ -91,7 +91,10 @@ jobs:
         working-directory: viewer
         run: npm ci
 
-      # Java is preinstalled on ubuntu-latest; the database emulator is a JAR.
+      # Java is preinstalled on ubuntu-latest; both emulators are JARs. This
+      # covers the Firestore ruleset as well as RTDB — firebase.json declared
+      # only the database emulator, so firestore.rules had never been executed
+      # anywhere despite being deployed by the job below.
       - name: Compile and exercise the rules
         working-directory: viewer
         run: npm run test:rules
