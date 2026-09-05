@@ -36,7 +36,8 @@ export default function LandingPage() {
         <StatsGrid />
         <WhyDuxo />
         <Features />
-        <HowItWorks />
+        <Architecture />
+        <Steps />
         <Trust />
         <FinalCTA />
       </main>
@@ -302,85 +303,95 @@ function Features() {
 }
 
 /* ════════════════════════════════════════════════
-   HOW IT WORKS — architecture panel + three steps.
+   HOW IT WORKS — full-bleed dark band for the
+   architecture diagram (Planhat-style light/dark
+   rhythm), then a plain white row of three steps.
    ════════════════════════════════════════════════ */
-function HowItWorks() {
+function Architecture() {
   return (
-    <section id="demo" className="scroll-mt-16 border-b border-black bg-white">
-      <div className="mx-auto max-w-[1280px] px-6 py-16 sm:py-20 md:py-24">
+    <section id="demo" className="scroll-mt-16 border-b border-black bg-black">
+      <div className="mx-auto max-w-[1280px] px-6 py-16 text-center sm:py-20 md:py-24">
         <ScrollReveal>
-          <Eyebrow>How it works</Eyebrow>
-          <h2 className="mt-4 max-w-2xl text-[32px] font-medium leading-[1.15] tracking-[-0.03em] text-black sm:text-[42px]">
+          <span className="text-[10px] font-medium uppercase tracking-[0.1em] text-white/60">
+            How it works
+          </span>
+          <h2 className="mx-auto mt-4 max-w-2xl text-[32px] font-medium leading-[1.15] tracking-[-0.03em] text-white sm:text-[42px]">
             Peer-to-peer by default, relay only when needed.
           </h2>
         </ScrollReveal>
 
         <ScrollReveal delay={150}>
-          <div className="mt-10 rounded-lg border border-black p-6 sm:p-10">
+          <div className="mx-auto mt-12 max-w-3xl rounded-lg border border-white/20 p-6 sm:p-10">
             <div className="flex flex-col items-center gap-6 sm:flex-row sm:justify-between">
               <div className="flex flex-col items-center gap-2">
-                <div className="flex h-16 w-16 items-center justify-center rounded border border-black">
-                  <MonitorSmartphone className="h-7 w-7 text-black" aria-hidden="true" />
+                <div className="flex h-16 w-16 items-center justify-center rounded border border-white/30">
+                  <MonitorSmartphone className="h-7 w-7 text-white" aria-hidden="true" />
                 </div>
-                <span className="text-xs font-medium tracking-[-0.01em] text-black">Viewer</span>
-                <span className="text-[11px] text-[#958d7e]">Browser</span>
+                <span className="text-xs font-medium tracking-[-0.01em] text-white">Viewer</span>
+                <span className="text-[11px] text-white/50">Browser</span>
               </div>
 
               <div className="flex flex-1 flex-col items-center gap-2 px-4">
-                <div className="flex items-center gap-2 text-[11px] tracking-[-0.01em] text-[#575551]">
+                <div className="flex items-center gap-2 text-[11px] tracking-[-0.01em] text-white/70">
                   <Lock className="h-3 w-3" aria-hidden="true" />
                   WebRTC, end-to-end encrypted
                   <Lock className="h-3 w-3" aria-hidden="true" />
                 </div>
-                <div className="h-px w-full bg-black/20 sm:h-px" />
-                <div className="text-[10px] tracking-[-0.01em] text-[#958d7e]">
+                <div className="h-px w-full bg-white/20" />
+                <div className="text-[10px] tracking-[-0.01em] text-white/50">
                   STUN &middot; Metered TURN &middot; Oracle Coturn
                 </div>
               </div>
 
               <div className="flex flex-col items-center gap-2">
-                <div className="flex h-16 w-16 items-center justify-center rounded border border-black">
-                  <Server className="h-7 w-7 text-black" aria-hidden="true" />
+                <div className="flex h-16 w-16 items-center justify-center rounded border border-white/30">
+                  <Server className="h-7 w-7 text-white" aria-hidden="true" />
                 </div>
-                <span className="text-xs font-medium tracking-[-0.01em] text-black">Host</span>
-                <span className="text-[11px] text-[#958d7e]">Tauri / Rust</span>
+                <span className="text-xs font-medium tracking-[-0.01em] text-white">Host</span>
+                <span className="text-[11px] text-white/50">Tauri / Rust</span>
               </div>
             </div>
 
-            <p className="mt-8 text-center text-xs tracking-[-0.01em] text-[#575551]">
+            <p className="mt-8 text-center text-xs tracking-[-0.01em] text-white/50">
               Signaling via Firebase Realtime Database &middot; video and
               input never touch our infrastructure
             </p>
           </div>
         </ScrollReveal>
+      </div>
+    </section>
+  );
+}
 
-        <div className="mt-10 grid gap-px overflow-hidden rounded-lg border border-black bg-black sm:grid-cols-3">
-          {[
-            {
-              step: "01",
-              title: "Generate a code",
-              desc: "Launch the Duxo host agent on the machine you want to reach. An 8-digit code appears.",
-            },
-            {
-              step: "02",
-              title: "Connect & approve",
-              desc: "Enter the code from any browser — no install needed. The host must click Allow.",
-            },
-            {
-              step: "03",
-              title: "Full remote control",
-              desc: "Real-time screen, mouse, keyboard, and clipboard, all over one encrypted connection.",
-            },
-          ].map((item) => (
-            <ScrollReveal key={item.step} delay={Number.parseInt(item.step) * 80}>
-              <div className="flex h-full flex-col gap-3 bg-white p-6">
-                <span className="text-xs tracking-[-0.01em] text-[#958d7e]">{item.step}</span>
-                <h3 className="text-base font-medium tracking-[-0.01em] text-black">{item.title}</h3>
-                <p className="text-sm leading-[1.43] tracking-[-0.01em] text-[#575551]">{item.desc}</p>
-              </div>
-            </ScrollReveal>
-          ))}
-        </div>
+function Steps() {
+  return (
+    <section className="border-b border-black bg-white">
+      <div className="mx-auto grid max-w-[1280px] gap-px overflow-hidden border-x border-black bg-black sm:grid-cols-3">
+        {[
+          {
+            step: "01",
+            title: "Generate a code",
+            desc: "Launch the Duxo host agent on the machine you want to reach. An 8-digit code appears.",
+          },
+          {
+            step: "02",
+            title: "Connect & approve",
+            desc: "Enter the code from any browser — no install needed. The host must click Allow.",
+          },
+          {
+            step: "03",
+            title: "Full remote control",
+            desc: "Real-time screen, mouse, keyboard, and clipboard, all over one encrypted connection.",
+          },
+        ].map((item) => (
+          <ScrollReveal key={item.step} delay={Number.parseInt(item.step) * 80}>
+            <div className="flex h-full flex-col gap-3 bg-white p-8">
+              <span className="text-xs tracking-[-0.01em] text-[#958d7e]">{item.step}</span>
+              <h3 className="text-base font-medium tracking-[-0.01em] text-black">{item.title}</h3>
+              <p className="text-sm leading-[1.43] tracking-[-0.01em] text-[#575551]">{item.desc}</p>
+            </div>
+          </ScrollReveal>
+        ))}
       </div>
     </section>
   );
@@ -539,6 +550,13 @@ function LightFooter() {
           ]}
         />
       </div>
+
+      <div className="border-t border-black px-6 py-10 text-center sm:py-14">
+        <span className="text-[15vw] font-medium leading-none tracking-[-0.04em] text-black sm:text-[100px]">
+          Connect freely.
+        </span>
+      </div>
+
       <div className="border-t border-black px-6 py-5 text-center text-xs tracking-[-0.01em] text-[#958d7e]">
         © {new Date().getFullYear()} Duxo — open source, MIT licensed.
       </div>
