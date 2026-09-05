@@ -8,8 +8,20 @@ import { Menu, X, ChevronRight } from "lucide-react";
  * Bespoke mobile menu for the light/monochrome marketing homepage.
  * Kept separate from the shared (dark) app Navbar's mobile menu since the
  * two surfaces use unrelated visual languages.
+ *
+ * `light` controls the closed/open toggle icon color only — it's true while
+ * the nav bar itself is still transparent over the hero photo/glow, false
+ * once LightNav has scrolled to its solid white state. The dropdown panel
+ * is always a solid white overlay, so its own contents stay black/graphite
+ * regardless.
  */
-export function MobileNav({ links }: { links: { href: string; label: string }[] }) {
+export function MobileNav({
+  links,
+  light = false,
+}: {
+  links: { href: string; label: string }[];
+  light?: boolean;
+}) {
   const [open, setOpen] = React.useState(false);
 
   React.useEffect(() => {
@@ -27,7 +39,9 @@ export function MobileNav({ links }: { links: { href: string; label: string }[] 
         onClick={() => setOpen((v) => !v)}
         aria-label={open ? "Close menu" : "Open menu"}
         aria-expanded={open}
-        className="flex h-10 w-10 items-center justify-center text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2"
+        className={`flex h-10 w-10 items-center justify-center transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${
+          light ? "text-white focus-visible:outline-white" : "text-black focus-visible:outline-black"
+        }`}
       >
         {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
       </button>

@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { GithubIcon } from "@/components/icons/GithubIcon";
 import { ScrollReveal } from "@/components/ScrollReveal";
-import { MobileNav } from "@/components/landing/MobileNav";
+import { LightNav } from "@/components/landing/LightNav";
 
 /**
  * Duxo marketing homepage.
@@ -51,98 +51,70 @@ export default function LandingPage() {
 const ghostBtnDark =
   "inline-flex items-center gap-1.5 rounded border border-black px-5 py-3 text-xs font-medium uppercase tracking-[0.1em] text-black transition-colors duration-150 hover:bg-black hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2";
 
-const ghostBtnLight =
-  "inline-flex items-center gap-1.5 rounded border border-white px-5 py-3 text-xs font-medium uppercase tracking-[0.1em] text-white transition-colors duration-150 hover:bg-white hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2";
+const filledBtnLight =
+  "inline-flex items-center gap-1.5 rounded bg-white px-6 py-3.5 text-xs font-medium uppercase tracking-[0.1em] text-black transition-colors duration-150 hover:bg-white/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2";
 
 const filledBtnDark =
   "inline-flex items-center gap-1.5 rounded bg-black px-5 py-3 text-xs font-medium uppercase tracking-[0.1em] text-white transition-colors duration-150 hover:bg-[#2a2a28] focus-visible:outline focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2";
 
-function Eyebrow({ light = false, children }: { light?: boolean; children: React.ReactNode }) {
+function Eyebrow({ children }: { children: React.ReactNode }) {
   return (
-    <span
-      className={`text-[10px] font-medium uppercase tracking-[0.1em] ${
-        light ? "text-white/80" : "text-[#575551]"
-      }`}
-    >
+    <span className="text-[10px] font-medium uppercase tracking-[0.1em] text-[#575551]">
       {children}
     </span>
   );
 }
 
 /* ════════════════════════════════════════════════
-   NAV — full-width white bar, hairline bottom border.
-   ════════════════════════════════════════════════ */
-function LightNav() {
-  const links = [
-    { href: "/#features", label: "Features" },
-    { href: "/#demo", label: "How it works" },
-    { href: "/#security", label: "Security" },
-  ];
-
-  return (
-    <header className="sticky top-0 z-20 border-b border-black bg-white">
-      <nav className="mx-auto flex h-16 w-full max-w-[1280px] items-center justify-between px-6 sm:h-[72px]">
-        <Link href="/" className="text-lg font-medium tracking-[-0.03em] text-black" aria-label="Duxo home">
-          Duxo
-        </Link>
-
-        <div className="hidden items-center gap-8 md:flex">
-          {links.map((l) => (
-            <Link
-              key={l.label}
-              href={l.href}
-              className="text-sm tracking-[-0.02em] text-[#121211] transition-colors duration-150 hover:text-[#575551]"
-            >
-              {l.label}
-            </Link>
-          ))}
-        </div>
-
-        <div className="hidden items-center gap-3 md:flex">
-          <Link href="/login" className={filledBtnDark}>
-            Log in
-          </Link>
-          <Link href="/download" className={ghostBtnDark}>
-            Download
-            <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
-          </Link>
-        </div>
-
-        <MobileNav links={links} />
-      </nav>
-    </header>
-  );
-}
-
-/* ════════════════════════════════════════════════
-   HERO — cinematic dark band, CSS-only (no external
-   photography), fading to white below.
+   HERO — transparent nav overlaid on an original dark
+   "connection glow" backdrop (abstract, not photographic —
+   deliberately not Planhat's forest-photo treatment), fading
+   to white below. LightNav renders fixed, so this section
+   reserves its own top padding to clear the bar.
    ════════════════════════════════════════════════ */
 function Hero() {
   return (
-    <section className="relative overflow-hidden bg-black">
+    <section className="relative overflow-hidden bg-[#0b0b0a]">
       <div
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            "radial-gradient(120% 90% at 15% 15%, rgba(232,85,43,0.16) 0%, transparent 55%)," +
-            "radial-gradient(90% 70% at 85% 10%, rgba(149,141,126,0.18) 0%, transparent 60%)," +
-            "linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.75) 55%, #000000 100%)",
+            "radial-gradient(60% 55% at 12% 10%, rgba(232,120,60,0.22) 0%, transparent 60%)," +
+            "radial-gradient(50% 50% at 88% 0%, rgba(149,141,126,0.16) 0%, transparent 60%)," +
+            "radial-gradient(80% 60% at 50% 100%, rgba(232,85,43,0.10) 0%, transparent 70%)," +
+            "linear-gradient(180deg, #0b0b0a 0%, #050504 65%, #000000 100%)",
         }}
         aria-hidden="true"
       />
       <div
-        className="pointer-events-none absolute inset-0 opacity-[0.05]"
+        className="pointer-events-none absolute inset-0 opacity-[0.06]"
         style={{
           backgroundImage: "radial-gradient(circle at 1px 1px, #ffffff 1px, transparent 0)",
-          backgroundSize: "24px 24px",
+          backgroundSize: "26px 26px",
         }}
         aria-hidden="true"
       />
+      <svg
+        className="pointer-events-none absolute inset-0 h-full w-full opacity-[0.35]"
+        viewBox="0 0 1440 780"
+        fill="none"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <path
+          d="M -50 620 L 500 380 L 1000 480 L 1550 220"
+          className="stroke-[#958d7e]"
+          strokeWidth="1"
+        />
+        <circle cx="500" cy="380" r="3" className="fill-[#e8552b]" />
+        <circle cx="1000" cy="480" r="3" className="fill-[#958d7e]" />
+      </svg>
 
-      <div className="relative mx-auto flex max-w-[1280px] flex-col gap-6 px-6 py-24 sm:py-32 md:w-[55%] md:py-40">
+      <div className="relative mx-auto flex max-w-[1280px] flex-col gap-6 px-6 pt-28 pb-20 sm:pt-36 sm:pb-24 md:w-[55%] md:pt-44 md:pb-28">
         <ScrollReveal>
-          <Eyebrow light>Open source remote access</Eyebrow>
+          <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#d8b998]">
+            Open source remote access
+          </span>
         </ScrollReveal>
 
         <ScrollReveal delay={100}>
@@ -152,7 +124,7 @@ function Hero() {
         </ScrollReveal>
 
         <ScrollReveal delay={200}>
-          <p className="max-w-md text-lg leading-[1.4] tracking-[-0.01em] text-white/80">
+          <p className="max-w-md text-lg leading-[1.4] tracking-[-0.01em] text-white/72">
             Duxo connects two machines directly over an encrypted
             peer-to-peer channel — no servers in the middle, no account
             required to receive a session, no cost.
@@ -160,8 +132,8 @@ function Hero() {
         </ScrollReveal>
 
         <ScrollReveal delay={300}>
-          <div className="flex flex-wrap items-center gap-4 pt-2">
-            <Link href="/download" className={ghostBtnLight}>
+          <div className="flex flex-wrap items-center gap-6 pt-2">
+            <Link href="/download" className={filledBtnLight}>
               Download Duxo
               <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
             </Link>
@@ -169,7 +141,7 @@ function Hero() {
               href="https://github.com/waleed260/Duxo"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.1em] text-white/70 transition-colors duration-150 hover:text-white"
+              className="inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.1em] text-white/65 transition-colors duration-150 hover:text-white"
             >
               <GithubIcon className="h-3.5 w-3.5" aria-hidden="true" />
               View source
