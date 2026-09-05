@@ -16,16 +16,21 @@ const links = [
  * switching to a solid white hairline-bordered bar once scrolled past it.
  * `fixed` (not `sticky`) so it overlays the hero rather than pushing it
  * down; the hero reserves its own top padding to clear the bar's height.
+ *
+ * Pages with no dark hero underneath (login, signup) pass `alwaysSolid` to
+ * skip the transparent state entirely — otherwise white nav text would sit
+ * directly on the white page background with no contrast.
  */
-export function LightNav() {
-  const [scrolled, setScrolled] = React.useState(false);
+export function LightNav({ alwaysSolid = false }: { alwaysSolid?: boolean }) {
+  const [scrolled, setScrolled] = React.useState(alwaysSolid);
 
   React.useEffect(() => {
+    if (alwaysSolid) return;
     const onScroll = () => setScrolled(window.scrollY > 560);
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
-  }, []);
+  }, [alwaysSolid]);
 
   return (
     <header
