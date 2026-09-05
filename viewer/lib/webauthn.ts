@@ -5,9 +5,35 @@
  * and authentication. Credentials are stored in Firestore at
  * users/{uid}/webauthn/{credentialId}.
  *
- * Challenge generation and assertion verification are done client-side
- * (acceptable for optional 2FA on a static-export site; a production
- * server would handle these server-side).
+ * ─────────────────────────────────────────────────────────────────────────
+ * NOT A SECURITY BOUNDARY IN ITS CURRENT FORM. Read before enabling this
+ * as anyone's only second factor.
+ *
+ * `authenticateWithPasskey` does not verify anything. It calls
+ * `navigator.credentials.get()`, takes the credential id off the assertion,
+ * and checks that id appears in the user's stored list. It never checks the
+ * signature against the stored public key, never checks the challenge it
+ * just generated came back in `clientDataJSON`, never checks the origin or
+ * rpIdHash, and never compares the signature counter it stores against the
+ * one in the assertion — so a cloned authenticator is undetectable too.
+ *
+ * A credential id is a public identifier, not a secret. Everything this
+ * function proves is that something returned an id that is already in a list
+ * the caller supplied. The private key — the entire point of WebAuthn — is
+ * never exercised.
+ *
+ * The previous version of this comment said verification was "done
+ * client-side", which reads as done-but-weak rather than absent, and
+ * justified it with "a static-export site". That justification does not hold
+ * here: the viewer is server-rendered on Railway precisely because it needs
+ * a server runtime, and app/api already holds the Firebase Admin credential.
+ * There is a server to verify on.
+ *
+ * Doing this properly means a route that keeps the challenge server-side,
+ * parses the CBOR attestation/COSE public key, verifies the assertion
+ * signature, and enforces monotonic counters. That is a feature, not a fix,
+ * so it is flagged here rather than half-built.
+ * ─────────────────────────────────────────────────────────────────────────
  *
  * TOTP remains the primary 2FA method (§2.3). WebAuthn is an alternative
  * that users can enable alongside or instead of TOTP codes.
@@ -147,6 +173,10 @@ export async function authenticateWithPasskey(
 
   const credentialId = bufferToBase64url(assertion.rawId);
 
+  // An id match, and nothing more. See the file header: the assertion's
+  // signature, challenge, origin and counter are all unchecked, so this
+  // establishes that an authenticator returned a known public identifier —
+  // not that anyone holds the corresponding private key.
   const matched = credentials.find((c) => c.id === credentialId);
   if (!matched) {
     throw new Error("Authenticated credential not found in stored credentials");
