@@ -22,7 +22,6 @@ import {
   registerPasskey,
   loadCredentials,
   deleteCredential,
-  storeCredential,
   WebAuthnCredential,
 } from "@/lib/webauthn";
 
@@ -56,8 +55,10 @@ export function WebAuthnSetup({ uid }: WebAuthnSetupProps) {
       const deviceName = `${
         navigator.platform || "Unknown device"
       } (${new Date().toLocaleDateString()})`;
-      const credential = await registerPasskey(uid, deviceName);
-      await storeCredential(uid, credential);
+      // The server verifies the attestation and writes the credential; there
+      // is deliberately no client-side store step any more, because the
+      // client is not what decides a registration succeeded.
+      await registerPasskey(deviceName);
       await refreshCredentials();
       toast.success("Passkey registered successfully", {
         description: "You can now use biometric 2FA during login.",

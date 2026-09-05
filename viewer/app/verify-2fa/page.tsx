@@ -18,7 +18,6 @@ import {
 import {
   authenticateWithPasskey,
   loadCredentials,
-  updateCredentialCounter,
 } from "@/lib/webauthn";
 
 const totpSessionFlag = { verified: false };
@@ -190,16 +189,14 @@ export default function Verify2FAPage() {
     setVerifying(true);
 
     try {
-      const creds = await loadCredentials(fbUser.uid);
-      if (creds.length === 0) {
-        setError("No passkeys registered. Use a TOTP code or backup code instead.");
-        setVerifying(false);
-        return;
-      }
+      // No pre-flight credential list: the server builds allowCredentials
+      // from its own copy, and answers 409 when there are none. Sending the
+      // list from here was how the old flow decided success locally.
+      await authenticateWithPasskey();
 
-      const result = await authenticateWithPasskey(creds);
-      await updateCredentialCounter(fbUser.uid, result.credentialId, 0);
-
+      // The counter is advanced server-side as part of verification. This
+      // used to write a literal 0 here on every success, which is what made
+      // clone detection impossible.
       totpSessionFlag.verified = true;
       router.replace("/dashboard");
     } catch (e) {
