@@ -149,12 +149,28 @@ the two.
 
 These affect what you can actually verify, not just what's coded:
 
-- **No Firebase backend is provisioned** on the configured project (RTDB,
-  Firestore, and Auth all read back as not-enabled) — `npm run check:backend`
-  confirms this. Nothing that touches Firebase can be smoke-tested end-to-end
-  until it is.
+- ~~No Firebase backend is provisioned~~ — **done 2026-09-05.** All three
+  services exist on `duxo-967f0` and `npm run check:backend` reports three
+  greens: Realtime Database (us-central1), Cloud Firestore (nam5, Standard
+  edition, `(default)`), and Authentication with Email/Password enabled.
+  Both rulesets are published from `firebase/`, verified live: an anonymous
+  GET of `pairings/<code>/customToken` returns 200/null while its parent
+  node and `sessions` both return 401, which is exactly the narrow read
+  window §0.7 describes and is not what Firebase's default rules do.
+
+  Note the two locations are permanent-ish: Firestore's `nam5` cannot be
+  changed at all, and moving RTDB means a new instance and a new
+  `NEXT_PUBLIC_FIREBASE_DATABASE_URL`.
 - **The Railway service has no public domain** ("Unexposed") — there is no
   live deployment to run `check:deploy` against yet.
+- **The `Deploy Firebase Rules` CI job still fails on every `main` push**,
+  by design: it has no `FIREBASE_PROJECT_ID` repository variable and no
+  `FIREBASE_SERVICE_ACCOUNT`/`FIREBASE_TOKEN` secret, and the workflow
+  chooses to fail rather than report a green check for a deploy that did
+  nothing. Its `validate` job — which compiles and exercises both rulesets
+  against the emulators — does pass, and that is the one to watch. The
+  rules currently live were published through the console, so CI is not yet
+  the thing keeping them in sync with `firebase/`.
 - **No host-agent release has been published** — the download page's
   `releases/latest` link currently has nothing to resolve to.
 
