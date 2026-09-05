@@ -82,19 +82,26 @@ describe("secret encryption round-trip (§2.3)", () => {
 });
 
 describe("backup codes (§8.5)", () => {
-  it("draws from crypto.getRandomValues, not Math.random", async () => {
+  it("does not draw from Math.random", async () => {
     // The actual defect. Math.random is a plain PRNG whose state is
     // recoverable from its outputs, so one leaked batch predicts the rest.
-    const getRandomValues = vi.spyOn(crypto, "getRandomValues");
-    const mathRandom = vi.spyOn(Math, "random");
-
-    await generateBackupCodes();
-
-    expect(getRandomValues).toHaveBeenCalled();
-    expect(mathRandom).not.toHaveBeenCalled();
-
-    getRandomValues.mockRestore();
-    mathRandom.mockRestore();
+    //
+    // Asserted by pinning Math.random rather than by spying on
+    // crypto.getRandomValues: `crypto` is a lazily-defined global whose
+    // properties are not reliably configurable across Node versions, so
+    // spying on it passed on Node 24 and failed the suite on the Node 20 the
+    // .nvmrc pins. Math.random is a plain writable global everywhere.
+    //
+    // Frozen to 0, the old implementation emitted "AAAA-AAAA" ten times over,
+    // since every index became the alphabet's first entry.
+    const mathRandom = vi.spyOn(Math, "random").mockReturnValue(0);
+    try {
+      const codes = await generateBackupCodes();
+      expect(codes.map((c) => c.plaintext)).not.toContain("AAAA-AAAA");
+      expect(new Set(codes.map((c) => c.plaintext)).size).toBe(10);
+    } finally {
+      mathRandom.mockRestore();
+    }
   });
 
   it("issues ten formatted codes over the unambiguous alphabet", async () => {

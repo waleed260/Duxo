@@ -146,7 +146,14 @@ export function verifyTOTPCode(secretBase32: string, token: string): boolean {
  *
  * 100k iterations is the OWASP 2023 minimum for PBKDF2-HMAC-SHA256 in JS.
  */
-async function deriveKey(uid: string, salt: Uint8Array): Promise<CryptoKey> {
+async function deriveKey(
+  uid: string,
+  // Uint8Array<ArrayBuffer>, not a bare Uint8Array: the default type parameter
+  // is ArrayBufferLike, which admits SharedArrayBuffer, and WebCrypto's
+  // BufferSource does not. Pinning it here is what lets the salt be passed
+  // straight through as a view instead of being cast to an ArrayBuffer.
+  salt: Uint8Array<ArrayBuffer>,
+): Promise<CryptoKey> {
   const uidBuffer = new TextEncoder().encode(uid);
   const baseKey = await crypto.subtle.importKey(
     "raw",
@@ -159,7 +166,17 @@ async function deriveKey(uid: string, salt: Uint8Array): Promise<CryptoKey> {
   return crypto.subtle.deriveKey(
     {
       name: "PBKDF2",
-      salt: salt.buffer as ArrayBuffer,
+      // The Uint8Array itself, not `salt.buffer`. WebCrypto takes a
+      // BufferSource (ArrayBuffer *or* view), and the two are not equally
+      // safe to hand over: a bare ArrayBuffer is validated with `instanceof
+      // ArrayBuffer`, which is realm-bound, while a view is validated by
+      // internal slot and is not. Under jsdom the array comes from the jsdom
+      // realm and `crypto.subtle` is Node's, so `.buffer` failed that check
+      // with "'salt' of 'Pbkdf2Params' is not instance of ArrayBuffer" and
+      // every encrypt/decrypt threw. It works in a browser, where there is
+      // only one realm — which is why it survived: the function could not be
+      // exercised from a test at all, so it never was.
+      salt,
       iterations: PBKDF2_ITERATIONS,
       hash: "SHA-256",
     },
@@ -315,7 +332,7 @@ function base64Encode(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-function base64Decode(str: string): Uint8Array {
+function base64Decode(str: string): Uint8Array<ArrayBuffer> {
   const binary = atob(str);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
