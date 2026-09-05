@@ -183,6 +183,15 @@ These affect what you can actually verify, not just what's coded:
   longer exists in a page context after enrolment. **`TOTP_MASTER_KEY` must be
   set** (`openssl rand -base64 32`); `/api/totp/*` fails closed with 503 until
   it is, and changing it makes stored secrets undecryptable.
+- **2FA is now enforced server-side** (fixed 2026-09-05). `/verify-2fa` used
+  to set a module-level boolean in the browser and navigate on; the
+  middleware only checked for a Clerk session, so requesting `/dashboard`
+  directly skipped the page entirely. Proof is now a signed HttpOnly cookie
+  issued by `/api/totp/verify` and `/api/webauthn/verify`, checked in
+  `proxy.ts`. Whether 2FA is *enabled* rides on Clerk `publicMetadata`
+  because middleware is edge runtime and cannot reach firebase-admin;
+  `/verify-2fa`, `/settings` and the 2FA API routes are exempt so a user
+  without a factor is never locked out of the page that manages factors.
 - **The `Deploy Firebase Rules` CI job still fails on every `main` push**,
   by design: it has no `FIREBASE_PROJECT_ID` repository variable and no
   `FIREBASE_SERVICE_ACCOUNT`/`FIREBASE_TOKEN` secret, and the workflow

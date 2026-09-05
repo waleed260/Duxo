@@ -17,7 +17,30 @@ import {
   loadCredentials,
 } from "@/lib/webauthn";
 
-const totpSessionFlag = { verified: false };
+/**
+ * §2.3 — this page no longer decides anything.
+ *
+ * It used to hold `totpSessionFlag`, a module-level boolean it set on success
+ * before navigating to /dashboard. Nothing server-side looked at it, so
+ * requesting /dashboard directly skipped this page altogether. Proof is now an
+ * HttpOnly cookie issued by /api/totp/verify and checked in proxy.ts; all this
+ * component does is collect a code and then navigate, letting the middleware
+ * decide whether the navigation is allowed.
+ */
+
+/**
+ * Where to go once the factor is proved. The middleware puts the original
+ * path in `redirect_url`, so an interrupted navigation resumes instead of
+ * always dumping the user on the dashboard.
+ */
+function redirectTarget(): string {
+  if (typeof window === "undefined") return "/dashboard";
+  const target = new URLSearchParams(window.location.search).get("redirect_url");
+  // Same-origin, absolute-path only: an attacker-supplied redirect_url must
+  // not turn this into an open redirect.
+  if (target && target.startsWith("/") && !target.startsWith("//")) return target;
+  return "/dashboard";
+}
 
 export default function Verify2FAPage() {
   const router = useRouter();
@@ -49,11 +72,6 @@ export default function Verify2FAPage() {
       const fbUser = auth.currentUser;
       if (!fbUser) return;
 
-      if (totpSessionFlag.verified) {
-        router.replace("/dashboard");
-        return;
-      }
-
       const client = getFirebaseClient();
       if (!client) return;
       const { firestore } = client;
@@ -61,15 +79,13 @@ export default function Verify2FAPage() {
       try {
         const userDoc = await getDoc(doc(firestore, "users", fbUser.uid));
         if (!userDoc.exists()) {
-          totpSessionFlag.verified = true;
-          router.replace("/dashboard");
+          router.replace(redirectTarget());
           return;
         }
 
         const data = userDoc.data();
         if (!data.totpEnabled || !data.totpSecretEncrypted) {
-          totpSessionFlag.verified = true;
-          router.replace("/dashboard");
+          router.replace(redirectTarget());
           return;
         }
 
@@ -83,9 +99,11 @@ export default function Verify2FAPage() {
           // non-fatal
         }
       } catch (e) {
+        // Failing open here is safe now in a way it was not before: the
+        // middleware still demands the cookie, so a user who cannot be read
+        // out of Firestore lands back on this page rather than past it.
         console.error("TOTP check failed:", e);
-        totpSessionFlag.verified = true;
-        router.replace("/dashboard");
+        router.replace(redirectTarget());
       }
 
       setChecked(true);
@@ -118,8 +136,7 @@ export default function Verify2FAPage() {
         return;
       }
 
-      totpSessionFlag.verified = true;
-      router.replace("/dashboard");
+      router.replace(redirectTarget());
     } catch (e) {
       console.error("TOTP verify failed:", e);
       setError("Something went wrong. Please try again.");
@@ -151,8 +168,7 @@ export default function Verify2FAPage() {
         return;
       }
 
-      totpSessionFlag.verified = true;
-      router.replace("/dashboard");
+      router.replace(redirectTarget());
     } catch (e) {
       console.error("Backup code verify failed:", e);
       setError("Something went wrong. Please try again.");
@@ -176,8 +192,7 @@ export default function Verify2FAPage() {
       // The counter is advanced server-side as part of verification. This
       // used to write a literal 0 here on every success, which is what made
       // clone detection impossible.
-      totpSessionFlag.verified = true;
-      router.replace("/dashboard");
+      router.replace(redirectTarget());
     } catch (e) {
       console.error("WebAuthn verify failed:", e);
       setError("Passkey authentication failed. Try again or use a code.");

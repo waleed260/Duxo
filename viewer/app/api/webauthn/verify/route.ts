@@ -7,6 +7,12 @@ import {
 import { getFirestore } from "firebase-admin/firestore";
 import { getFirebaseAdmin } from "@/lib/firebase-admin";
 import { takeChallenge, relyingParty } from "@/lib/webauthn-server";
+import {
+  issueTwoFactorToken,
+  twoFactorCookieOptions,
+  TWO_FACTOR_COOKIE,
+  TWO_FACTOR_TTL_SECONDS,
+} from "@/lib/two-factor";
 
 /**
  * §8.1 — verify a WebAuthn ceremony. This is the half that was missing.
@@ -149,7 +155,15 @@ export async function POST(request: Request) {
       lastUsedAt: Date.now(),
     });
 
-    return NextResponse.json({ verified: true, credentialId });
+    // A passkey is a second factor too, so a successful assertion earns the
+    // same proof cookie a TOTP code does. Without this, passing the WebAuthn
+    // challenge would leave the middleware still redirecting to /verify-2fa.
+    const token = await issueTwoFactorToken(userId);
+    const ok = NextResponse.json({ verified: true, credentialId });
+    if (token) {
+      ok.cookies.set(TWO_FACTOR_COOKIE, token, twoFactorCookieOptions(TWO_FACTOR_TTL_SECONDS));
+    }
+    return ok;
   } catch (error) {
     // Library errors here are verification failures (bad signature, wrong
     // origin, malformed attestation), not server faults — reporting 500 would

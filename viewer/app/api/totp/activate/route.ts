@@ -1,10 +1,16 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth, clerkClient } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { getFirestore } from "firebase-admin/firestore";
 import { getFirebaseAdmin } from "@/lib/firebase-admin";
 import { verifyTOTPCode, generateBackupCodes } from "@/lib/totp";
 import { encryptSecret, isTotpConfigured } from "@/lib/totp-server";
 import { takePendingSecret } from "@/lib/totp-pending";
+import {
+  issueTwoFactorToken,
+  twoFactorCookieOptions,
+  TWO_FACTOR_COOKIE,
+  TWO_FACTOR_TTL_SECONDS,
+} from "@/lib/two-factor";
 
 /**
  * §2.3 / §8.5 — finish TOTP enrolment.
@@ -77,11 +83,35 @@ export async function POST(request: Request) {
         { merge: true },
       );
 
-    return NextResponse.json({
+    // Record the *fact* of enrolment on the Clerk user, not in Firestore.
+    // The middleware has to know whether to demand a second factor, and it
+    // runs in the edge runtime where firebase-admin cannot follow — but Clerk
+    // session claims are already there. publicMetadata is readable by the
+    // client, which is fine: it says 2FA is on, not that it was passed.
+    try {
+      const clerk = await clerkClient();
+      await clerk.users.updateUser(userId, {
+        publicMetadata: { twoFactorEnabled: true },
+      });
+    } catch (error) {
+      // Enrolment succeeded and the secret is stored; failing the request now
+      // would tell the user their working 2FA did not work. It does mean the
+      // middleware will not enforce until the claim lands, so it is loud.
+      console.error("Could not set twoFactorEnabled on the Clerk user:", error);
+    }
+
+    // Enrolling proves the factor, so the user is not immediately bounced to
+    // /verify-2fa by the middleware they just switched on.
+    const token = await issueTwoFactorToken(userId);
+    const res = NextResponse.json({
       enabled: true,
       // Shown once. Only the hashes above survive.
       backupCodes: codes.map((c) => c.plaintext),
     });
+    if (token) {
+      res.cookies.set(TWO_FACTOR_COOKIE, token, twoFactorCookieOptions(TWO_FACTOR_TTL_SECONDS));
+    }
+    return res;
   } catch (error) {
     console.error("TOTP activation failed:", error);
     return NextResponse.json({ error: "Could not enable 2FA" }, { status: 500 });

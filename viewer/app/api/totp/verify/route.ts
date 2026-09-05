@@ -4,6 +4,12 @@ import { getFirestore } from "firebase-admin/firestore";
 import { getFirebaseAdmin } from "@/lib/firebase-admin";
 import { verifyTOTPCode, verifyBackupCode } from "@/lib/totp";
 import { decryptSecret, isTotpConfigured } from "@/lib/totp-server";
+import {
+  issueTwoFactorToken,
+  twoFactorCookieOptions,
+  TWO_FACTOR_COOKIE,
+  TWO_FACTOR_TTL_SECONDS,
+} from "@/lib/two-factor";
 
 /**
  * §2.3 / §8.5 — verify a TOTP code or a backup code.
@@ -33,6 +39,20 @@ function tooManyAttempts(userId: string): boolean {
   if (record.count >= MAX_ATTEMPTS) return true;
   record.count += 1;
   return false;
+}
+
+/**
+ * Attach the proof cookie. This is the only thing that lets a session past
+ * the middleware's 2FA check — the page used to grant itself passage with a
+ * local boolean, which is what made the second factor skippable.
+ */
+async function withProof(userId: string, body: Record<string, unknown>) {
+  const token = await issueTwoFactorToken(userId);
+  const res = NextResponse.json(body);
+  if (token) {
+    res.cookies.set(TWO_FACTOR_COOKIE, token, twoFactorCookieOptions(TWO_FACTOR_TTL_SECONDS));
+  }
+  return res;
 }
 
 export async function POST(request: Request) {
@@ -84,7 +104,7 @@ export async function POST(request: Request) {
     if (/^\d{6}$/.test(entered)) {
       const secret = decryptSecret(data.totpSecretEncrypted as string, userId);
       if (verifyTOTPCode(secret, entered)) {
-        return NextResponse.json({ verified: true, usedBackupCode: false });
+        return withProof(userId, { verified: true, usedBackupCode: false });
       }
       return NextResponse.json({ error: "That code isn't valid." }, { status: 400 });
     }
@@ -101,7 +121,7 @@ export async function POST(request: Request) {
     const remaining = hashes.filter((_, i) => i !== index);
     await ref.update({ backupCodeHashes: remaining });
 
-    return NextResponse.json({
+    return withProof(userId, {
       verified: true,
       usedBackupCode: true,
       remainingBackupCodes: remaining.length,
