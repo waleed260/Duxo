@@ -1,13 +1,19 @@
-import { getAuth, signInWithCustomToken, type Auth } from "firebase/auth";
+import { signInWithCustomToken, type Auth } from "firebase/auth";
 import { getFirebaseClient } from "./firebase-client";
 
 let _firebaseAuth: Auth | null = null;
 
+/**
+ * The auth instance comes from getFirebaseClient rather than a local
+ * `getAuth(app)`. That call applied Firebase's default persistence —
+ * localStorage — so the refresh token minted below was written to disk in
+ * violation of §2.5. firebase-client pins it to memory at construction.
+ */
 export function getFirebaseAuth() {
   if (!_firebaseAuth) {
     const client = getFirebaseClient();
     if (!client) throw new Error("Firebase not configured");
-    _firebaseAuth = getAuth(client.app);
+    _firebaseAuth = client.auth;
   }
   return _firebaseAuth;
 }

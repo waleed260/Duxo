@@ -8,64 +8,24 @@
  * The viewer keeps the token in memory and includes it in the RTDB session
  * request; the host agent verifies the JWT signature locally (§2.5).
  */
-import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
-import {
-  getAuth,
-  browserLocalPersistence,
-  browserSessionPersistence,
-  setPersistence,
-  type Auth,
-} from "firebase/auth";
-import { getDatabase, type Database } from "firebase/database";
-import { getFirestore, type Firestore } from "firebase/firestore";
+import { getFirebaseClient } from "./firebase-client";
 
 /**
- * RTDB URL fallback.
+ * Thin alias over getFirebaseClient, kept because lib/webauthn.ts imports
+ * this name.
  *
- * `getDatabase()` throws "Can't determine Firebase Database URL" when
- * `databaseURL` is undefined, which takes down every page that touches
- * signaling (§0.6). NEXT_PUBLIC_FIREBASE_DATABASE_URL stays the source of
- * truth — required for non-default RTDB regions — but when it is absent we
- * derive Firebase's default instance from the project id instead of crashing.
+ * This module used to be a second, near-identical copy of firebase-client:
+ * its own `initializeApp`, its own singletons, its own config block. Two
+ * copies meant two different auth configurations against the same app, and
+ * this one's was the unsafe pair — it called `setPersistence(auth,
+ * browserSessionPersistence)` and, on failure, fell back to
+ * `browserLocalPersistence`, which is the localStorage the header above
+ * says must never hold a token. Both calls were fire-and-forget, so a
+ * sign-in could beat them to the default persistence regardless.
+ *
+ * Delegating means one app, one auth instance, one persistence decision,
+ * made at construction in firebase-client.
  */
-function resolveDatabaseUrl(): string | undefined {
-  const explicit = process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL;
-  if (explicit) return explicit;
-  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-  return projectId ? `https://${projectId}-default-rtdb.firebaseio.com` : undefined;
-}
-
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  databaseURL: resolveDatabaseUrl(),
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-};
-
-let _app: FirebaseApp | null = null;
-let _auth: Auth | null = null;
-let _db: Database | null = null;
-let _firestore: Firestore | null = null;
-
-function configMissing(): boolean {
-  return !firebaseConfig.apiKey || !firebaseConfig.projectId;
-}
-
 export function getFirebase() {
-  if (configMissing()) return null;
-  if (!_app) {
-    _app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
-    const auth = getAuth(_app);
-    _auth = auth;
-    _db = getDatabase(_app);
-    _firestore = getFirestore(_app);
-
-    void setPersistence(auth, browserSessionPersistence).catch(() => {
-      void setPersistence(auth, browserLocalPersistence);
-    });
-  }
-  return { app: _app, auth: _auth!, db: _db!, firestore: _firestore! };
+  return getFirebaseClient();
 }
