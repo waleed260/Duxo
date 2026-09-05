@@ -1,3 +1,4 @@
+import path from "node:path";
 import { defineConfig } from "vitest/config";
 
 /**
@@ -10,6 +11,16 @@ import { defineConfig } from "vitest/config";
  */
 export default defineConfig({
   test: {
+    // Same `@shared` target as tsconfig.json and vitest.config.ts. All three
+    // have to agree: this alias once pointed at a byte-identical second copy
+    // of shared/types.ts, so vitest and tsc type-checked different files and
+    // disagreed about a runtime protocol constant the host refuses sessions
+    // over. The lifecycle suite imports SessionStatus from here so the status
+    // strings it writes are the ones the product ships, not re-typed copies.
+    alias: {
+      "@": path.resolve(__dirname, "."),
+      "@shared": path.resolve(__dirname, "./shared"),
+    },
     environment: "node",
     globals: true,
     include: ["rules-tests/**/*.test.ts"],
