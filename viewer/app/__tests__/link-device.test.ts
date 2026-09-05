@@ -17,10 +17,12 @@ const clerkAuth = vi.fn();
 const dbGet = vi.fn();
 const dbUpdate = vi.fn();
 const dbRemove = vi.fn();
+const dbTransaction = vi.fn();
 const dbRef = vi.fn(() => ({
   get: dbGet,
   update: dbUpdate,
   remove: dbRemove,
+  transaction: dbTransaction,
 }));
 const createCustomToken = vi.fn();
 const collectionAdd = vi.fn();
@@ -73,6 +75,16 @@ describe("POST /api/link-device", () => {
     dbGet.mockReset();
     dbUpdate.mockReset().mockResolvedValue(undefined);
     dbRemove.mockReset().mockResolvedValue(undefined);
+    // Default: this caller wins the claim. The updater is run against the
+    // same pairing `get` returned, so an aborting updater (undefined) reports
+    // itself as uncommitted exactly as the real transaction would.
+    dbTransaction.mockReset().mockImplementation(async (updater) => {
+      const current = dbGet.mock.results.length
+        ? (await dbGet.mock.results[0].value)?.val?.()
+        : null;
+      const next = updater(current ?? null);
+      return { committed: next !== undefined, snapshot: { val: () => next } };
+    });
     dbRef.mockClear();
     createCustomToken.mockReset().mockResolvedValue("custom-token-abc");
     collectionAdd.mockReset().mockResolvedValue({ id: "device_1" });
@@ -135,8 +147,67 @@ describe("POST /api/link-device", () => {
     const res = await POST(post({ code: "ABC234" }));
     expect(res.status).toBe(200);
     expect(dbUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ claimed: true, customToken: "custom-token-abc" }),
+      expect.objectContaining({ customToken: "custom-token-abc" }),
     );
+  });
+
+  it("claims the code atomically before minting anything", async () => {
+    // Read-then-write is not single use: two callers can both pass the
+    // `claimed` check on a stale snapshot and both mint a token, for two
+    // different uids, and the host picks up whichever write landed last.
+    // The claim has to be a transaction, and it has to happen first.
+    dbGet.mockResolvedValue(pendingPairing());
+    const order: string[] = [];
+    dbTransaction.mockImplementation(async (updater) => {
+      order.push("claim");
+      const next = updater({ createdAt: Date.now(), claimed: false });
+      return { committed: next !== undefined, snapshot: { val: () => next } };
+    });
+    createCustomToken.mockImplementation(async () => {
+      order.push("mint");
+      return "custom-token-abc";
+    });
+
+    const POST = await freshRoute();
+    const res = await POST(post({ code: "ABC234" }));
+
+    expect(res.status).toBe(200);
+    expect(order).toEqual(["claim", "mint"]);
+    // The claim's updater must actually set the flag, not just read it.
+    const updater = dbTransaction.mock.calls[0][0];
+    expect(updater({ createdAt: Date.now(), claimed: false })).toMatchObject({
+      claimed: true,
+    });
+  });
+
+  it("refuses to mint when another caller won the claim", async () => {
+    // The losing side of the race. `get` still saw an unclaimed node — that
+    // snapshot is what makes this a race rather than a plain 409 — so the
+    // transaction is the only thing standing between the attacker and a
+    // token minted for their own uid against someone else's machine.
+    dbGet.mockResolvedValue(pendingPairing());
+    dbTransaction.mockResolvedValue({ committed: false, snapshot: { val: () => null } });
+
+    const POST = await freshRoute();
+    const res = await POST(post({ code: "ABC234" }));
+
+    expect(res.status).toBe(409);
+    expect(createCustomToken).not.toHaveBeenCalled();
+    expect(dbUpdate).not.toHaveBeenCalled();
+    expect(collectionAdd).not.toHaveBeenCalled();
+  });
+
+  it("aborts the claim on a code that expired between read and transaction", async () => {
+    // The TTL is re-checked inside the updater because the snapshot above may
+    // have been read microseconds before expiry.
+    dbGet.mockResolvedValue(pendingPairing());
+    const POST = await freshRoute();
+    await POST(post({ code: "ABC234" }));
+
+    const updater = dbTransaction.mock.calls[0][0];
+    expect(updater({ createdAt: Date.now() - 11 * 60 * 1000, claimed: false })).toBeUndefined();
+    expect(updater({ createdAt: Date.now(), claimed: true })).toBeUndefined();
+    expect(updater(null)).toBeUndefined();
   });
 
   it("refuses a code that has already been claimed", async () => {

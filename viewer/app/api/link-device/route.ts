@@ -95,8 +95,9 @@ export async function POST(request: Request) {
       claimed?: unknown;
     };
 
-    // Single use: a code that has already produced a token must not produce a
-    // second one, or a stolen code stays useful after a successful pairing.
+    // These two checks are for the *message*, not for the guarantee — they
+    // read a snapshot, and by the time the token is minted that snapshot is
+    // stale. The claim below is what actually enforces single use.
     if (pairing.claimed === true) {
       return NextResponse.json(
         { error: "That code has already been used. Generate a new one." },
@@ -114,10 +115,47 @@ export async function POST(request: Request) {
       );
     }
 
-    // The uid comes from the Clerk session, never from the request.
+    // Claim the code atomically BEFORE minting anything.
+    //
+    // Read-then-write is not single use. Two requests carrying the same code
+    // can both pass the `claimed === true` check above before either writes,
+    // and both then mint a token — for two *different* uids, since each uid
+    // comes from its own caller's session. Both write `customToken` to the
+    // same node, so the host polling that node picks up whichever landed
+    // last. An attacker who learns a code and races the legitimate user can
+    // therefore end up as the account linked to that user's machine, which is
+    // exactly what single use is supposed to prevent.
+    //
+    // The transaction makes the check and the claim one operation, so exactly
+    // one caller can win. The TTL is re-checked inside it because the snapshot
+    // above may have been read just before expiry.
+    const claim = await nodeRef.transaction(
+      (current: Record<string, unknown> | null) => {
+        // Returning undefined aborts the transaction without writing.
+        if (current === null) return undefined;
+        if (current.claimed === true) return undefined;
+        const ts = typeof current.createdAt === "number" ? current.createdAt : 0;
+        if (!ts || Date.now() - ts > PAIRING_TTL_MS) return undefined;
+        return { ...current, claimed: true };
+      },
+    );
+
+    if (!claim.committed) {
+      return NextResponse.json(
+        { error: "That code has already been used. Generate a new one." },
+        { status: 409 },
+      );
+    }
+
+    // Only now, holding the claim, is a token minted. The uid comes from the
+    // Clerk session, never from the request.
+    //
+    // If minting fails the code stays claimed and is burned. That is the
+    // right direction to fail: a burned code costs the user one retry, where
+    // releasing the claim would reopen the race this transaction just closed.
     const customToken = await getAuth(getFirebaseAdmin()).createCustomToken(userId);
 
-    await nodeRef.update({ claimed: true, customToken });
+    await nodeRef.update({ customToken });
 
     // §8.2 — the device registry. Nothing wrote it before, so /settings
     // listed "No devices registered" no matter how many machines a user had
