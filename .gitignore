@@ -58,3 +58,14 @@ viewer/playwright-report/
 # Deploy debris captured while debugging Railway; not part of the project.
 railway-build-log.txt
 railway-service.txt
+
+# Locally installed agent skill packages — developer tooling, not project
+# source. ~4MB of vendored third-party content (with its own licenses and a
+# binary tarball) that no part of the viewer or host agent builds against.
+# .claude/skills holds only symlinks into .agents/skills.
+# The ** prefix matters on the second pattern: a pattern with an internal
+# slash is anchored to this file's directory, so a bare `.claude/skills/`
+# would only match at the repo root and miss viewer/.claude/skills/.
+.agents/
+**/.claude/skills/
+skills-lock.json
