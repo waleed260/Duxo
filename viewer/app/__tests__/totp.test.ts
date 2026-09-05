@@ -1,0 +1,143 @@
+import { describe, it, expect, vi } from "vitest";
+import {
+  generateTOTPSecret,
+  verifyTOTPCode,
+  encryptSecret,
+  decryptSecret,
+  generateBackupCodes,
+  verifyBackupCode,
+} from "@/lib/totp";
+
+/**
+ * §2.3 / §8.5 — the second factor. Untested until now, which is a poor place
+ * for a gap: every function here is a credential operation, and two of them
+ * were wrong.
+ *
+ * Backup codes were drawn from `Math.random`. A backup code bypasses the
+ * second factor by itself, so it is an authentication credential; V8's
+ * xorshift128+ can be reconstructed from a few outputs, and the remaining
+ * codes in the batch then follow. Nominal entropy is irrelevant against a
+ * predictable generator.
+ *
+ * The secret's encryption is honest about what it is in lib/totp.ts: the KDF
+ * password is the uid, and the uid is the document path the ciphertext sits
+ * at, so it is obfuscation at rest rather than confidentiality against a
+ * Firestore read. The round-trip is still pinned here — if it silently stops
+ * decrypting, users lose their second factor.
+ */
+
+const UID = "user_2abcDEF";
+
+describe("TOTP secret generation (§2.3)", () => {
+  it("produces a base32 secret and a scannable otpauth URI", () => {
+    const { secret, otpauthUri } = generateTOTPSecret("someone@example.com");
+    expect(secret).toMatch(/^[A-Z2-7]+$/);
+    expect(otpauthUri.startsWith("otpauth://totp/")).toBe(true);
+    expect(otpauthUri).toContain("Duxo");
+  });
+
+  it("never repeats a secret across calls", () => {
+    const seen = new Set(
+      Array.from({ length: 25 }, () => generateTOTPSecret("a@b.c").secret),
+    );
+    expect(seen.size).toBe(25);
+  });
+});
+
+describe("TOTP verification (§2.3)", () => {
+  it("rejects a wrong code and a malformed secret without throwing", () => {
+    const { secret } = generateTOTPSecret("a@b.c");
+    expect(verifyTOTPCode(secret, "000000")).toBe(false);
+    expect(verifyTOTPCode(secret, "not-a-code")).toBe(false);
+    expect(verifyTOTPCode("!!!not-base32!!!", "123456")).toBe(false);
+  });
+});
+
+describe("secret encryption round-trip (§2.3)", () => {
+  it("decrypts back to the original secret", async () => {
+    const { secret } = generateTOTPSecret("a@b.c");
+    const encrypted = await encryptSecret(secret, UID);
+    expect(encrypted).not.toContain(secret);
+    await expect(decryptSecret(encrypted, UID)).resolves.toBe(secret);
+  });
+
+  it("produces different ciphertext each time for the same input", async () => {
+    // Random salt and IV per call. Identical ciphertext would leak that two
+    // users share a secret, and would break AES-GCM's IV-reuse requirement.
+    const { secret } = generateTOTPSecret("a@b.c");
+    const a = await encryptSecret(secret, UID);
+    const b = await encryptSecret(secret, UID);
+    expect(a).not.toBe(b);
+  });
+
+  it("fails to decrypt under a different uid", async () => {
+    const { secret } = generateTOTPSecret("a@b.c");
+    const encrypted = await encryptSecret(secret, UID);
+    await expect(decryptSecret(encrypted, "someone-else")).rejects.toThrow();
+  });
+
+  it("rejects truncated ciphertext rather than returning garbage", async () => {
+    await expect(decryptSecret("AAAA", UID)).rejects.toThrow(/too short/i);
+  });
+});
+
+describe("backup codes (§8.5)", () => {
+  it("draws from crypto.getRandomValues, not Math.random", async () => {
+    // The actual defect. Math.random is a plain PRNG whose state is
+    // recoverable from its outputs, so one leaked batch predicts the rest.
+    const getRandomValues = vi.spyOn(crypto, "getRandomValues");
+    const mathRandom = vi.spyOn(Math, "random");
+
+    await generateBackupCodes();
+
+    expect(getRandomValues).toHaveBeenCalled();
+    expect(mathRandom).not.toHaveBeenCalled();
+
+    getRandomValues.mockRestore();
+    mathRandom.mockRestore();
+  });
+
+  it("issues ten formatted codes over the unambiguous alphabet", async () => {
+    const codes = await generateBackupCodes();
+    expect(codes).toHaveLength(10);
+    for (const { plaintext } of codes) {
+      // No O/0 or I/1/L — these get read off a screen and typed.
+      expect(plaintext).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/);
+    }
+  });
+
+  it("stores only hashes, never the code itself", async () => {
+    const codes = await generateBackupCodes();
+    for (const { plaintext, hash } of codes) {
+      expect(hash).toMatch(/^[0-9a-f]{64}$/);
+      expect(hash).not.toContain(plaintext.replace("-", ""));
+    }
+  });
+
+  it("does not repeat a code within or across batches", async () => {
+    const batches = await Promise.all([
+      generateBackupCodes(),
+      generateBackupCodes(),
+      generateBackupCodes(),
+    ]);
+    const all = batches.flat().map((c) => c.plaintext);
+    expect(new Set(all).size).toBe(all.length);
+  });
+
+  it("matches a stored code case-insensitively and reports its index", async () => {
+    const codes = await generateBackupCodes();
+    const hashes = codes.map((c) => c.hash);
+    await expect(verifyBackupCode(codes[3].plaintext, hashes)).resolves.toBe(3);
+    await expect(
+      verifyBackupCode(codes[3].plaintext.toLowerCase(), hashes),
+    ).resolves.toBe(3);
+  });
+
+  it("returns -1 for a code that was never issued", async () => {
+    const codes = await generateBackupCodes();
+    await expect(
+      verifyBackupCode("ZZZZ-9999", codes.map((c) => c.hash)),
+    ).resolves.toBe(-1);
+    await expect(verifyBackupCode("anything", [])).resolves.toBe(-1);
+  });
+});

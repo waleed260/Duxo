@@ -120,10 +120,29 @@ export function verifyTOTPCode(secretBase32: string, token: string): boolean {
 /**
  * Derive an AES-256-GCM key from the user's UID using PBKDF2.
  *
- * Combines the UID with a random salt so that:
- *   - Two users with the same UID do not produce the same key (salt differs).
- *   - An attacker who compromises Firestore gets salt + ciphertext, not the UID
- *     — they still need to brute-force PBKDF2 to recover the key.
+ * READ THIS BEFORE RELYING ON IT. The KDF password is the user's uid, and
+ * the uid is the *document path* this ciphertext is stored at
+ * (`users/{uid}`). An attacker who can read the document therefore already
+ * holds the password, the salt and the IV, and can derive the key directly.
+ * The 100k iterations slow an attacker who has to guess a password; this one
+ * does not have to guess.
+ *
+ * So this is obfuscation at rest, not confidentiality against a Firestore
+ * compromise. The previous comment here claimed the opposite — "an attacker
+ * who compromises Firestore gets salt + ciphertext, not the UID" — which is
+ * false in the one scenario the encryption exists for, and is the kind of
+ * claim that stops anyone looking again.
+ *
+ * What it does still buy: a secret that leaks *without* its path is not
+ * trivially readable — a log line, a partial backup, a screenshot of a
+ * document body. That is worth having and is not nothing, but it is not the
+ * threat model §2.3 implies.
+ *
+ * Making this real needs key material the client cannot hold: either a
+ * server-held pepper with verification moved behind an API route, or a
+ * user-supplied passphrase. Both are architecture decisions, not edits, and
+ * are noted rather than made here. Nothing is deployed yet — Firebase is
+ * unprovisioned — so there is no stored ciphertext to migrate when it is.
  *
  * 100k iterations is the OWASP 2023 minimum for PBKDF2-HMAC-SHA256 in JS.
  */
@@ -227,17 +246,31 @@ export async function decryptSecret(
  * §8.5 — Generate 10 single-use backup codes.
  * Returns an array of { plaintext, hash } pairs.
  * Uses the Web Crypto API for SHA-256 hashing.
+ *
+ * The codes come from `crypto.getRandomValues`, not `Math.random`. A backup
+ * code bypasses the second factor on its own, so it is an authentication
+ * credential and has to be unguessable. `Math.random` is a plain PRNG —
+ * V8's xorshift128+ — whose internal state can be recovered from a handful
+ * of observed outputs, after which every other code in the batch is
+ * derivable. Nominal entropy (8 chars over a 32-char alphabet, 40 bits)
+ * counts for nothing if the generator is predictable, and this file was
+ * already using getRandomValues two functions up for the PBKDF2 salt.
+ *
+ * The alphabet is exactly 32 characters, which divides 256 evenly, so
+ * masking a byte to 5 bits is uniform — no modulo bias to reject for.
  */
+const BACKUP_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
 export async function generateBackupCodes(): Promise<
   { plaintext: string; hash: string }[]
 > {
   const codes: { plaintext: string; hash: string }[] = [];
 
   for (let i = 0; i < 10; i++) {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const bytes = crypto.getRandomValues(new Uint8Array(8));
     let code = "";
     for (let j = 0; j < 8; j++) {
-      code += chars[Math.floor(Math.random() * chars.length)];
+      code += BACKUP_CODE_ALPHABET[bytes[j] & 31];
     }
     const formatted = `${code.slice(0, 4)}-${code.slice(4)}`;
     const hash = await sha256(formatted);
