@@ -175,11 +175,14 @@ These affect what you can actually verify, not just what's coded:
   `/api/webauthn/{options,verify}` hold the challenge and public keys and
   check signature, challenge, origin, rpID and an advancing counter.
   `lib/webauthn.ts` is now browser ceremony only.
-- **TOTP secret "encryption" is still obfuscation, not confidentiality.** The
-  PBKDF2 password is the uid, which is also the document path the ciphertext
-  is stored at, so a Firestore read yields both. Documented in `lib/totp.ts`;
-  fixing it needs a server-held pepper or a user passphrase, which is a
-  design decision rather than an edit.
+- **TOTP is now encrypted with a server-held key** (fixed 2026-09-05). The
+  PBKDF2 password used to be the uid, which is also the document path the
+  ciphertext sits at, so a Firestore read yielded both. The key is now
+  HKDF-derived from `TOTP_MASTER_KEY`, which never leaves the server, and
+  `/api/totp/{setup,activate,verify}` do the crypto — the plaintext secret no
+  longer exists in a page context after enrolment. **`TOTP_MASTER_KEY` must be
+  set** (`openssl rand -base64 32`); `/api/totp/*` fails closed with 503 until
+  it is, and changing it makes stored secrets undecryptable.
 - **The `Deploy Firebase Rules` CI job still fails on every `main` push**,
   by design: it has no `FIREBASE_PROJECT_ID` repository variable and no
   `FIREBASE_SERVICE_ACCOUNT`/`FIREBASE_TOKEN` secret, and the workflow

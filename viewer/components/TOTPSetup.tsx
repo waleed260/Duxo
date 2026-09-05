@@ -19,11 +19,8 @@ import { getFirebaseClient } from "@/lib/firebase-client";
 import { sanitizeSvg } from "@/lib/sanitize";
 import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import {
-  generateTOTPSecret,
   generateQRCodeSVG,
-  verifyTOTPCode,
-  encryptSecret,
-  generateBackupCodes,
+
 } from "@/lib/totp";
 
 type SetupPhase = "idle" | "scan" | "verify" | "backup" | "done";
@@ -76,73 +73,63 @@ export default function TOTPSetup() {
   }, [user, isLoaded]);
 
   async function handleEnable() {
-    if (!user?.emailAddresses?.[0]?.emailAddress) return;
-
-    const { secret, otpauthUri: uri } = generateTOTPSecret(
-      user.emailAddresses[0].emailAddress,
-    );
-    setSecretBase32(secret);
-    setOtpauthUri(uri);
-
+    // The secret is generated and held server-side; this only renders what it
+    // returns. Generating it here meant the browser owned the one piece of
+    // material the second factor rests on.
     try {
-      const svg = await generateQRCodeSVG(uri);
-      setQrSvg(svg);
+      const res = await fetch("/api/totp/setup", {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setVerifyError(data?.error ?? "Could not start setup.");
+        return;
+      }
+      setSecretBase32(data.secret);
+      setOtpauthUri(data.otpauthUri);
+      try {
+        setQrSvg(await generateQRCodeSVG(data.otpauthUri));
+      } catch {
+        // Manual entry of `secret` is the fallback; the phase still advances.
+      }
       setPhase("scan");
     } catch {
-      setPhase("scan");
+      setVerifyError("Could not start setup. Check your connection.");
     }
   }
 
   async function handleVerify() {
-    const auth = getFirebaseAuth();
-    const fbUser = auth.currentUser;
-    if (!fbUser || verificationCode.length !== 6) return;
+    if (verificationCode.length !== 6) return;
 
     setVerifyError(null);
     setVerifying(true);
 
+    // One call. The server checks the code against the pending secret it
+    // generated, encrypts that secret under a key the browser cannot derive,
+    // writes the document with the Admin credential, and returns the backup
+    // codes once. Previously all of that happened here, which is why the
+    // encryption key had to be something the browser knew.
     try {
-      const isValid = verifyTOTPCode(secretBase32, verificationCode);
+      const res = await fetch("/api/totp/activate", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: verificationCode }),
+      });
+      const data = await res.json();
 
-      if (!isValid) {
-        setVerifyError("That code doesn't match — check your authenticator app and try again.");
+      if (!res.ok) {
+        setVerifyError(data?.error ?? "Something went wrong. Please try again.");
         setVerifying(false);
         return;
       }
 
-      const encrypted = await encryptSecret(secretBase32, fbUser.uid);
-      const codes = await generateBackupCodes();
-      const backupCodeHashes = codes.map((c) => c.hash);
-
-      const client = getFirebaseClient();
-      if (!client) return;
-      const { firestore } = client;
-      const userRef = doc(firestore, "users", fbUser.uid);
-
-      const existingDoc = await getDoc(userRef);
-      if (existingDoc.exists()) {
-        await updateDoc(userRef, {
-          totpEnabled: true,
-          totpSecretEncrypted: encrypted,
-          backupCodeHashes,
-        });
-      } else {
-        await setDoc(userRef, {
-          email: fbUser.email,
-          displayName: "",
-          emailVerified: fbUser.emailVerified,
-          createdAt: Date.now(),
-          totpEnabled: true,
-          totpSecretEncrypted: encrypted,
-          backupCodeHashes,
-        });
-      }
-
-      setBackupCodes(codes.map((c) => c.plaintext));
+      setBackupCodes(data.backupCodes ?? []);
       setTotpEnabled(true);
       setPhase("backup");
     } catch (e) {
-      console.error("TOTP verify/save failed:", e);
+      console.error("TOTP activation failed:", e);
       setVerifyError("Something went wrong. Please try again.");
     }
 

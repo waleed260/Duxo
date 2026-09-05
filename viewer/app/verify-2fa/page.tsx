@@ -11,9 +11,6 @@ import { syncFirebaseAuth, getFirebaseAuth } from "@/lib/auth-bridge";
 import { getFirebaseClient } from "@/lib/firebase-client";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import {
-  verifyTOTPCode,
-  decryptSecret,
-  verifyBackupCode,
 } from "@/lib/totp";
 import {
   authenticateWithPasskey,
@@ -105,23 +102,18 @@ export default function Verify2FAPage() {
     setVerifying(true);
 
     try {
-      const client = getFirebaseClient();
-      if (!client) return;
-      const { firestore } = client;
-      const userDoc = await getDoc(doc(firestore, "users", fbUser.uid));
-      if (!userDoc.exists()) {
-        setError("Could not load your security settings.");
-        setVerifying(false);
-        return;
-      }
-
-      const data = userDoc.data();
-      const encryptedSecret = data.totpSecretEncrypted as string;
-      const secretBase32 = await decryptSecret(encryptedSecret, fbUser.uid);
-
-      const valid = verifyTOTPCode(secretBase32, code);
-      if (!valid) {
-        setError("That code isn't valid — check your authenticator app and try again.");
+      // The secret is decrypted and compared server-side. It used to be
+      // fetched, decrypted and compared here, which put the plaintext secret
+      // in a page context on every login.
+      const res = await fetch("/api/totp/verify", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data?.error ?? "That code isn't valid — check your authenticator app.");
         setVerifying(false);
         return;
       }
@@ -143,34 +135,21 @@ export default function Verify2FAPage() {
     setVerifying(true);
 
     try {
-      const client = getFirebaseClient();
-      if (!client) return;
-      const { firestore } = client;
-      const userDoc = await getDoc(doc(firestore, "users", fbUser.uid));
-      if (!userDoc.exists()) {
-        setError("Could not load your security settings.");
-        setVerifying(false);
-        return;
-      }
-
-      const data = userDoc.data();
-      const hashes = (data.backupCodeHashes as string[]) || [];
-
-      const code_upper = backupCode.toUpperCase().trim();
-      const idx = await verifyBackupCode(code_upper, hashes);
-
-      if (idx === -1) {
-        setError("That backup code isn't valid.");
-        setVerifying(false);
-        return;
-      }
-
-      const newHashes = [...hashes];
-      newHashes.splice(idx, 1);
-
-      await updateDoc(doc(firestore, "users", fbUser.uid), {
-        backupCodeHashes: newHashes,
+      // Same route: a non-6-digit code is treated as a backup code, and the
+      // server is what removes the spent one. Doing that here meant a client
+      // that never sent the follow-up write left a used code still valid.
+      const res = await fetch("/api/totp/verify", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: backupCode.toUpperCase().trim() }),
       });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data?.error ?? "That backup code isn't valid.");
+        setVerifying(false);
+        return;
+      }
 
       totpSessionFlag.verified = true;
       router.replace("/dashboard");

@@ -13,6 +13,10 @@ export function validateEnv(): string[] {
     FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
     FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL,
     FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY,
+    // §2.3 — without it /api/totp/* refuses to enable or verify 2FA, so a
+    // deploy missing it should say so from /api/health rather than at the
+    // moment a user tries to turn on their second factor.
+    TOTP_MASTER_KEY: process.env.TOTP_MASTER_KEY,
   };
   for (const [key, val] of Object.entries(vars)) {
     if (!val) missing.push(key);

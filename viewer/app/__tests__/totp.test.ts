@@ -2,8 +2,6 @@ import { describe, it, expect, vi } from "vitest";
 import {
   generateTOTPSecret,
   verifyTOTPCode,
-  encryptSecret,
-  decryptSecret,
   generateBackupCodes,
   verifyBackupCode,
 } from "@/lib/totp";
@@ -19,14 +17,12 @@ import {
  * codes in the batch then follow. Nominal entropy is irrelevant against a
  * predictable generator.
  *
- * The secret's encryption is honest about what it is in lib/totp.ts: the KDF
- * password is the uid, and the uid is the document path the ciphertext sits
- * at, so it is obfuscation at rest rather than confidentiality against a
- * Firestore read. The round-trip is still pinned here — if it silently stops
- * decrypting, users lose their second factor.
+ * Encryption is no longer here at all. It moved to lib/totp-server.ts, keyed
+ * by a master secret the browser never sees, and is covered by
+ * totp-server.test.ts. What remains in this file is the pure half that runs
+ * anywhere and needs no environment: secret generation, code verification,
+ * and the backup codes.
  */
-
-const UID = "user_2abcDEF";
 
 describe("TOTP secret generation (§2.3)", () => {
   it("produces a base32 secret and a scannable otpauth URI", () => {
@@ -50,34 +46,6 @@ describe("TOTP verification (§2.3)", () => {
     expect(verifyTOTPCode(secret, "000000")).toBe(false);
     expect(verifyTOTPCode(secret, "not-a-code")).toBe(false);
     expect(verifyTOTPCode("!!!not-base32!!!", "123456")).toBe(false);
-  });
-});
-
-describe("secret encryption round-trip (§2.3)", () => {
-  it("decrypts back to the original secret", async () => {
-    const { secret } = generateTOTPSecret("a@b.c");
-    const encrypted = await encryptSecret(secret, UID);
-    expect(encrypted).not.toContain(secret);
-    await expect(decryptSecret(encrypted, UID)).resolves.toBe(secret);
-  });
-
-  it("produces different ciphertext each time for the same input", async () => {
-    // Random salt and IV per call. Identical ciphertext would leak that two
-    // users share a secret, and would break AES-GCM's IV-reuse requirement.
-    const { secret } = generateTOTPSecret("a@b.c");
-    const a = await encryptSecret(secret, UID);
-    const b = await encryptSecret(secret, UID);
-    expect(a).not.toBe(b);
-  });
-
-  it("fails to decrypt under a different uid", async () => {
-    const { secret } = generateTOTPSecret("a@b.c");
-    const encrypted = await encryptSecret(secret, UID);
-    await expect(decryptSecret(encrypted, "someone-else")).rejects.toThrow();
-  });
-
-  it("rejects truncated ciphertext rather than returning garbage", async () => {
-    await expect(decryptSecret("AAAA", UID)).rejects.toThrow(/too short/i);
   });
 });
 
