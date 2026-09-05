@@ -39,6 +39,7 @@ export default function LandingPage() {
         <Architecture />
         <Steps />
         <Trust />
+        <FAQ />
         <FinalCTA />
       </main>
       <LightFooter />
@@ -76,17 +77,37 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
 function Hero() {
   return (
     <section className="relative overflow-hidden bg-[#0b0b0a]">
+      {/* Layered color depth — warm amber + graphite glows over near-black */}
       <div
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            "radial-gradient(60% 55% at 12% 10%, rgba(232,120,60,0.22) 0%, transparent 60%)," +
-            "radial-gradient(50% 50% at 88% 0%, rgba(149,141,126,0.16) 0%, transparent 60%)," +
-            "radial-gradient(80% 60% at 50% 100%, rgba(232,85,43,0.10) 0%, transparent 70%)," +
-            "linear-gradient(180deg, #0b0b0a 0%, #050504 65%, #000000 100%)",
+            "radial-gradient(65% 60% at 10% 8%, rgba(232,120,60,0.28) 0%, transparent 60%)," +
+            "radial-gradient(55% 55% at 90% -5%, rgba(149,141,126,0.20) 0%, transparent 60%)," +
+            "radial-gradient(90% 70% at 50% 105%, rgba(232,85,43,0.14) 0%, transparent 70%)," +
+            "linear-gradient(180deg, #100e0a 0%, #050403 60%, #000000 100%)",
         }}
         aria-hidden="true"
       />
+      {/* Fluted-glass ribbing — a generic, non-photographic texture device
+          (not Planhat's forest photo) that still reads as "shot through
+          glass," giving the gradient physical depth. */}
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.18] mix-blend-overlay"
+        style={{
+          backgroundImage:
+            "repeating-linear-gradient(100deg, rgba(255,255,255,0.5) 0px, rgba(255,255,255,0.5) 1px, transparent 1px, transparent 14px)",
+        }}
+        aria-hidden="true"
+      />
+      {/* Film-grain texture via SVG turbulence — procedural, not a stock photo */}
+      <svg className="pointer-events-none absolute inset-0 h-full w-full opacity-[0.35] mix-blend-overlay" aria-hidden="true">
+        <filter id="hero-grain">
+          <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch" />
+          <feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.4 0" />
+        </filter>
+        <rect width="100%" height="100%" filter="url(#hero-grain)" />
+      </svg>
       <div
         className="pointer-events-none absolute inset-0 opacity-[0.06]"
         style={{
@@ -119,7 +140,7 @@ function Hero() {
         </ScrollReveal>
 
         <ScrollReveal delay={100}>
-          <h1 className="text-[40px] font-medium leading-[1.1] tracking-[-0.035em] text-white sm:text-[52px] sm:tracking-[-0.04em] md:text-[60px] md:tracking-[-0.045em]">
+          <h1 className="text-[42px] font-medium leading-[1.08] tracking-[-0.035em] text-white sm:text-[56px] sm:tracking-[-0.04em] md:text-[64px] md:tracking-[-0.045em]">
             Remote access, without the trust exercise.
           </h1>
         </ScrollReveal>
@@ -464,6 +485,63 @@ function Trust() {
             </div>
           </ScrollReveal>
         </div>
+      </div>
+    </section>
+  );
+}
+
+/* ════════════════════════════════════════════════
+   FAQ — real remaining questions, hairline dividers,
+   no accordion needed at this length.
+   ════════════════════════════════════════════════ */
+function FAQ() {
+  const faqs = [
+    {
+      q: "Is Duxo actually free, or is there a catch?",
+      a: "It's free because it's open source (MIT licensed) — there's no paid tier, no usage limits, and no feature gated behind a subscription. You can also read the source yourself to confirm that.",
+    },
+    {
+      q: "What operating systems does it support?",
+      a: "The host agent runs on Windows and Linux, with full mouse and keyboard control on both (X11 on Linux; Wayland connects view-only for now). The viewer runs in any modern browser.",
+    },
+    {
+      q: "Does the person receiving a connection need an account?",
+      a: "No. Only the person initiating a session needs to sign in. Anyone can enter a connection code from a browser without creating an account.",
+    },
+    {
+      q: "What happens if my network connection drops mid-session?",
+      a: "Duxo attempts an ICE restart with exponential backoff to reconnect automatically, using the same session — you won't need a new code or to re-approve the connection.",
+    },
+    {
+      q: "Can I self-host or audit the infrastructure myself?",
+      a: "Yes. The full source — host agent, viewer, and signaling — is on GitHub under the MIT license, so you can audit it, fork it, or run your own signaling and TURN infrastructure.",
+    },
+  ];
+
+  return (
+    <section className="border-b border-black bg-white">
+      <div className="mx-auto max-w-[1280px] px-6 py-16 sm:py-20 md:py-24">
+        <ScrollReveal>
+          <Eyebrow>Questions</Eyebrow>
+          <h2 className="mt-4 max-w-2xl text-[32px] font-medium leading-[1.15] tracking-[-0.03em] text-black sm:text-[42px]">
+            Answers before you download.
+          </h2>
+        </ScrollReveal>
+
+        <ScrollReveal delay={150}>
+          <div className="mt-10 max-w-3xl divide-y divide-black border-t border-b border-black">
+            {faqs.map((item) => (
+              <div key={item.q} className="flex flex-col gap-2 py-6 sm:flex-row sm:gap-12">
+                <h3 className="text-base font-medium tracking-[-0.01em] text-black sm:w-1/3">
+                  {item.q}
+                </h3>
+                <p className="text-sm leading-[1.5] tracking-[-0.01em] text-[#575551] sm:w-2/3">
+                  {item.a}
+                </p>
+              </div>
+            ))}
+          </div>
+        </ScrollReveal>
       </div>
     </section>
   );
