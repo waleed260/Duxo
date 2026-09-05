@@ -10,7 +10,7 @@ WebRTC. Video/input travel peer-to-peer; Firebase is used only for
 auth/signaling/durable records, never for media.
 
 ```
-VIEWER (Next.js/Railway)  <── WebRTC P2P ──>  HOST AGENT (Tauri/Rust)
+VIEWER (Next.js, unhosted)<── WebRTC P2P ──>  HOST AGENT (Tauri/Rust)
         │        STUN + Metered TURN                  Windows .exe
         │        + Oracle Coturn fallback              Linux .tar.gz
         └──────────── Firebase RTDB ──────────────────┘
@@ -41,10 +41,12 @@ npm run check:deploy -- <url> # headless-browser smoke test against a live deplo
 npm run test:rules            # Firestore/RTDB security-rules tests (spins up an emulator itself)
 ```
 
-Node version is pinned in `viewer/.nvmrc` (currently 20) — CI and Railway's
-Nixpacks both read it, and `package-lock.json` is only valid for the npm that
-generated it, so regenerate it on the pinned major or `npm ci` fails under CI
-naming unrelated packages.
+Node version is pinned in `viewer/.nvmrc` (currently 20) — CI reads it, and
+`package-lock.json` is only valid for the npm that generated it, so regenerate
+it on the pinned major or `npm ci` fails under CI naming unrelated packages.
+Local Node may well be newer; a suite can pass locally and fail CI on that
+difference alone, so reproduce against the pinned major before believing a
+green local run.
 
 `npm run test:run` (via `vitest.config.ts`) excludes `e2e/**` and
 `rules-tests/**` by default — they need a Clerk test instance and an RTDB
@@ -122,7 +124,9 @@ lets a local `.env` override the compiled-in defaults for local iteration.
 
 **Next.js viewer is server-rendered, not static** — the Clerk→Firebase token
 exchange and device pairing are API routes needing a server runtime, which
-is why it's deployed to Railway rather than exported statically.
+is why it cannot be exported statically. It has no hosting target at
+present — Railway was removed on 2026-09-05 — so any host must provide a Node
+server runtime, not a static bucket.
 
 **Design tokens are enforced, not just conventional**: `viewer/tailwind.config.ts`
 is the single source of truth for colors/spacing/radii/type scale; an ESLint
@@ -161,8 +165,10 @@ These affect what you can actually verify, not just what's coded:
   Note the two locations are permanent-ish: Firestore's `nam5` cannot be
   changed at all, and moving RTDB means a new instance and a new
   `NEXT_PUBLIC_FIREBASE_DATABASE_URL`.
-- **The Railway service has no public domain** ("Unexposed") — there is no
-  live deployment to run `check:deploy` against yet.
+- **The viewer is not hosted anywhere.** Railway was removed on 2026-09-05
+  (`git log -- viewer/railway.json` has the config). `npm run check:deploy`
+  takes a URL and is host-agnostic, so it still works against whatever the
+  next target is; there is just nothing to point it at.
 - **The `Deploy Firebase Rules` CI job still fails on every `main` push**,
   by design: it has no `FIREBASE_PROJECT_ID` repository variable and no
   `FIREBASE_SERVICE_ACCOUNT`/`FIREBASE_TOKEN` secret, and the workflow

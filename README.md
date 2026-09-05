@@ -70,7 +70,6 @@ scriptable are commands rather than console navigation:
 ./scripts/provision.sh all        # the three below, in order, checks between
 ./scripts/provision.sh firebase   # Realtime Database + Firestore
 ./scripts/provision.sh rules      # deploy the security rules
-./scripts/provision.sh railway    # generate the public domain
 ```
 
 Each step prints what it is about to do and asks before doing it. Two things
@@ -149,30 +148,20 @@ also cannot reach `REQUESTED` without the viewer-claim clause in
 `database.rules.json`, so an undeployed ruleset shows up as a viewer that
 enters a valid code and then hangs.
 
-### Railway environment
+### Hosting environment
 
-> **The service is not exposed, so there is no live deployment to check.**
-> Railway builds it and the last deploy succeeded, but the service is marked
-> **Unexposed** — no public domain was ever generated, so nothing routes to it
-> from the internet. That is why no `*.up.railway.app` hostname appears
-> anywhere in this repo, and why `check:deploy` and the `NEXT_PUBLIC_SITE_URL`
-> row below have no origin to point at.
+> **The viewer is not hosted anywhere right now.** Railway was removed on
+> 2026-09-05; `git log -- viewer/railway.json` has the Nixpacks/`next start`
+> config if it comes back. Nothing below assumes a particular provider — the
+> viewer is server-rendered and needs a Node runtime, not a static bucket.
 >
-> This is the first thing to fix, because the origin it produces is what
-> `NEXT_PUBLIC_SITE_URL` and the host agent's `DUXO_WEB_APP_URL` both need:
-> Railway → the **Duxo** service → Settings → Networking → **Generate Domain**
-> (or attach a custom one).
->
-> Do not reach for `duxo.app` or `duxo.dev`. `duxo.app` resolves but serves an
-> unrelated product that shares the name, answering every path — `/login` and
-> `/download` included — with the same SPA shell, so a 200 from it means
-> nothing. `duxo.dev` does not resolve at all.
->
-> *(Observed 2026-07-30 in a captured dashboard dump, `railway-service.txt`.
-> Re-check the Networking tab before trusting it.)*
+> Do not reach for `duxo.app` or `duxo.dev` as the origin. `duxo.app` resolves
+> but serves an unrelated product that shares the name, answering every path —
+> `/login` and `/download` included — with the same SPA shell, so a 200 from it
+> means nothing. `duxo.dev` does not resolve at all.
 
-Once a domain exists, `GET /api/health` on it reports what is missing. Three
-variables are expected to be unset:
+Once a deployment exists, `GET /api/health` on it reports what is missing.
+Three variables are expected to be unset:
 
 | Missing | Effect |
 |---|---|
@@ -182,30 +171,32 @@ variables are expected to be unset:
 
 `NEXT_PUBLIC_FIREBASE_DATABASE_URL` is also unset, and that is fine:
 `lib/firebase-client.ts` derives Firebase's default instance from the project
-id, which is the correct host for a default-region database. Set it only if
-the database lives in another region, where the derived
-`<project>-default-rtdb.firebaseio.com` would point at the wrong place.
+id, which is the correct host for the default-region database that now exists
+(`us-central1`). Set it only if the database is ever moved to another region,
+where the derived `<project>-default-rtdb.firebaseio.com` would point at the
+wrong place.
 
-The `NEXT_PUBLIC_*` ones are inlined at build time, so Railway needs a
-redeploy after setting them, not just a restart.
+The `NEXT_PUBLIC_*` ones are inlined at build time, so setting them needs a
+rebuild, not just a restart — whatever the host.
 
-Railway health-checks `/api/health` on every deploy (`viewer/railway.json`),
-so a build that comes up without its server secrets fails the deploy instead
-of replacing a working instance with a broken one. That is why the endpoint
-answers 503 rather than 200 when it is misconfigured — a missing TURN
-credential stays 200, since §0.8 degrades rather than breaks and should not
-block a release.
+`/api/health` answers 503 rather than 200 when server secrets are missing,
+which is what let the old deploy health-check fail a bad build instead of
+replacing a working instance with a broken one. Worth wiring to the same
+endpoint on whatever hosts it next. A missing TURN credential stays 200, since
+§0.8 degrades rather than breaks and should not block a release.
 
 ### Checking a deployment
 
-The viewer runs on Railway (`viewer/railway.json` — Nixpacks build, `next start`).
+The viewer has no hosting target right now (Railway was removed 2026-09-05).
+It is server-rendered, so it needs a Node runtime — `next start` — not a
+static host.
 A build passing says the code compiles; it says nothing about whether the
-deployed instance has its environment set. This needs a public domain to exist
-first — see the Railway note above. To check a real deployment:
+deployed instance has its environment set. This needs a deployment to exist
+first — see the hosting note above. To check one:
 
 ```bash
 cd viewer
-npm run check:deploy -- https://your-app.up.railway.app
+npm run check:deploy -- https://<your-deployment-host>
 ```
 
 It drives a headless browser against the origin and asserts the things that
@@ -256,7 +247,7 @@ npm install
 npm run dev                  # → http://localhost:3000
 ```
 
-Node 20, pinned in `viewer/.nvmrc`. CI and Railway's Nixpacks both read that
+Node 20, pinned in `viewer/.nvmrc`. CI reads that
 file, and `package-lock.json` is only valid for the npm that wrote it — a
 lockfile generated on Node 24 fails `npm ci` under Node 20's npm 10, naming
 packages nothing depends on directly. If you regenerate the lockfile, do it on

@@ -10,7 +10,7 @@ for the storage-layer deviations and the reasons for them.
 VIEWER                     WebRTC P2P                    HOST AGENT
 (Browser)      <──────────────────────────────────►   (Tauri/Rust)
 Next.js /          STUN + Metered TURN                    Windows: .exe
-Railway            + Oracle Coturn fallback                Linux: tar.gz
+(unhosted)         + Oracle Coturn fallback                Linux: tar.gz
                    │
                    └────────── Firebase RTDB ────────────┘
                       Auth / RTDB / Firestore
@@ -60,7 +60,7 @@ Any state → (24h timeout) → EXPIRED
 | Input | `enigo` (SendInput / XTest) |
 | STUN | Google public |
 | TURN | Metered.ca (Path A) / Oracle Coturn (Path B) — verify with `npm run check:turn` |
-| Deploy | Railway (viewer), GitHub Releases (host agent) |
+| Deploy | viewer: none currently (Railway removed 2026-09-05); host agent: GitHub Releases |
 
 ## Protocol Versioning (§6.1)
 

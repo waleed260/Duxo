@@ -11,9 +11,7 @@ Fixed identifiers this runbook uses:
 |---|---|
 | Firebase project | `duxo-967f0` |
 | RTDB region | `us-central1` (default instance host, `duxo-967f0-default-rtdb.firebaseio.com`) |
-| Firestore location | `nam5` — **permanent once set** |
-| Railway project | `cb502db9-7a51-4645-aac0-e64eea64499f` |
-| Railway service | `896c1a71-e072-40c1-b2cd-d4ae38a39a65` (env `production`) |
+| Firestore location | `nam5` — **permanent, already set** |
 | GitHub repo | `waleed260/Duxo` |
 
 Check progress at any point:
@@ -81,16 +79,22 @@ Web UI fallback: <https://github.com/waleed260/Duxo/settings/secrets/actions/new
 
 ---
 
-## 4. Railway — generate the public domain
+## 4. Host the viewer — you need an origin
 
-```bash
-./scripts/provision.sh railway
-```
+**Not currently set up.** Railway was removed on 2026-09-05, so this step has
+no script behind it any more; `git log -- viewer/railway.json` has the old
+Nixpacks/`next start` config if you want it back.
 
-Runs `railway login` (browser), links the project/service/environment above,
-then `railway domain`. The hostname it prints is the origin every later step
-needs. Do **not** substitute `duxo.app` or `duxo.dev` — the first is an
-unrelated product with the same name, the second doesn't resolve.
+Whatever you pick must run a **Node server** — the viewer is server-rendered
+because the Clerk→Firebase token exchange and device pairing are API routes.
+A static host cannot serve it. Point the host's health check at `/api/health`,
+which answers 503 when server secrets are missing, so a misconfigured build
+fails instead of replacing a working one.
+
+The hostname you end up with is the origin every later step needs. Do **not**
+substitute `duxo.app` or `duxo.dev` — the first is an unrelated product with
+the same name that answers every path with the same SPA shell, so a 200 from
+it means nothing; the second doesn't resolve.
 
 ---
 
@@ -116,18 +120,16 @@ cd viewer && npm run check:turn
 
 ---
 
-## 6. Railway environment variables
+## 6. Deployment environment variables
 
-Setting any of these triggers a redeploy, which is required — the
-`NEXT_PUBLIC_*` values are inlined at build time, so a restart wouldn't pick
-them up.
+Set these on whatever hosts the viewer. Setting any of them needs a **rebuild**,
+not just a restart — the `NEXT_PUBLIC_*` values are inlined at build time.
 
-```bash
-railway variables \
-  --set NEXT_PUBLIC_SITE_URL=https://<host-from-step-4> \
-  --set NEXT_PUBLIC_METERED_TURN_URLS=<urls> \
-  --set NEXT_PUBLIC_METERED_TURN_USERNAME=<user> \
-  --set NEXT_PUBLIC_METERED_TURN_CREDENTIAL=<pass>
+```
+NEXT_PUBLIC_SITE_URL=https://<host-from-step-4>
+NEXT_PUBLIC_METERED_TURN_URLS=<urls>
+NEXT_PUBLIC_METERED_TURN_USERNAME=<user>
+NEXT_PUBLIC_METERED_TURN_CREDENTIAL=<pass>
 ```
 
 `/api/health` on the deployed origin lists anything still missing. Required:

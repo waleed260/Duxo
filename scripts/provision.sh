@@ -2,21 +2,27 @@
 # §0.13 — provision the backend Duxo cannot run without.
 #
 # Everything here is something only the project owner can do, because every
-# step authenticates as *you*: the Firebase and Railway CLIs open a browser and
-# use your account. Nothing in this repo holds a credential that can do any of
-# it, which is why these steps have stayed undone.
+# step authenticates as *you*: the Firebase CLI opens a browser and uses your
+# account. Nothing in this repo holds a credential that can do any of it.
+#
+# The Firebase gates were completed on 2026-09-05 (all three services exist
+# and both rulesets are published), so these are now re-runnable checks rather
+# than first-time setup — every step is idempotent and asks before acting.
+#
+# Railway was removed on 2026-09-05: the viewer has no hosting target for now,
+# so there is no domain to generate. `git log -- viewer/railway.json` has the
+# deploy config and the gate that used to live here if it comes back.
 #
 # Run the steps you want, in order. Each is independent, prints what it is
 # about to do, and stops on the first failure rather than continuing against a
 # half-built backend:
 #
-#   ./scripts/provision.sh all        # firebase -> rules -> railway, one pass
+#   ./scripts/provision.sh all        # firebase -> rules, one pass
 #   ./scripts/provision.sh firebase   # RTDB + Firestore            (gate 01)
 #   ./scripts/provision.sh rules      # deploy the security rules   (gate 02)
-#   ./scripts/provision.sh railway    # generate a public domain    (gate 03)
 #   ./scripts/provision.sh check      # verify what is done so far
 #
-# 'all' is the three gates back to back with a 'check' between each, so a
+# 'all' is the two gates back to back with a 'check' between each, so a
 # partial run is visible before the next step builds on it. Every sub-step
 # still asks before doing anything; Ctrl-C between them is safe.
 #
@@ -26,12 +32,10 @@
 #
 # The CLIs are invoked with `npx`, so nothing is installed globally. Every
 # command and flag below was checked against `--help` on the current
-# firebase-tools and @railway/cli before being written down.
+# firebase-tools before being written down.
 set -euo pipefail
 
 PROJECT_ID="${DUXO_FIREBASE_PROJECT_ID:-duxo-967f0}"
-RAILWAY_PROJECT="cb502db9-7a51-4645-aac0-e64eea64499f"
-RAILWAY_SERVICE="896c1a71-e072-40c1-b2cd-d4ae38a39a65"
 FIREBASE_CONSOLE="https://console.firebase.google.com/project/${PROJECT_ID}"
 
 # RTDB region. us-central1 is what the README specifies, and it is the region
@@ -52,7 +56,6 @@ warn()  { printf '\033[33m!! %s\033[0m\n' "$*"; }
 manual(){ printf '\033[36m-> do this yourself: %s\033[0m\n' "$*"; }
 
 fb()      { npx -y firebase-tools@latest "$@"; }
-railway() { npx -y @railway/cli@latest "$@"; }
 
 confirm() {
     printf '\n%s [y/N] ' "$1"
@@ -135,57 +138,14 @@ TXT
     manual "https://github.com/waleed260/Duxo/settings/secrets/actions/new"
 }
 
-provision_railway() {
-    step "Railway — give the viewer a public domain"
-    cat <<'TXT'
-The service builds and deploys, but it is marked "Unexposed": no domain was
-ever generated, so nothing routes to it from the internet. That is why the
-viewer has never been publicly reachable, and why NEXT_PUBLIC_SITE_URL and
-DUXO_WEB_APP_URL have had no value to take — the origin does not exist yet
-rather than being unknown.
-
-A browser window will open for you to sign in.
-TXT
-    confirm "Generate a domain?" || return 0
-
-    railway login
-    # --environment as well as --project/--service: without it the CLI prompts
-    # for which environment to link, which defeats the point of passing the
-    # other two. "production" is the environment in the dashboard dump
-    # (116859ed-8570-4b3b-bc8d-2775699b0b10).
-    railway link \
-        --project "$RAILWAY_PROJECT" \
-        --service "$RAILWAY_SERVICE" \
-        --environment production
-    # No argument: generates a Railway-provided service domain. Pass a hostname
-    # instead to attach a custom one, which also prints the DNS records to add.
-    railway domain
-
-    echo
-    bold "That hostname is the origin everything else needs."
-    echo "Set them in one command. Setting a variable triggers a redeploy,"
-    echo "which is required rather than incidental: the NEXT_PUBLIC_* values are"
-    echo "inlined at build time, so a restart would not pick them up."
-    echo
-    echo "  railway variables \\"
-    echo "    --set NEXT_PUBLIC_SITE_URL=https://<host> \\"
-    echo "    --set NEXT_PUBLIC_METERED_TURN_URLS=<urls> \\"
-    echo "    --set NEXT_PUBLIC_METERED_TURN_USERNAME=<user> \\"
-    echo "    --set NEXT_PUBLIC_METERED_TURN_CREDENTIAL=<pass>"
-    echo
-    manual "TURN credentials (free, no card): https://www.metered.ca/tools/openrelay/"
-    manual "DUXO_WEB_APP_URL=https://<host> at https://github.com/waleed260/Duxo/settings/variables/actions"
-}
-
 provision_all() {
-    step "Full provisioning run — firebase, then rules, then railway"
-    warn "This is the three gates in order. Each still asks first. If you decline"
+    step "Full provisioning run — firebase, then rules"
+    warn "This is the two gates in order. Each still asks first. If you decline"
     warn "one, later gates that depend on it will fail fast rather than run against"
     warn "a half-built backend — that is intended."
     provision_firebase
     run_checks
     deploy_rules
-    provision_railway
     echo
     bold "Provisioning run finished. Final state:"
     run_checks
@@ -198,7 +158,7 @@ run_checks() {
     # non-zero while any service is missing.
     ( cd "$(dirname "$0")/../viewer" && npm run --silent check:backend ) || true
     echo
-    echo "Then, once a domain exists:"
+    echo "Then, once the viewer is hosted somewhere:"
     echo "  cd viewer && npm run check:turn"
     echo "  cd viewer && npm run check:deploy -- https://<host>"
 }
@@ -207,7 +167,6 @@ case "${1:-}" in
     all)      provision_all ;;
     firebase) provision_firebase ;;
     rules)    deploy_rules ;;
-    railway)  provision_railway ;;
     check)    run_checks ;;
     *)
         # Print the leading comment block as the usage text, stopping at the
