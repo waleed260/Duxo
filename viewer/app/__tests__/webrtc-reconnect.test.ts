@@ -59,7 +59,13 @@ class FakePeerConnection {
     this.signalingState = "stable";
   }
 
-  async addIceCandidate() {}
+  addedCandidates: RTCIceCandidateInit[] = [];
+  async addIceCandidate(c: RTCIceCandidateInit) {
+    // Matches the browser: a candidate cannot be applied before there is a
+    // remote description to attach it to.
+    if (!this.remoteDescription) throw new Error("InvalidStateError");
+    this.addedCandidates.push(c);
+  }
   close() {}
 
   /** Drive the state machine the way the browser would. */
@@ -221,5 +227,79 @@ describe("setRemoteAnswer", () => {
       conn.setRemoteAnswer({ type: "answer", sdp: "answer-2" }),
     ).resolves.toBe(true);
     expect(pc.remoteDescription).toEqual({ type: "answer", sdp: "answer-2" });
+  });
+});
+
+/**
+ * §0.6 — trickle ICE has no ordering guarantee between the host's answer and
+ * the candidates it gathers. RTDB delivers whatever the host wrote first, so
+ * a host that trickles early sends candidates the browser cannot apply yet.
+ *
+ * `addIceCandidate` rejects with InvalidStateError while there is no remote
+ * description. The rejection used to be swallowed, and app/session/page.tsx
+ * marks each candidate index consumed the moment it reads it — so a dropped
+ * candidate was never re-offered. The browser silently lost its peer's
+ * candidates and the connection came up only if a later batch happened to be
+ * enough.
+ */
+describe("§0.6 candidates arriving before the answer", () => {
+  it("holds early candidates instead of dropping them", async () => {
+    const conn = new DuxoConnection(iceConfig, {});
+    await conn.createOffer();
+    const pc = FakePeerConnection.instances[0];
+
+    conn.addIceCandidates([{ candidate: "early-1" }, { candidate: "early-2" }]);
+    // Nothing applied yet — there is no remote description to attach to.
+    expect(pc.addedCandidates).toHaveLength(0);
+
+    await conn.setRemoteAnswer({ type: "answer", sdp: "answer-1" });
+
+    expect(pc.addedCandidates.map((c) => c.candidate)).toEqual([
+      "early-1",
+      "early-2",
+    ]);
+  });
+
+  it("applies candidates directly once the answer is in", async () => {
+    const conn = new DuxoConnection(iceConfig, {});
+    await conn.createOffer();
+    const pc = FakePeerConnection.instances[0];
+    await conn.setRemoteAnswer({ type: "answer", sdp: "answer-1" });
+
+    conn.addIceCandidates([{ candidate: "late-1" }]);
+    await Promise.resolve();
+
+    expect(pc.addedCandidates.map((c) => c.candidate)).toEqual(["late-1"]);
+  });
+
+  it("does not replay the buffer on a second answer", async () => {
+    // An ICE restart produces a second answer for the same session. The
+    // already-drained buffer must not be applied again.
+    const conn = new DuxoConnection(iceConfig, {});
+    await conn.createOffer();
+    const pc = FakePeerConnection.instances[0];
+
+    conn.addIceCandidates([{ candidate: "early-1" }]);
+    await conn.setRemoteAnswer({ type: "answer", sdp: "answer-1" });
+    expect(pc.addedCandidates).toHaveLength(1);
+
+    await conn.restartIce();
+    await conn.setRemoteAnswer({ type: "answer", sdp: "answer-2" });
+
+    expect(pc.addedCandidates).toHaveLength(1);
+  });
+
+  it("drops the buffer on close rather than leaking it", async () => {
+    const conn = new DuxoConnection(iceConfig, {});
+    await conn.createOffer();
+    const pc = FakePeerConnection.instances[0];
+
+    conn.addIceCandidates([{ candidate: "early-1" }]);
+    conn.close();
+
+    // Nothing was applied, and nothing is retained to apply later.
+    expect(pc.addedCandidates).toHaveLength(0);
+    conn.addIceCandidates([{ candidate: "after-close" }]);
+    expect(pc.addedCandidates).toHaveLength(0);
   });
 });

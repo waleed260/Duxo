@@ -72,6 +72,8 @@ export class DuxoConnection {
   private iceServers: RTCIceServer[];
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Candidates received before a remote description existed to apply them to. */
+  private pendingCandidates: RTCIceCandidateInit[] = [];
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private lastPingT = 0;
 
@@ -132,16 +134,44 @@ export class DuxoConnection {
     if (!this.pc) throw new Error("PeerConnection not initialized");
     if (this.pc.signalingState !== "have-local-offer") return false;
     await this.pc.setRemoteDescription(answer);
+    this.flushPendingCandidates();
     return true;
   }
 
-  /** §0.6 — batched ICE candidates (max 10 per write). */
+  /**
+   * §0.6 — batched ICE candidates (max 10 per write).
+   *
+   * Candidates that arrive before the answer are held, not dropped.
+   * `addIceCandidate` rejects with InvalidStateError while there is no remote
+   * description, and trickle ICE gives no ordering guarantee between the
+   * host's answer and the candidates it gathers — RTDB delivers whatever the
+   * host wrote first. The caller marks each candidate index consumed the
+   * moment it reads it, so anything rejected here was gone for good: on a
+   * host that trickled early, the browser would silently lose its peer's
+   * candidates and the connection would come up only if a later batch
+   * happened to be enough, or not at all.
+   */
   addIceCandidates(candidates: RTCIceCandidateInit[]) {
     if (!this.pc) return;
+    if (!this.pc.remoteDescription) {
+      this.pendingCandidates.push(...candidates);
+      return;
+    }
     for (const c of candidates) {
       void this.pc.addIceCandidate(c).catch(() => {
-        // §1.3 — transient candidate errors shouldn't tear down the session.
+        // A genuinely malformed candidate should not tear down the session;
+        // the remaining ones can still produce a working pair.
       });
+    }
+  }
+
+  /** Drain candidates buffered before the remote description existed. */
+  private flushPendingCandidates() {
+    if (!this.pc || this.pendingCandidates.length === 0) return;
+    const queued = this.pendingCandidates;
+    this.pendingCandidates = [];
+    for (const c of queued) {
+      void this.pc.addIceCandidate(c).catch(() => {});
     }
   }
 
@@ -327,6 +357,7 @@ export class DuxoConnection {
     }
     this.dc = null;
     this.pc = null;
+    this.pendingCandidates = [];
   }
 }
 
