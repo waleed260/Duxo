@@ -215,3 +215,181 @@ describe("codes/$code (§0.7)", () => {
     );
   });
 });
+
+/**
+ * pairings/$code — the credential-issuing path, and the only node in the
+ * ruleset an *unauthenticated* client may write. That is not an oversight:
+ * the host agent has no Firebase identity until this exchange gives it one,
+ * so it has to be able to publish its own node. Everything protecting the
+ * exchange therefore lives in these rules and in /api/link-device.
+ *
+ * It had no behavioural coverage at all before this. The rules file carries
+ * a comment about `claimed != true` versus `!...val()` breaking compilation
+ * of the *whole ruleset* — found only by attempting a deploy — which is
+ * exactly the class of thing a test against the real engine catches.
+ */
+describe("pairings/$code (§0.7, §2.1)", () => {
+  const CODE = "ABC234";
+
+  /** What the host agent publishes before it has any credential. */
+  function pending(overrides: Record<string, unknown> = {}) {
+    return {
+      deviceName: "waleed-thinkpad",
+      platform: "linux-x11",
+      appVersion: "0.1.0",
+      protocolVersion: "1.0.0",
+      createdAt: Date.now(),
+      ...overrides,
+    };
+  }
+
+  it("lets an unauthenticated host publish a pairing", async () => {
+    // The whole exchange rests on this being allowed.
+    const db = testEnv.unauthenticatedContext().database();
+    await assertSucceeds(set(ref(db, `pairings/${CODE}`), pending()));
+  });
+
+  it("refuses an unauthenticated node that pre-claims itself", async () => {
+    // A node created already-claimed would let an attacker park a poisoned
+    // pairing that /api/link-device's transaction then refuses to touch,
+    // denying the real device its credential.
+    const db = testEnv.unauthenticatedContext().database();
+    await assertFails(
+      set(ref(db, `pairings/${CODE}`), pending({ claimed: true })),
+    );
+  });
+
+  it("refuses an unauthenticated overwrite of an existing pairing", async () => {
+    // Create-only while unclaimed. Otherwise anyone who guesses a live code
+    // can swap the device name the user is about to confirm.
+    await seed(`pairings/${CODE}`, pending());
+    const db = testEnv.unauthenticatedContext().database();
+    await assertFails(
+      set(ref(db, `pairings/${CODE}`), pending({ deviceName: "attacker-box" })),
+    );
+  });
+
+  it("keeps the pairing itself unreadable, exposing only customToken", async () => {
+    // Read on the node would let an unauthenticated caller enumerate pending
+    // pairings and harvest device names; read on the token is what lets the
+    // host, which knows the code, collect its own credential.
+    await seed(`pairings/${CODE}`, pending({ customToken: "t".repeat(40) }));
+    const db = testEnv.unauthenticatedContext().database();
+    await assertFails(get(ref(db, `pairings/${CODE}`)));
+    await assertSucceeds(get(ref(db, `pairings/${CODE}/customToken`)));
+  });
+
+  it("pins the fields the server reads back out of the node", async () => {
+    // /api/link-device copies platform, appVersion and protocolVersion into
+    // the device registry. The node is unauthenticated-writable, so their
+    // shape has to be refused here rather than trusted there.
+    const db = testEnv.unauthenticatedContext().database();
+    await assertFails(
+      set(ref(db, "pairings/BAD111"), pending({ platform: "solaris" })),
+    );
+    await assertFails(
+      set(ref(db, "pairings/BAD222"), pending({ protocolVersion: "one.two" })),
+    );
+    await assertFails(
+      set(ref(db, "pairings/BAD333"), pending({ deviceName: "x".repeat(200) })),
+    );
+    await assertFails(
+      set(ref(db, "pairings/BAD444"), pending({ createdAt: Date.now() + 600_000 })),
+    );
+  });
+
+  it("refuses a node missing the fields the server requires", async () => {
+    const db = testEnv.unauthenticatedContext().database();
+    await assertFails(set(ref(db, "pairings/BAD555"), { deviceName: "x" }));
+  });
+
+  it("lets the host retire its node once it holds a credential", async () => {
+    // auth.rs::delete_pairing. The node holds a custom token that is good for
+    // an hour and readable by anyone who knows the code, so retiring it is
+    // the point of the authenticated clause — and the only thing it grants.
+    await seed(`pairings/${CODE}`, pending({ customToken: "t".repeat(40) }));
+    const db = testEnv.authenticatedContext(HOST).database();
+    await assertSucceeds(remove(ref(db, `pairings/${CODE}`)));
+  });
+
+  it("refuses a signed-in stranger tampering with a pending pairing", async () => {
+    // The authenticated clause was a bare `auth != null` and granted every
+    // signed-in account full write on every pairing node. All three of these
+    // succeeded against that rule, verified on the emulator:
+    //
+    //   - rewriting the device name the user is about to confirm, so the
+    //     machine they approve is not the one named to them;
+    //   - setting `claimed`, stranding a real device that can then never
+    //     collect its credential;
+    //   - injecting a bogus customToken for the host to choke on.
+    //
+    // Narrowing the clause to `!newData.exists()` leaves the delete the host
+    // genuinely needs and removes every write above.
+    await seed(`pairings/${CODE}`, pending());
+    const db = testEnv.authenticatedContext(STRANGER).database();
+    await assertFails(update(ref(db, `pairings/${CODE}`), { deviceName: "attacker-box" }));
+    await assertFails(update(ref(db, `pairings/${CODE}`), { claimed: true }));
+    await assertFails(update(ref(db, `pairings/${CODE}`), { customToken: "z".repeat(40) }));
+  });
+});
+
+/**
+ * auditLog/$uid — §7.3's append-only hash chain.
+ *
+ * The tip and the entries have opposite requirements (one must be
+ * rewritable, the others must never be), and the rules file records that
+ * they once collided: `_tip` matched the `$entryId` wildcard, so the tip
+ * could never be written, `get_tip_hash` always returned None, and every
+ * entry chained onto "0" — a hash chain in shape only. These assert the
+ * split that fixed it.
+ */
+describe("auditLog/$uid (§7.3)", () => {
+  function entry(uid = HOST, overrides: Record<string, unknown> = {}) {
+    return {
+      uid,
+      action: "session_started",
+      timestamp: Date.now(),
+      previousHash: "0".repeat(64),
+      ...overrides,
+    };
+  }
+
+  it("lets an owner append an entry and read its own log", async () => {
+    const db = testEnv.authenticatedContext(HOST).database();
+    await assertSucceeds(set(ref(db, `auditLog/${HOST}/e1`), entry()));
+    await assertSucceeds(get(ref(db, `auditLog/${HOST}`)));
+  });
+
+  it("refuses rewriting an entry, which is what makes the chain evidence", async () => {
+    await seed(`auditLog/${HOST}/e1`, entry());
+    const db = testEnv.authenticatedContext(HOST).database();
+    await assertFails(
+      set(ref(db, `auditLog/${HOST}/e1`), entry(HOST, { action: "tampered" })),
+    );
+  });
+
+  it("lets the tip be rewritten, unlike the entries it points at", async () => {
+    // The tip is a pointer, not evidence. If it cannot be overwritten the
+    // chain never advances past its first link.
+    const db = testEnv.authenticatedContext(HOST).database();
+    await assertSucceeds(set(ref(db, `auditLog/${HOST}/_tip`), { hash: "a".repeat(64) }));
+    await assertSucceeds(set(ref(db, `auditLog/${HOST}/_tip`), { hash: "b".repeat(64) }));
+  });
+
+  it("keeps one account out of another's log entirely", async () => {
+    await seed(`auditLog/${HOST}/e1`, entry());
+    const db = testEnv.authenticatedContext(STRANGER).database();
+    await assertFails(get(ref(db, `auditLog/${HOST}`)));
+    await assertFails(set(ref(db, `auditLog/${HOST}/e2`), entry(HOST)));
+  });
+
+  it("refuses an entry that backdates itself or misattributes its uid", async () => {
+    const db = testEnv.authenticatedContext(HOST).database();
+    await assertFails(
+      set(ref(db, `auditLog/${HOST}/e3`), entry(STRANGER)),
+    );
+    await assertFails(
+      set(ref(db, `auditLog/${HOST}/e4`), entry(HOST, { timestamp: Date.now() + 600_000 })),
+    );
+  });
+});

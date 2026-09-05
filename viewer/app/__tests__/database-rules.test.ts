@@ -154,6 +154,19 @@ describe("RTDB security rules (§10.2)", () => {
       expect(rules.pairings.$code[".write"]).toContain("!data.exists()");
     });
 
+    it("narrows the authenticated clause to deletes only", () => {
+      // This clause exists for one caller: the host retiring its own node
+      // after it has exchanged the custom token (auth.rs::delete_pairing).
+      // As a bare `auth != null` it also handed every signed-in account full
+      // write on every pairing node — enough to rewrite the device name the
+      // user is about to confirm, strand a real device by setting `claimed`,
+      // or inject a bogus customToken. The behavioural proof is in
+      // rules-tests; this guards the clause against being widened back.
+      const write = rules.pairings.$code[".write"] as string;
+      expect(write).toContain("!newData.exists()");
+      expect(write).not.toMatch(/\|\|\s*auth\s*!=\s*null\s*$/);
+    });
+
     it("pins the protocol version the device registry records", () => {
       // Written by the host with the pairing request and read back by
       // /api/link-device into `devices/{id}`, so it is server-consumed input

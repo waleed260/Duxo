@@ -86,15 +86,39 @@
     // caller cannot enumerate pending pairings or read device names.
     "pairings": {
       "$code": {
-        // Create-only while unclaimed; once the server marks it claimed, the
-        // host can no longer overwrite it and neither can anyone else.
+        // Two permitted writes, and only two: an anonymous create, and an
+        // authenticated DELETE.
+        //
+        // The create must be anonymous — the host has no Firebase identity
+        // until this exchange gives it one, which is the whole point of the
+        // node. It must not arrive pre-claimed, or an attacker could park a
+        // poisoned pairing that the server then refuses to issue against.
+        //
+        // The delete is the host retiring its own node once it has exchanged
+        // the custom token (auth.rs::delete_pairing); an unauthenticated
+        // delete can never match the create clause, since `data.exists()`.
+        //
+        // The second clause was previously a bare `auth != null`, which
+        // granted every signed-in account full write on every pairing node.
+        // Verified against the emulator: a stranger could rewrite the
+        // deviceName the user is about to confirm, set `claimed` to strand a
+        // real device, or inject a bogus customToken for the host to choke
+        // on. `!newData.exists()` narrows it to the delete that was actually
+        // needed. The server does not need a clause at all — it holds the
+        // Admin credential, which bypasses rules.
+        //
+        // A signed-in caller who guesses a live code can still delete it.
+        // There is no owner recorded on the node to bind against (there
+        // cannot be, before the host has an identity), so this is as tight as
+        // the rule layer goes: a 10-minute DoS window against one of 31^6
+        // codes, versus the credential tampering the old clause allowed.
         //
         // `!= true` rather than `!...val()`: a pairing the host is creating has
         // no `claimed` child at all, so `.val()` is null, and RTDB's `!` is
         // typed — "! only operates on booleans" — which made the whole ruleset
         // fail to compile. Not this rule: the file. Every deploy would have
         // been rejected, and the only way to find out was to attempt one.
-        ".write": "(!data.exists() && newData.child('claimed').val() != true) || auth != null",
+        ".write": "(!data.exists() && newData.child('claimed').val() != true) || (auth != null && !newData.exists())",
         ".validate": "newData.hasChildren(['deviceName', 'platform', 'createdAt'])",
         "deviceName": { ".validate": "newData.isString() && newData.val().length <= 120" },
         "platform":   { ".validate": "newData.val() == 'windows' || newData.val() == 'linux-x11' || newData.val() == 'linux-wayland'" },

@@ -353,12 +353,17 @@ pub async fn complete_pairing(
 /// Retire a pairing node.
 ///
 /// `id_token` is not optional decoration. The §10.2 rule for `pairings` is
-/// `(!data.exists() && !newData.child('claimed').val()) || auth != null`, and
-/// for a delete of an existing node the first clause is false by definition —
-/// so an unauthenticated delete is refused, always. This used to be called
-/// without a token and its result discarded, which meant the node was never
-/// removed and the code's own comment ("remove it immediately") described
-/// something that had never once happened.
+/// `(!data.exists() && newData.child('claimed').val() != true) ||
+/// (auth != null && !newData.exists())`, and for a delete of an existing node
+/// the first clause is false by definition — so an unauthenticated delete is
+/// refused, always. This used to be called without a token and its result
+/// discarded, which meant the node was never removed and the code's own
+/// comment ("remove it immediately") described something that had never once
+/// happened.
+///
+/// This delete is now the *only* thing the authenticated half of that rule
+/// permits. It was a bare `auth != null`, which also let any signed-in
+/// account overwrite any pairing node.
 ///
 /// That node holds a Firebase **custom token**, and `customToken` is readable
 /// by anyone who knows the code. A custom token is good for an hour and
