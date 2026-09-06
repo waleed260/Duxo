@@ -30,9 +30,10 @@ import { HeroVideo } from "@/components/landing/HeroVideo";
  *  2. Display type is weight 400, `leading-none` (line-height exactly 1),
  *     tracking -0.03em. Hierarchy is carried by size and colour, never by
  *     weight. Nothing on this page is bold.
- *  3. Every button is a pill. Sage `#8fbe8e` fills the primary action and
- *     nothing else; ember `#e8552b` tags categories and never acts as a
- *     button. Sentence case throughout, including CTAs.
+ *  3. Every button is a pill, and there are exactly two of them. Sage
+ *     `#8fbe8e` fills the primary action and nothing else; every secondary
+ *     action is the same white/10 fill. Ember `#e8552b` tags categories and
+ *     never acts as a button. Sentence case throughout, including CTAs.
  *
  * Text tops out at `white/94` — pure white is never used, which is what
  * keeps a near-black page from glaring.
@@ -77,14 +78,30 @@ const btnBase =
 
 const btnPrimary = `${btnBase} border-transparent bg-[#8fbe8e] text-[#0a0b0c] hover:bg-[#a2caa1] focus-visible:outline-[#8fbe8e]`;
 
+/**
+ * The one secondary style. It is a fill rather than an outline so it reads
+ * at the same weight as the sage primary beside it, and so the three places
+ * a secondary action appears — nav, hero, final CTA — are the same button.
+ *
+ * `btnGhostOnMedia` adds the blur the hero needs: a 10% white fill over
+ * moving footage is a smear without something to sit on. Everywhere else
+ * the fill lands on flat canvas and the blur would be a compositing layer
+ * bought for nothing.
+ */
 const btnGhost = `${btnBase} border-transparent bg-white/10 text-white/94 hover:bg-white/[0.16] focus-visible:outline-white`;
 
-const btnQuiet =
-  "touch-manipulation inline-flex items-center gap-2 rounded-full border border-white/20 px-6 py-3 text-[15px] leading-none text-white/70 transition-colors duration-150 hover:border-white/40 hover:text-white/94 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2";
+const btnGhostOnMedia = `${btnGhost} backdrop-blur-md`;
 
-/** Display heading — weight 400, line-height 1, tracking -0.03em. */
+/**
+ * Display heading — weight 400, line-height 1, tracking -0.03em.
+ *
+ * `font-display` is Bricolage Grotesque, and it is scoped to these sizes on
+ * purpose: its optical-size axis is cut for headlines, and below ~30px its
+ * character reads as noise rather than personality. Everything smaller stays
+ * on Manrope.
+ */
 const displayH2 =
-  "text-balance text-[38px] leading-none tracking-[-0.03em] text-white/94 sm:text-[48px] lg:text-[60px]";
+  "font-display text-balance text-[38px] leading-none tracking-[-0.03em] text-white/94 sm:text-[48px] lg:text-[60px]";
 
 const bodyLead = "text-[17px] leading-[1.5] tracking-[-0.01em] sm:text-[18px]";
 
@@ -98,7 +115,7 @@ const card = "rounded-2xl border border-white/[0.07] bg-[#0d0e11]";
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
   return (
-    <span className="block text-[12px] uppercase tracking-[0.08em] text-white/40">
+    <span className="block font-mono text-[12px] uppercase tracking-[0.08em] text-white/40">
       {children}
     </span>
   );
@@ -180,7 +197,7 @@ function Hero() {
           </ScrollReveal>
 
           <ScrollReveal delay={100}>
-            <h1 className="text-balance text-[46px] leading-none tracking-[-0.03em] text-white/94 sm:text-[60px] lg:text-[72px]">
+            <h1 className="font-display text-balance text-[46px] leading-none tracking-[-0.03em] text-white/94 sm:text-[60px] lg:text-[72px]">
               Remote access without the trust exercise
             </h1>
           </ScrollReveal>
@@ -202,7 +219,7 @@ function Hero() {
                 href="https://github.com/waleed260/Duxo"
                 target="_blank"
                 rel="noopener noreferrer"
-                className={btnQuiet}
+                className={btnGhostOnMedia}
               >
                 <GithubIcon className="h-4 w-4" aria-hidden="true" />
                 View source
@@ -240,11 +257,11 @@ function StatBand() {
                   i > 0 ? "sm:border-l sm:border-white/[0.07]" : ""
                 }`}
               >
-                <span className="flex items-baseline gap-1 text-[40px] leading-none tracking-[-0.02em] text-white/94 sm:text-[48px]">
+                <span className="flex items-baseline gap-1 font-display text-[40px] leading-none tabular-nums tracking-[-0.02em] text-white/94 sm:text-[48px]">
                   {s.value}
                   {s.unit && <span className="text-[24px] text-white/60">{s.unit}</span>}
                 </span>
-                <span className="text-[12px] uppercase tracking-[0.08em] text-white/40">
+                <span className="font-mono text-[12px] uppercase tracking-[0.08em] text-white/40">
                   {s.label}
                 </span>
               </div>
@@ -411,7 +428,7 @@ function Architecture() {
                     rule lands on the icons' centre line rather than on the
                     node columns' overall centre. */}
                 <div className="flex w-full flex-1 flex-col items-center gap-3 sm:-mt-12">
-                  <span className="text-[12px] uppercase tracking-[0.08em] text-white/40">
+                  <span className="font-mono text-[12px] uppercase tracking-[0.08em] text-white/40">
                     WebRTC · end-to-end encrypted
                   </span>
                   <div className="relative h-px w-full bg-white/[0.14]">
@@ -466,7 +483,7 @@ function Node({
 function SubCard({ title, body }: { title: string; body: string }) {
   return (
     <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-5">
-      <span className="text-[12px] uppercase tracking-[0.08em] text-white/40">{title}</span>
+      <span className="font-mono text-[12px] uppercase tracking-[0.08em] text-white/40">{title}</span>
       <p className="mt-2.5 text-[15px] leading-[1.55] tracking-[-0.01em] text-white/60">
         {body}
       </p>
@@ -508,7 +525,7 @@ function Steps() {
           {steps.map((item, i) => (
             <ScrollReveal key={item.step} delay={100 + i * 80}>
               <div className={`flex h-full flex-col gap-3 p-6 sm:p-7 ${card}`}>
-                <span className="text-[13px] tracking-[-0.01em] text-[#8fbe8e]">{item.step}</span>
+                <span className="font-mono text-[13px] tracking-[-0.01em] text-[#8fbe8e]">{item.step}</span>
                 <h3 className="text-[20px] leading-tight tracking-[-0.02em] text-white/94">
                   {item.title}
                 </h3>
@@ -565,7 +582,7 @@ function Trust() {
                 aria-hidden="true"
               />
               <div className="relative">
-                <h3 className="flex items-center gap-2 text-[12px] uppercase tracking-[0.08em] text-[#8fbe8e]">
+                <h3 className="flex items-center gap-2 font-mono text-[12px] uppercase tracking-[0.08em] text-[#8fbe8e]">
                   <Check className="h-4 w-4" aria-hidden="true" />
                   Always
                 </h3>
@@ -589,7 +606,7 @@ function Trust() {
 
           <ScrollReveal delay={250}>
             <div className={`h-full p-6 sm:p-8 ${card}`}>
-              <h3 className="flex items-center gap-2 text-[12px] uppercase tracking-[0.08em] text-white/40">
+              <h3 className="flex items-center gap-2 font-mono text-[12px] uppercase tracking-[0.08em] text-white/40">
                 <X className="h-4 w-4" aria-hidden="true" />
                 Never
               </h3>
