@@ -50,7 +50,7 @@ export default function MobileMenu({ open, onClose }: MobileMenuProps) {
                 ? `measured-slideUp 0.6s cubic-bezier(0.77, 0, 0.18, 1) ${100 + i * 60}ms both`
                 : 'none',
             }}
-          >
+          >z
             {item}
           </button>
         ))}

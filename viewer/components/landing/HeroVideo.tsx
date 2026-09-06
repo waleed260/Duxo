@@ -2,6 +2,9 @@
 
 import * as React from "react";
 
+/** `navigator.connection` is not in lib.dom yet. */
+type ConnectionInfo = { saveData?: boolean };
+
 /**
  * Hero background footage.
  *
@@ -10,12 +13,20 @@ import * as React from "react";
  * back to `default-src 'self'` and any third-party origin is blocked
  * outright. Serving it same-origin keeps the policy untouched.
  *
- * Client-side only because of the reduced-motion contract. A looping
- * background video is decoration, and a viewer who has asked the OS for less
- * motion should not be handed a 20-second loop they cannot stop — CSS cannot
- * pause a video, so the preference is read here and the element is paused and
- * parked on its first frame. The listener stays attached because the
- * preference can be toggled while the page is open.
+ * The element is deliberately NOT declarative. It carries `preload="none"`
+ * and no `autoplay`, and this effect decides whether the 5MB file is worth
+ * fetching at all:
+ *
+ *  - `prefers-reduced-motion: reduce` — a looping background video is pure
+ *    decoration, and CSS cannot pause a video. The listener stays attached
+ *    so toggling the preference mid-session takes effect.
+ *  - `navigator.connection.saveData` — someone on a metered connection
+ *    should not spend 5MB on ambience.
+ *
+ * In both cases the poster stands in and the video is never requested. That
+ * is also what a no-JS visitor gets: a still frame of the same shot rather
+ * than a blank plate, which is why losing declarative autoplay is an
+ * acceptable trade here.
  */
 export function HeroVideo() {
   const ref = React.useRef<HTMLVideoElement>(null);
@@ -24,38 +35,40 @@ export function HeroVideo() {
     const video = ref.current;
     if (!video) return;
 
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const connection = (navigator as Navigator & { connection?: ConnectionInfo })
+      .connection;
 
     const apply = () => {
-      if (query.matches) {
+      if (motion.matches || connection?.saveData) {
         video.pause();
-        // Park on a frame with the portal lit rather than on black.
-        try {
-          video.currentTime = 0;
-        } catch {
-          /* seeking before metadata lands is not worth handling */
-        }
-      } else {
-        // A rejected play() is normal (battery saver, a background tab); the
-        // poster-less black plate underneath is the intended fallback.
-        void video.play().catch(() => {});
+        return;
       }
+
+      if (video.preload !== "auto") {
+        video.preload = "auto";
+        video.load();
+      }
+
+      // A rejected play() is normal — a background tab, battery saver, a
+      // policy this build does not know about. The poster is the fallback.
+      void video.play().catch(() => {});
     };
 
     apply();
-    query.addEventListener("change", apply);
-    return () => query.removeEventListener("change", apply);
+    motion.addEventListener("change", apply);
+    return () => motion.removeEventListener("change", apply);
   }, []);
 
   return (
     <video
       ref={ref}
       className="cine-video"
-      autoPlay
+      poster="/hero-portal-poster.jpg"
+      preload="none"
       muted
       loop
       playsInline
-      preload="auto"
       aria-hidden="true"
       tabIndex={-1}
     >

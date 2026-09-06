@@ -67,8 +67,8 @@ function FooterGroup({
   links: { href: string; label: string }[];
 }) {
   return (
-    <nav className="flex flex-col gap-3">
-      <span className="text-[12px] uppercase tracking-[0.08em] text-white/40">{title}</span>
+    <nav className="flex flex-col gap-1">
+      <span className="mb-1 text-[12px] uppercase tracking-[0.08em] text-white/40">{title}</span>
       {links.map((l) => {
         const isExternal = l.href.startsWith("http");
         return (
@@ -77,7 +77,7 @@ function FooterGroup({
             href={l.href}
             target={isExternal ? "_blank" : undefined}
             rel={isExternal ? "noopener noreferrer" : undefined}
-            className="rounded text-[15px] tracking-[-0.01em] text-white/70 transition-colors duration-150 hover:text-white/94 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-4"
+            className="rounded py-1 text-[15px] tracking-[-0.01em] text-white/70 transition-colors duration-150 hover:text-white/94 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-4"
           >
             {l.label}
           </Link>
