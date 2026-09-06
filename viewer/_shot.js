@@ -1,23 +1,57 @@
+/**
+ * Headless screenshot helper.
+ *
+ * Captures a served page at four viewports plus the open mobile menu, so
+ * layout work can be checked against measurements instead of by eye.
+ *
+ *   node _shot.js [url] [outDir]
+ *
+ * Defaults to the dev server and ./shots, which is gitignored — earlier
+ * revisions hard-coded an absolute scratch path that only existed for one
+ * session.
+ */
+const path = require('path');
+const fs = require('fs');
 const { chromium } = require('playwright');
+
+const URL = process.argv[2] || 'http://127.0.0.1:3000/';
+const OUT = path.resolve(process.argv[3] || path.join(__dirname, 'shots'));
+
+const SHOTS = [
+  ['desktop', 1487, 1058],
+  ['ultrawide', 2560, 1080],
+  ['tablet', 820, 1180],
+  ['phone', 390, 844],
+];
+
 (async () => {
-  const b = await chromium.launch();
-  const shots = [
-    ['desktop', 1487, 1058],
-    ['ultrawide', 2560, 1080],
-    ['tablet', 820, 1180],
-    ['phone', 390, 844],
-  ];
-  for (const [name, w, h] of shots) {
-    const p = await b.newPage({ viewport: { width: w, height: h } });
-    await p.goto('http://127.0.0.1:8787/index.html');
-    await p.waitForTimeout(2600);
-    await p.screenshot({ path: `/tmp/claude-1000/-home-waleed-Downloads-Duxo/6f645503-32c5-4190-8229-8fa189cedf76/scratchpad/${name}.png` });
-    if (name === 'phone') {
-      await p.click('#burger');
-      await p.waitForTimeout(900);
-      await p.screenshot({ path: `/tmp/claude-1000/-home-waleed-Downloads-Duxo/6f645503-32c5-4190-8229-8fa189cedf76/scratchpad/phone-menu.png` });
+  fs.mkdirSync(OUT, { recursive: true });
+  const browser = await chromium.launch({
+    args: ['--autoplay-policy=no-user-gesture-required'],
+  });
+
+  for (const [name, width, height] of SHOTS) {
+    const page = await browser.newPage({ viewport: { width, height } });
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+
+    await page.goto(URL, { waitUntil: 'load' });
+    await page.waitForTimeout(2600);
+    await page.screenshot({ path: path.join(OUT, `${name}.png`) });
+
+    // The burger only exists in the portrait layouts.
+    const burger = page.locator('#burger, [aria-label="Open menu"]').first();
+    if (name === 'phone' && (await burger.count())) {
+      await burger.click();
+      await page.waitForTimeout(900);
+      await page.screenshot({ path: path.join(OUT, 'phone-menu.png') });
     }
-    await p.close();
+
+    if (errors.length) console.error(`${name}:`, errors.join('\n  '));
+    await page.close();
   }
-  await b.close();
+
+  await browser.close();
+  console.log(`wrote ${SHOTS.length + 1} screenshots to ${OUT}`);
 })();
