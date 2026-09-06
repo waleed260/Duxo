@@ -5,6 +5,54 @@
  * truth in §9.2 stays in one typed file. */
 @config "../tailwind.config.ts";
 
+/* ─────────────────────────────────────────────────────────────
+   Typefaces (§9.2)
+   ─────────────────────────────────────────────────────────────
+   Self-hosted, and that is not a preference — app/layout.tsx sends
+   `font-src 'self'`, so a Google Fonts <link> is blocked outright and the
+   page would silently fall back to a system face. Vendored latin-subset
+   variable woff2 under /public/fonts keeps the policy intact and the build
+   offline, which is the same reason this app never used next/font/google.
+
+   Three roles, because the product has three kinds of text:
+
+   - Bricolage Grotesque carries the display sizes. It has real optical-size
+     and width axes, so it keeps its character at 72px where a neutral
+     grotesque goes anonymous. Headings only — it is not a UI face.
+   - Manrope is the reading and interface face: geometric, open apertures,
+     and it holds its counters at 15px on a near-black ground.
+   - JetBrains Mono is for machine text — connection codes, step indices,
+     protocol labels. It is used where monospace says "this is data the
+     system produced", never as decoration.
+
+   All three are SIL Open Font License 1.1; see public/fonts/OFL.md.
+   ───────────────────────────────────────────────────────────── */
+
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("/fonts/bricolage-grotesque-var.woff2") format("woff2");
+  font-weight: 200 800;
+  font-stretch: 75% 100%;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Manrope";
+  src: url("/fonts/manrope-var.woff2") format("woff2");
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/jetbrains-mono-var.woff2") format("woff2");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
 /*
  * Duxo — global styles.
  *

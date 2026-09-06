@@ -8,11 +8,16 @@ import { SITE_URL } from "@/lib/site";
 /**
  * Duxo root layout.
  *
- * §9.1 — dark-first, single accent, trustworthy SaaS feel. Fonts use the
- * Noto Sans family (with system fallback in tailwind.config) per §9.2.
+ * §9.1 — dark-first, single accent, trustworthy SaaS feel. Type is the
+ * three-role system in §9.2 — Bricolage Grotesque for display, Manrope for
+ * UI and reading, JetBrains Mono for machine text — declared as @font-face
+ * in styles/globals.css and tokenised in tailwind.config.ts.
  *
- * We avoid next/font/google so the build never depends on the network —
- * keeps the Rs. 0 / offline-build promise intact (§0.3, §1.5).
+ * The faces are vendored under public/fonts rather than linked, and that is
+ * load-bearing twice over: the CSP below sends `font-src 'self'`, so a CDN
+ * stylesheet is blocked outright and the page would fall back silently to a
+ * system face; and avoiding next/font/google keeps the build off the
+ * network, which is the Rs. 0 / offline-build promise (§0.3, §1.5).
  */
 
 export const metadata: Metadata = {
@@ -64,6 +69,26 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <head>
+        {/*
+          The hero sets both faces above the fold, so they are preloaded to
+          keep the swap off the first paint. Same-origin, but `crossOrigin`
+          is still required — fonts are always fetched in CORS mode, and a
+          preload without it is discarded and refetched.
+        */}
+        <link
+          rel="preload"
+          href="/fonts/manrope-var.woff2"
+          as="font"
+          type="font/woff2"
+          crossOrigin=""
+        />
+        <link
+          rel="preload"
+          href="/fonts/bricolage-grotesque-var.woff2"
+          as="font"
+          type="font/woff2"
+          crossOrigin=""
+        />
         <meta
           httpEquiv="Content-Security-Policy"
           content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.firebaseio.com https://*.googleapis.com https://*.clerk.com https://*.clerk.accounts.dev; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.googleapis.com https://*.gstatic.com https://*.clerk.com https://*.clerk.accounts.dev; connect-src 'self' https://*.firebaseio.com https://*.googleapis.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com https://*.clerk.com https://*.clerk.accounts.dev; frame-src 'self' https://*.firebaseapp.com https://*.clerk.com https://*.clerk.accounts.dev; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; worker-src 'self' blob:"

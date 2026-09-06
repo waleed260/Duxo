@@ -89,9 +89,13 @@ const config: Config = {
         },
       },
       fontFamily: {
-        // §9.2 — Noto Sans with safe system fallbacks.
-        sans: ["Noto Sans", "Calibri", "Arial", "sans-serif"],
-        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+        // §9.2 — three roles, all self-hosted (see @font-face in
+        // styles/globals.css; the CSP's `font-src 'self'` forbids a CDN).
+        // Fallbacks are the metric-nearest system faces, so a font that
+        // fails to load shifts weight rather than layout.
+        sans: ["Manrope", "Segoe UI", "Helvetica Neue", "Arial", "sans-serif"],
+        display: ["Bricolage Grotesque", "Manrope", "Segoe UI", "sans-serif"],
+        mono: ["JetBrains Mono", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
       fontSize: {
         // §9.2 explicit scale.
