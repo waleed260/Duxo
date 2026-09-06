@@ -14,6 +14,7 @@ import { GithubIcon } from "@/components/icons/GithubIcon";
 import { ScrollReveal } from "@/components/ScrollReveal";
 import { SiteNav } from "@/components/landing/SiteNav";
 import { SiteFooter } from "@/components/landing/SiteFooter";
+import { HeroVideo } from "@/components/landing/HeroVideo";
 
 /**
  * Duxo marketing homepage.
@@ -136,21 +137,43 @@ function Glow({
    The nav is fixed and inset, so this reserves its own
    top padding to clear it.
    ════════════════════════════════════════════════ */
+/**
+ * Hero.
+ *
+ * The visual is a full-bleed looping video — a figure walking toward a lit
+ * portal — running edge to edge behind the type rather than sitting in a
+ * card. That is a deliberate break from every other section on this page,
+ * and it is the only place footage appears.
+ *
+ * Three things this composition will drift away from if edited casually:
+ *
+ *  1. It is ONE column. The comp this was drawn from is explicit that the
+ *     first viewport carries a mark, a nav, one headline, one sub, one CTA
+ *     pair and the footage — no card, no badge row, no second panel. The
+ *     glass SessionMock that used to sit on the right was removed for that
+ *     reason; `git log -S SessionMock -- viewer/app/page.tsx` finds it.
+ *  2. No ambient <Glow> here. The rest of the page builds depth from those
+ *     radial washes; over footage they read as haze on a lens. Depth in
+ *     this section comes from the footage and the scrims in globals.css.
+ *  3. The section owns the seam into StatBand. The bottom fade in
+ *     `.cine-plate::after` lands on #050506 exactly, so the video plane
+ *     resolves into the page canvas with no visible edge.
+ *
+ * Buttons stay sage/quiet rather than the comp's white pills — every
+ * primary action on this page is sage and nothing else is, and the hero is
+ * not the place to make that rule an exception.
+ */
 function Hero() {
   return (
-    <section className="relative overflow-hidden">
-      <Glow className="left-[-10%] top-[-10%] h-[560px] w-[560px]" />
-      <Glow
-        className="right-[-8%] top-[6%] h-[520px] w-[520px]"
-        from="rgba(232,85,43,0.14)"
-      />
+    <section className="relative isolate flex min-h-[100svh] items-center overflow-hidden">
+      <div className="cine-plate" aria-hidden="true">
+        <HeroVideo />
+      </div>
 
-      <div
-        className={`${container} relative grid items-center gap-14 px-6 pb-24 pt-36 sm:pt-40 lg:grid-cols-2 lg:gap-16 lg:pb-32 lg:pt-48`}
-      >
-        <div className="flex flex-col gap-7">
+      <div className={`${container} relative px-6 pb-28 pt-32 sm:pt-36 lg:pb-36 lg:pt-40`}>
+        <div className="flex max-w-[42rem] flex-col gap-7">
           <ScrollReveal>
-            <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-[13px] tracking-[-0.01em] text-white/70">
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-[13px] tracking-[-0.01em] text-white/70 backdrop-blur-md">
               <span className="h-1.5 w-1.5 rounded-full bg-[#8fbe8e]" aria-hidden="true" />
               Open source · MIT licensed
             </span>
@@ -163,7 +186,7 @@ function Hero() {
           </ScrollReveal>
 
           <ScrollReveal delay={200}>
-            <p className={`max-w-[46ch] text-white/60 ${bodyLead}`}>
+            <p className={`max-w-[46ch] text-white/70 ${bodyLead}`}>
               Duxo connects two machines directly over an encrypted
               peer-to-peer channel. No servers in the middle, no account
               required to receive a session, no cost.
@@ -187,69 +210,8 @@ function Hero() {
             </div>
           </ScrollReveal>
         </div>
-
-        <ScrollReveal delay={200}>
-          <SessionMock />
-        </ScrollReveal>
       </div>
     </section>
-  );
-}
-
-/**
- * Hero visual — the handshake the product is actually about, drawn rather
- * than screenshotted: a code is generated, the host is asked, the host
- * allows. Ada floats glass cards over photography; Duxo has no photography
- * to float over, so the glass sits on the canvas glow instead.
- */
-function SessionMock() {
-  return (
-    <div className="relative rounded-[22px] border border-white/[0.12] bg-white/[0.03] p-4 backdrop-blur-xl sm:p-6">
-      <div className="flex items-center justify-between pb-4">
-        <span className="text-[13px] tracking-[-0.01em] text-white/50">Duxo host agent</span>
-        <span className="flex items-center gap-1.5 text-[12px] uppercase tracking-[0.08em] text-[#8fbe8e]">
-          <span className="h-1.5 w-1.5 rounded-full bg-[#8fbe8e]" aria-hidden="true" />
-          Waiting
-        </span>
-      </div>
-
-      <div className="rounded-2xl border border-white/[0.07] bg-[#0d0e11] p-5">
-        <span className="text-[12px] uppercase tracking-[0.08em] text-white/40">
-          Connection code
-        </span>
-        <div className="mt-3 flex gap-1.5">
-          {["4", "1", "9", "2", "7", "3", "0", "6"].map((d, i) => (
-            <span
-              key={`${d}-${i}`}
-              className="flex h-11 flex-1 items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.04] text-[18px] leading-none tracking-[-0.02em] text-white/94"
-            >
-              {d}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-3 flex items-center justify-between gap-4 rounded-2xl border border-white/[0.07] bg-[#0d0e11] p-5">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/[0.06]">
-            <Fingerprint className="h-4 w-4 text-white/70" aria-hidden="true" />
-          </span>
-          <div className="flex min-w-0 flex-col">
-            <span className="truncate text-[15px] tracking-[-0.01em] text-white/94">
-              Allow this session?
-            </span>
-            <span className="text-[13px] text-white/40">Requested just now</span>
-          </div>
-        </div>
-        <span className="shrink-0 rounded-full bg-[#8fbe8e] px-4 py-2 text-[13px] leading-none text-[#0a0b0c]">
-          Allow
-        </span>
-      </div>
-
-      <p className="mt-4 text-center text-[13px] tracking-[-0.01em] text-white/40">
-        Video and input flow peer-to-peer once approved
-      </p>
-    </div>
   );
 }
 

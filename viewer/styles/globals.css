@@ -218,3 +218,125 @@ body.menu-open {
     to   { opacity: 1; transform: none; }
   }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   Cinematic hero (app/page.tsx → Hero)
+   ─────────────────────────────────────────────────────────────
+   The hero visual is a full-bleed looping video rather than a card or a
+   gradient panel. Two things make it work as a *section* of a scrolling
+   page rather than as the fixed full-screen stage it was drawn as:
+
+   1. The bottom fade terminates on #050506 — the page canvas — not on a
+      near-miss black. A one-value mismatch there reads as a seam where the
+      hero meets the band below it.
+   2. The left scrim is a gradient, not the hard letterbox of the original
+      comp. A letterbox assumes a known plate width; a hero that has to
+      survive any viewport needs the type column made legible instead.
+
+   Colours are literal here for the same reason app/page.tsx is exempt from
+   the §9.8 token lint: this surface is the marketing canvas, not the app
+   chrome, and it does not draw from the dark-theme token set.
+   ───────────────────────────────────────────────────────────── */
+
+.cine-plate {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.cine-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 46%;
+  background: #050506;
+}
+
+.cine-plate::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(
+      to right,
+      rgba(5, 5, 6, 0.94) 0%,
+      rgba(5, 5, 6, 0.82) 26%,
+      rgba(5, 5, 6, 0.42) 58%,
+      rgba(5, 5, 6, 0.08) 100%
+    ),
+    linear-gradient(
+      to bottom,
+      rgba(5, 5, 6, 0.55) 0%,
+      rgba(5, 5, 6, 0.16) 18%,
+      rgba(5, 5, 6, 0) 46%,
+      rgba(5, 5, 6, 0.23) 66%,
+      rgba(5, 5, 6, 0.45) 74%,
+      rgba(5, 5, 6, 0.75) 81%,
+      rgba(5, 5, 6, 0.888) 88%,
+      rgba(5, 5, 6, 0.96) 95%,
+      #050506 100%
+    );
+}
+
+/* Wide viewports put the portal well clear of the type column, so the left
+   scrim can come back off and let more of the footage read. */
+@media (min-width: 1280px) {
+  .cine-plate::after {
+    background:
+      linear-gradient(
+        to right,
+        rgba(5, 5, 6, 0.9) 0%,
+        rgba(5, 5, 6, 0.66) 24%,
+        rgba(5, 5, 6, 0.2) 52%,
+        rgba(5, 5, 6, 0) 78%
+      ),
+      linear-gradient(
+        to bottom,
+        rgba(5, 5, 6, 0.5) 0%,
+        rgba(5, 5, 6, 0.12) 18%,
+        rgba(5, 5, 6, 0) 46%,
+        rgba(5, 5, 6, 0.23) 66%,
+        rgba(5, 5, 6, 0.45) 74%,
+        rgba(5, 5, 6, 0.75) 81%,
+        rgba(5, 5, 6, 0.888) 88%,
+        rgba(5, 5, 6, 0.96) 95%,
+        #050506 100%
+      );
+  }
+}
+
+/* Portrait. A 46px headline spans nearly the full width of a phone, so
+   there is no column of frame left for the type to hide in — the portal
+   ends up behind the words whatever the framing. The scrim therefore gets
+   materially heavier here than on desktop: the footage drops to a glow and
+   legibility wins, which is the trade every mobile hero video makes.
+   Nudging object-position also walks the portal right, off the longest
+   line, without clipping it out of frame. */
+@media (max-aspect-ratio: 11 / 10) {
+  .cine-video {
+    object-position: 36% center;
+  }
+
+  .cine-plate::after {
+    background:
+      linear-gradient(
+        to right,
+        rgba(5, 5, 6, 0.9) 0%,
+        rgba(5, 5, 6, 0.78) 40%,
+        rgba(5, 5, 6, 0.62) 72%,
+        rgba(5, 5, 6, 0.5) 100%
+      ),
+      linear-gradient(
+        to bottom,
+        rgba(5, 5, 6, 0.7) 0%,
+        rgba(5, 5, 6, 0.42) 20%,
+        rgba(5, 5, 6, 0.46) 52%,
+        rgba(5, 5, 6, 0.84) 82%,
+        rgba(5, 5, 6, 0.97) 94%,
+        #050506 100%
+      );
+  }
+}
