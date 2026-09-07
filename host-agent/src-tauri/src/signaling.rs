@@ -439,6 +439,22 @@ impl SessionDriver {
                     host_protocol = %session::HOST_PROTOCOL_VERSION,
                     "viewer protocol is incompatible — denying"
                 );
+                // §6.1 step 3 asks for a distinct `incompatible_version`
+                // status. That would need a new value in the `status`
+                // `.validate` enum in database.rules.json, and the live rules
+                // are hand-published — so a host writing a status the
+                // deployed ruleset rejects would hang the session instead of
+                // ending it, which is strictly worse than a plain denial.
+                // `denyReason` is an unconstrained child, so it carries the
+                // detail under the rules as they are actually deployed today.
+                // Write it *before* the status: the viewer stops listening
+                // the moment it sees `denied`.
+                self.write_field(
+                    session_id,
+                    "denyReason",
+                    serde_json::json!("incompatible_version"),
+                )
+                .await?;
                 self.write_field(session_id, "status", serde_json::json!("denied"))
                     .await?;
                 return Err(DuxoError::Protocol(reason));

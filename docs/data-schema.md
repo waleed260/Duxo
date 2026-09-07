@@ -23,6 +23,10 @@ sessions/{sessionId}
   hostPlatform:     "windows" | "linux-x11" | "linux-wayland"
   viewerId:         string | null
   status:           SessionStatus  (see viewer/shared/types.ts — explicit enum)
+  denyReason:       "incompatible_version" | absent   (§6.1, host-written)
+  viewerToken:      string | null  (≤4KB Firebase ID token, viewer-written)
+  protocolVersion:  string         (§6.1 "N.N.N", viewer-written with the claim)
+  capabilities:     string[]       (§6.1, ≤40 chars each, viewer-written)
   offer:            string | null  (≤10KB SDP)
   answer:           string | null  (≤10KB SDP)
   hostCandidates:   { "0".."99": candidate-string }  (batched, max 10/write)
@@ -36,6 +40,20 @@ codes/{8-digit-code}
 
 rateLimit/{ipHash}:   { count, lastAttempt }   (reserved; see below)
 ```
+
+**Deviation from §6.1**, recorded here because the rules are what force it:
+a protocol mismatch does *not* get its own `incompatible_version` status. The
+`status` `.validate` is a hard-coded enum, and these rules are hand-published
+to the live project rather than deployed by CI, so a host writing an unlisted
+status would have the write rejected and hang the session instead of ending
+it. `denyReason` is a separate child that needed no rules deploy to start
+working. It is host-written by rule, because the viewer branches its entire
+error message on it. See `docs/protocol-versions.md`.
+
+`viewerToken`, `protocolVersion` and `capabilities` are all constrained to
+`viewerId == auth.uid`: they are how the viewer identifies itself and declares
+what it speaks, so a third party writing them would be impersonation rather
+than a merely wrong value.
 
 `codes/` is **not readable by any client**. Viewers resolve a code through
 `POST /api/resolve-code`, which holds the Admin credential and enforces §0.7's

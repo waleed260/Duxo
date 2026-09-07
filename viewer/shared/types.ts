@@ -16,6 +16,12 @@ export type SessionStatus =
   | "ended"
   | "expired";
 
+// §6.1 — machine-readable cause for a `denied` status. Deliberately not a
+// `SessionStatus` variant: `status` has a hard-coded enum in the RTDB
+// `.validate`, and those rules are hand-published to the live project, so a
+// new status value could not be written until someone deployed them.
+export type DenyReason = "incompatible_version";
+
 // §0.6 hostPlatform values — also referenced in RTDB rules.
 export type HostPlatform =
   | "windows"
@@ -52,6 +58,13 @@ export interface Session {
   hostPlatform: HostPlatform;
   viewerId: string | null;
   status: SessionStatus;
+  /**
+   * §6.1 — why the host denied, when it was not a person clicking Deny.
+   * Absent for an ordinary denial. `incompatible_version` means the host
+   * refused the wire protocol this build speaks, which is an "update your
+   * client" problem and must not be reported as "the host said no".
+   */
+  denyReason: DenyReason | null;
   offer: string | null;
   answer: string | null;
   hostCandidates: Record<string, string>;

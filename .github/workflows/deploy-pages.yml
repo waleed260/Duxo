@@ -9,7 +9,9 @@
 #      produces `.next/`, not `out/`, and the deploy had nothing to upload.
 #   2. Even with a static export, GitHub Pages cannot run those routes, so it
 #      would publish a site whose sign-in, device pairing and code lookup all
-#      404. The viewer's real deployment is Railway (viewer/railway.json).
+#      404. The viewer needs a Node runtime wherever it lands; it has no
+#      hosting target at all since Railway was removed on 2026-09-05, and
+#      `viewer/railway.json` went with it.
 #
 # It had failed on all 31 of its runs since July, most recently at
 # `cache-dependency-path` — viewer/package-lock.json was gitignored and so

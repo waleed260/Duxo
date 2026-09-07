@@ -58,9 +58,16 @@ reported the pairing as successful.
 ```
 
 Runs `firebase deploy --only database,firestore:rules,firestore:indexes`.
-A new project ships with open defaults until this runs. A session cannot
-reach `REQUESTED` without the viewer-claim clause in `database.rules.json`,
-so an undeployed ruleset looks like "viewer enters a valid code, then hangs".
+
+Both rulesets are already published on `duxo-967f0` — by hand, through the
+console, on 2026-09-05 — so this is not the open-defaults state a brand-new
+project starts in. What it is for is keeping the console's copy and
+`firebase/` the same file, which nothing currently guarantees.
+
+Re-run `cd viewer && npm run check:backend` after either changes. The failure
+mode is quiet: a session cannot reach `REQUESTED` without the viewer-claim
+clause in `database.rules.json`, so a drifted ruleset looks like "viewer
+enters a valid code, then hangs" rather than like an error.
 
 ---
 

@@ -26,7 +26,12 @@ not Firebase, not TURN relays, not our servers — can decrypt traffic in transi
 If you find a security vulnerability, please report it responsibly:
 
 1. **Do not** open a public GitHub issue.
-2. Email your findings to: security@duxo.dev (or use GitHub's private security advisories if enabled).
+2. Use **GitHub's private security advisories** on this repository
+   (Security → Report a vulnerability). That is the only reporting channel:
+   this project owns no domain, so the `security@duxo.dev` address previously
+   listed here did not resolve and mail to it bounced. `duxo.app` is an
+   unrelated product that happens to share the name — do not send anything
+   there.
 3. Include: description, steps to reproduce, potential impact, and any suggested fix.
 4. We aim to acknowledge reports within 48 hours and provide a fix within 7 days for critical issues.
 
@@ -36,29 +41,34 @@ A logged-in viewer is NOT automatically allowed to control a host. The host's
 explicit "Allow" click is the **only** thing that grants control, every single
 time, no exceptions. There is no "always allow this viewer" in MVP.
 
-## Two-factor authentication is enrollment-only today
+## Two-factor authentication
 
-/settings offers TOTP and passkey enrolment, and the copy tells the user they
-will need a code from their authenticator app the next time they sign in.
-Nothing asks for one. `/verify-2fa` is a complete, working page that no flow
-navigates to: Clerk's post-sign-in redirect goes straight to /dashboard.
+Enforced server-side since 2026-09-05. This section previously said the
+opposite, and the three weaknesses it described were each real; they are
+listed here because the shape of the fix is the useful part.
 
-Even wired up it would not be a security boundary, and it is listed here
-rather than in the threat model above for that reason:
+| Was | Now |
+|---|---|
+| The gate was a `router.replace` in the browser, so devtools or a typed URL walked past it | `proxy.ts` redirects to `/verify-2fa`; the proof is an HttpOnly cookie, signed server-side and bound to the uid, that the page cannot read or forge |
+| `totpSecretEncrypted` used a PBKDF2 password derived from the uid — which is also the Firestore path the ciphertext sits at, so one read yielded both | The key is HKDF-derived from `TOTP_MASTER_KEY`, which never leaves the server. `/api/totp/{setup,activate,verify}` do the crypto; the plaintext secret does not exist in a page context after enrolment |
+| WebAuthn checked only that the returned credential id appeared in a list the caller itself supplied — a public identifier, so the private key was never exercised | `/api/webauthn/{options,verify}` hold the challenge and public keys and verify signature, challenge, origin, rpID and an advancing counter. `lib/webauthn.ts` is browser ceremony only |
 
-- The check runs in the browser. The gate is a `router.replace`, so anyone
-  who can open devtools or type a URL is past it.
-- `totpSecretEncrypted` is encrypted with a key derived from the user's own
-  uid, which the client already has. That protects the secret from a casual
-  glance at the database, not from whoever holds the session.
-- It fails open. If the user document cannot be read, the page forwards to
-  /dashboard, which is the right behaviour for a convenience gate and the
-  wrong behaviour for a factor.
+Two properties worth stating because they are easy to regress:
 
-Real enforcement needs the code verified server-side and the result bound to
-the session — which Clerk, already the identity provider here, provides
-natively. Until that decision is made, treat the feature as a preference the
-account holder has expressed, not as a control anything relies on.
+- **It fails closed.** Anything unverifiable — a missing, expired, tampered,
+  or wrong-uid cookie — falls through to the challenge rather than being
+  given the benefit of the doubt.
+- **`/verify-2fa`, `/settings` and the 2FA API routes are exempt on purpose.**
+  Otherwise the only way to satisfy the check would be to have already
+  satisfied it, and a lost phone would become a lost account.
+
+Whether 2FA is *enabled* rides on Clerk `publicMetadata` rather than
+Firestore, because middleware runs in the edge runtime and `firebase-admin`
+cannot follow it there.
+
+`TOTP_MASTER_KEY` must be set for any of this to work — `/api/totp/*` answers
+503 without it, and `/api/health` reports the deploy misconfigured. Changing
+it makes every stored TOTP secret undecryptable.
 
 ## Signing and trust
 

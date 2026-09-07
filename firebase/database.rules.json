@@ -25,6 +25,14 @@
         "status": {
           ".validate": "newData.val() == 'waiting' || newData.val() == 'requested' || newData.val() == 'allowed' || newData.val() == 'denied' || newData.val() == 'connecting' || newData.val() == 'active' || newData.val() == 'ended' || newData.val() == 'expired'"
         },
+        // §6.1 — why a `denied` was denied. The status enum above is fixed and
+        // these rules are hand-published, so a protocol mismatch cannot get its
+        // own status value without a deploy; it rides here instead. Host-only:
+        // a viewer that wrote its own reason would only be fooling itself, but
+        // there is no reason to let it.
+        "denyReason": {
+          ".validate": "newData.isString() && newData.val() == 'incompatible_version' && newData.parent().child('hostId').val() == auth.uid"
+        },
         // §6.3 — must match viewer/shared/types.ts HostPlatform exactly.
         "hostPlatform": {
           ".validate": "newData.val() == 'windows' || newData.val() == 'linux-x11' || newData.val() == 'linux-wayland'"

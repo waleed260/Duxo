@@ -167,6 +167,28 @@ describe("§1.1 full session lifecycle", () => {
     expect(await statusOf()).toBe("ended");
   });
 
+  it("lets the host say *why* it denied, and only the host (§6.1)", async () => {
+    // A protocol mismatch cannot have its own status: the `status` enum is
+    // fixed in these rules and they are hand-published, so a host writing an
+    // unlisted value would be rejected and the session would hang rather than
+    // end. `denyReason` carries it instead — which only helps if the viewer
+    // can trust who wrote it.
+    await hostCreatesSession();
+    await viewerClaims();
+    await assertFails(
+      set(ref(as(VIEWER), `sessions/${SID}/denyReason`), "incompatible_version"),
+    );
+    await assertFails(
+      set(ref(as(HOST), `sessions/${SID}/denyReason`), "because-i-said-so"),
+    );
+    await assertSucceeds(
+      update(ref(as(HOST), `sessions/${SID}`), {
+        denyReason: "incompatible_version",
+        status: "denied",
+      }),
+    );
+  });
+
   it("runs the denial path REQUESTED → DENIED", async () => {
     // §2.4 — no session without a human approving it on the host.
     await hostCreatesSession();

@@ -11,13 +11,32 @@ not the app:
 
 ## Negotiation
 
-1. Viewer declares its supported protocol range on `REQUESTED`.
-2. Host checks against its own version **before** `ALLOWED`.
-3. Incompatible → status becomes `incompatible_version`, viewer sees
-   "please update" (never a silent hang or cryptic WebRTC failure).
+1. Viewer declares its supported protocol range on `REQUESTED` —
+   `protocolVersion` and `capabilities`, written with the claim
+   (`viewer/app/session/page.tsx`).
+2. Host checks against its own version **before** `ALLOWED`, in the same poll
+   that verifies the viewer's token, so an incompatible viewer is refused
+   before the Allow/Deny dialog appears rather than after a human has been
+   asked to approve a peer the host cannot talk to
+   (`session::check_protocol_compatibility`).
+3. Incompatible → `status` becomes `denied` and `denyReason` becomes
+   `incompatible_version`. The viewer branches on that field and shows
+   "Update needed" rather than "the host denied this request" — never a
+   silent hang or a cryptic WebRTC failure.
+
+   **This is a deliberate deviation** from the original design, which gave
+   the mismatch its own `incompatible_version` *status*. `status` has a
+   hard-coded enum in the `.validate` clause of `firebase/database.rules.json`,
+   and those rules are hand-published to the live project rather than deployed
+   by CI. A host writing a status the deployed ruleset does not list would have
+   its write rejected and leave the session hanging — strictly worse than the
+   plain denial it replaced. `denyReason` is a separate child, so it needed no
+   rules deploy to start working, and it is host-written by rule.
 4. **Capability flags** negotiate down rather than failing the session — a
    v1.0 host with a v1.2 viewer disables clipboard sync, doesn't drop the
    whole session. Hard incompatibility is reserved for MAJOR bumps only.
+5. A viewer that declares nothing is treated as the 1.0.0 baseline, not
+   rejected. Negotiating down is the point; failing shut is not.
 
 ## Compatibility Matrix
 

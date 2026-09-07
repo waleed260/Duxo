@@ -122,6 +122,17 @@ describe("RTDB security rules (§10.2)", () => {
         "newData.parent().child('viewerId').val() == auth.uid",
       );
     });
+
+    it("keeps denyReason host-written and to the known values (§6.1)", () => {
+      // The viewer branches its whole error message on this field, so a
+      // viewer-writable one would let a page mislead itself, and an
+      // unconstrained one would let a typo in the host reach the UI as a
+      // blank screen.
+      expect(session.denyReason[".validate"]).toContain(
+        "newData.parent().child('hostId').val() == auth.uid",
+      );
+      expect(session.denyReason[".validate"]).toContain("'incompatible_version'");
+    });
   });
 
   describe("auditLog/$uid (§7.3)", () => {

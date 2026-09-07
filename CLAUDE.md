@@ -98,10 +98,19 @@ on a dedicated OS thread and hand frames to the async/WebRTC side over a
 depth-2 channel — intentionally shallow, so a slow network drops frames
 instead of queueing stale screen state.
 
-**Protocol versioning**: capability negotiation is implemented host-side
-(`session::check_protocol_compatibility`, `negotiated_capabilities`) but not
-yet wired end-to-end — the viewer doesn't send a protocol declaration on
-`REQUESTED` yet, so both sides are just pinned to one version.
+**Protocol versioning** is wired end-to-end (§6.1): the viewer writes
+`protocolVersion` + `capabilities` with its claim on `REQUESTED`
+(`app/session/page.tsx`), and the host reads them in the same poll that
+verifies the viewer's token (`signaling.rs` → `check_protocol_compatibility`,
+`negotiated_capabilities`), so a MAJOR mismatch is refused before the
+Allow/Deny dialog appears.
+
+A mismatch is reported as `status: "denied"` **plus** `denyReason:
+"incompatible_version"`, not as its own status value — `status` has a
+hard-coded enum in the RTDB `.validate`, and those rules are hand-published,
+so a new status value would be rejected by the live ruleset and hang the
+session. The viewer branches on `denyReason` to say "Update needed" instead
+of "the host denied you". See `docs/protocol-versions.md`.
 
 **Viewer auth vs. host auth are different systems**: the viewer uses
 Clerk, exchanged for a Firebase custom token via `/api/firebase-token`

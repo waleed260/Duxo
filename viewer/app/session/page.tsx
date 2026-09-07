@@ -57,7 +57,13 @@ function SessionPage() {
   const streamRef = React.useRef<MediaStream | null>(null);
 
   const [phase, setPhase] = React.useState<
-    "connecting" | "active" | "reconnecting" | "failed" | "denied" | "ended"
+    | "connecting"
+    | "active"
+    | "reconnecting"
+    | "failed"
+    | "denied"
+    | "incompatible"
+    | "ended"
   >("connecting");
   // §1.3 #4 — which ICE restart we are on, so a recovery that is taking a
   // while reads as progress rather than as a frozen screen.
@@ -202,7 +208,9 @@ function SessionPage() {
         },
         onRecovering: (n, of) => {
           setRetry({ n, of });
-          setPhase((p) => (p === "denied" || p === "ended" ? p : "reconnecting"));
+          setPhase((p) =>
+            p === "denied" || p === "incompatible" || p === "ended" ? p : "reconnecting",
+          );
         },
         onRecovered: () => {
           setRetry(null);
@@ -213,7 +221,9 @@ function SessionPage() {
           setErrorMsg(
             "Connection lost — the network may be too restrictive. Try again.",
           );
-          setPhase((p) => (p === "denied" || p === "ended" ? p : "failed"));
+          setPhase((p) =>
+            p === "denied" || p === "incompatible" || p === "ended" ? p : "failed",
+          );
         },
         onTrack: (stream) => {
           streamRef.current = stream;
@@ -242,7 +252,13 @@ function SessionPage() {
         if (data.hostPlatform) setHostPlatform(data.hostPlatform);
 
         if (data.status === "denied") {
-          setPhase("denied");
+          // §6.1 — a version mismatch is also written as `denied`, because
+          // the RTDB status enum is fixed by rules that are hand-published.
+          // Reporting it as an ordinary denial would send the user to ask the
+          // host to click Allow again, which would never help.
+          setPhase(
+            data.denyReason === "incompatible_version" ? "incompatible" : "denied",
+          );
           return;
         }
         if (data.status === "ended" || data.status === "expired") {
@@ -436,12 +452,18 @@ function SessionPage() {
           <div className="rounded-md border border-border-default bg-surface-raised p-7 text-center">
             <h2 className="text-xl font-emphasis">
               {phase === "denied" && "Connection denied"}
+              {phase === "incompatible" && "Update needed"}
               {phase === "ended" && "Session ended"}
               {phase === "failed" && "Connection failed"}
             </h2>
             <p className="mt-2 text-sm text-text-secondary">
               {phase === "denied" &&
                 "The host denied this connection request. Double-check with them and try a new code."}
+              {phase === "incompatible" &&
+                "This host speaks a newer version of the Duxo protocol than " +
+                  "this page does. Reload to pick up the latest viewer — if " +
+                  "that doesn't help, the host agent is ahead of this " +
+                  "deployment and needs to be updated."}
               {phase === "ended" &&
                 "The session has ended. You can close this page."}
               {phase === "failed" &&
@@ -455,7 +477,7 @@ function SessionPage() {
           </div>
         )}
 
-        {phase !== "denied" && phase !== "ended" && (
+        {phase !== "denied" && phase !== "incompatible" && phase !== "ended" && (
           <div className="relative aspect-video w-full overflow-hidden rounded-md border border-border-default bg-black">
             <video
               ref={videoRef}
