@@ -14,10 +14,32 @@ Fixed identifiers this runbook uses:
 | Firestore location | `nam5` — **permanent, already set** |
 | GitHub repo | `waleed260/Duxo` |
 
+## Where this actually stands (2026-09-07)
+
+Verified, not assumed — Firebase by live probe, GitHub by `/actions/variables`
+and `/actions/secrets`:
+
+| Step | State |
+|---|---|
+| 1. Firebase services | **done** — all three live on `duxo-967f0` |
+| 2. Security rules | **done, but hand-published** — live and correct; CI does not yet keep them in sync |
+| 3. GitHub secret for rules CI | not set — this is what step 2's caveat needs |
+| 4. Host the viewer | **not done, and it blocks 6, 7 and 8** |
+| 5. Metered TURN | not set |
+| 6. Deployment env vars | needs 4 |
+| 7. Host-agent release config | 3 of 4 `DUXO_*` variables set; the 4th is `DUXO_WEB_APP_URL`, which needs 4 |
+| 8. One real end-to-end session | never performed |
+
+**Step 4 is the critical path.** It is not one item among seven — steps 6, 7
+and 8 are each waiting on an origin that does not exist, and step 7 is
+otherwise fully configured. Steps 3 and 5 are independent and can be done in
+any order.
+
 Check progress at any point:
 
 ```bash
 ./scripts/provision.sh check      # probes the live Firebase project
+cd viewer && npm run check:backend # the same three services, no service key
 ```
 
 ---
