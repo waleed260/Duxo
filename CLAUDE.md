@@ -225,11 +225,33 @@ These affect what you can actually verify, not just what's coded:
   watch. The rules currently live were published through the console, so CI
   is not yet the thing keeping them in sync with `firebase/`.
 
-  (Whether the `FIREBASE_PROJECT_ID` *variable* is set is disputed between
-  notes — one observation on 2026-09-01 found it set to `duxo-967f0`. Check
-  `/actions/variables` before repeating either claim.)
+  (`FIREBASE_PROJECT_ID` *is* set, to `duxo-967f0` — verified against
+  `/actions/variables` on 2026-09-07. Earlier notes claiming otherwise were
+  wrong. The blocker is only the credential secret.)
 - **No host-agent release has been published** — the download page's
-  `releases/latest` link currently has nothing to resolve to.
+  `releases/latest` link currently has nothing to resolve to. Verified on
+  2026-09-07, the release is blocked by **exactly one** repository variable:
+
+  | `DUXO_*` variable | State |
+  |---|---|
+  | `DUXO_FIREBASE_API_KEY` | set |
+  | `DUXO_FIREBASE_DATABASE_URL` | set |
+  | `DUXO_FIREBASE_PROJECT_ID` | set |
+  | `DUXO_WEB_APP_URL` | **unset** — and it cannot be set |
+
+  `DUXO_WEB_APP_URL` is where a paired device sends the user, so it has to be
+  the origin the viewer is actually served from — and there isn't one. **The
+  hosting gap is the release gap.** Deploy the viewer, set this to its origin,
+  and `workflow_dispatch` on *Release Host Agent* becomes possible; nothing
+  else in that chain is missing.
+
+- **The repository has no Actions secrets at all** (verified 2026-09-07 via
+  `/actions/secrets`). That single fact explains three separate "known
+  failures" that otherwise look unrelated: `deploy-rules.yml` fails on `main`
+  (no `FIREBASE_SERVICE_ACCOUNT`/`FIREBASE_TOKEN`), a release would publish
+  binaries but no update manifest (no `UPDATER_SIGNING_KEY`), and
+  `viewer.yml`'s Playwright job skips (no `E2E_CLERK_*`). All three are
+  designed to say so loudly rather than go quietly green.
 - **TURN is unconfigured.** `.env.local` has no `NEXT_PUBLIC_METERED_TURN_*`
   values, so `/api/health` reports `turnConfigured: false`. Sessions still
   work peer-to-peer and fail on roughly 10–15% of networks — and they fail

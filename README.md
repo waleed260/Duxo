@@ -234,6 +234,14 @@ binary, and they are the only configuration a downloaded release ever gets —
 publishing without them ships an agent whose tray menu is greyed out on every
 machine that installs it, which is worse than not publishing at all.
 
+As of 2026-09-07 three of the four are set — `DUXO_FIREBASE_API_KEY`,
+`DUXO_FIREBASE_DATABASE_URL` and `DUXO_FIREBASE_PROJECT_ID` all point at
+`duxo-967f0`. The one that is missing is `DUXO_WEB_APP_URL`, and it is missing
+for a reason no amount of clicking fixes: it must be the origin the viewer is
+served from, and the viewer is not served from anywhere yet. **Hosting the
+viewer is what unblocks the first release** — that is the whole remaining
+chain, not one item on a longer list.
+
 In-app updates additionally need the minisign key pair the updater verifies
 against. `tauri.conf.json` already carries the public half, and
 `scripts/updater-keygen.sh` generates a pair if you need a new one. Set:
