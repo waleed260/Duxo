@@ -249,6 +249,13 @@ against the embedded public key, so a manifest with an empty signature does
 not mean "unsigned build", it means every in-app update fails and tells the
 user so. No manifest at all means the updater finds nothing and says nothing.
 
+`deploy-pages.yml` applies the same rule to the copy it serves. `docs/update.json`
+has held a placeholder with `"signature": ""` and `"url": ""` since July, and
+Pages is the endpoint `tauri.conf.json` points at — so publishing it would have
+recreated exactly the failure the release workflow was fixed to avoid. Pages now
+checks the contents, not just the keys, and serves `minversion.json` alone until
+a signed release replaces the placeholder.
+
 ### Viewer (Next.js)
 
 ```bash

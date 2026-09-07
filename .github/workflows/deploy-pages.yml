@@ -54,6 +54,7 @@ jobs:
       # here is a silently broken update path — it fails as a warn-level log
       # line on a machine nobody is watching. Assert the names and the shape.
       - name: Verify the files the host agent fetches
+        id: metadata
         run: |
           set -euo pipefail
           for f in minversion.json update.json; do
@@ -61,7 +62,7 @@ jobs:
             python3 -m json.tool "docs/$f" > /dev/null
           done
           python3 - <<'PY'
-          import json
+          import json, os
           mv = json.load(open("docs/minversion.json"))
           # These names must match MinVersionFile in host-agent's main.rs,
           # which reads them camelCase via #[serde(rename_all)].
@@ -70,13 +71,38 @@ jobs:
           up = json.load(open("docs/update.json"))
           for key in ("version", "platforms"):
               assert key in up, f"update.json is missing {key}"
+
+          # Shape is not enough. The updater plugin verifies every download
+          # against the minisign key in tauri.conf.json, so a platform with an
+          # empty `signature` or `url` does not mean "unsigned build" — it
+          # means the in-app update fails verification and reports an error to
+          # the user. release.yml already refuses to *write* such a manifest;
+          # publishing the placeholder that has sat in docs/ since July would
+          # reintroduce exactly what that fix removed. A 404 is the honest
+          # state: the updater finds nothing and says nothing.
+          usable = all(
+              p.get("signature") and p.get("url")
+              for p in up["platforms"].values()
+          )
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              fh.write(f"update_manifest_usable={'true' if usable else 'false'}\n")
+          if not usable:
+              print(
+                  "::warning::docs/update.json has a platform with no signature "
+                  "or no url, so it was NOT published — serving it would make "
+                  "every in-app update fail verification rather than no-op. "
+                  "Cut a release with UPDATER_SIGNING_KEY set to replace it."
+              )
           print("host agent metadata OK")
           PY
 
       - name: Assemble the Pages site
         run: |
           mkdir -p _site
-          cp docs/minversion.json docs/update.json _site/
+          cp docs/minversion.json _site/
+          if [ "${{ steps.metadata.outputs.update_manifest_usable }}" = "true" ]; then
+            cp docs/update.json _site/
+          fi
           touch _site/.nojekyll
           # Pages serves this host; a bare directory listing at the root
           # invites the assumption that the app lives here. It does not.
@@ -93,8 +119,8 @@ jobs:
           <h1>Duxo</h1>
           <p>
             This host serves the static metadata the Duxo host agent fetches:
-            <a href="minversion.json"><code>minversion.json</code></a> and
-            <a href="update.json"><code>update.json</code></a>.
+            <a href="minversion.json"><code>minversion.json</code></a>, and
+            <code>update.json</code> once a signed release exists.
           </p>
           <p>
             The Duxo web app is not served from here — it needs a server

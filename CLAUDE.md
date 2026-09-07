@@ -218,15 +218,52 @@ These affect what you can actually verify, not just what's coded:
   `/verify-2fa`, `/settings` and the 2FA API routes are exempt so a user
   without a factor is never locked out of the page that manages factors.
 - **The `Deploy Firebase Rules` CI job still fails on every `main` push**,
-  by design: it has no `FIREBASE_PROJECT_ID` repository variable and no
-  `FIREBASE_SERVICE_ACCOUNT`/`FIREBASE_TOKEN` secret, and the workflow
-  chooses to fail rather than report a green check for a deploy that did
-  nothing. Its `validate` job — which compiles and exercises both rulesets
-  against the emulators — does pass, and that is the one to watch. The
-  rules currently live were published through the console, so CI is not yet
-  the thing keeping them in sync with `firebase/`.
+  by design: it has no `FIREBASE_SERVICE_ACCOUNT`/`FIREBASE_TOKEN` secret,
+  and the workflow chooses to fail rather than report a green check for a
+  deploy that did nothing. Its `validate` job — which compiles and exercises
+  both rulesets against the emulators — does pass, and that is the one to
+  watch. The rules currently live were published through the console, so CI
+  is not yet the thing keeping them in sync with `firebase/`.
+
+  (Whether the `FIREBASE_PROJECT_ID` *variable* is set is disputed between
+  notes — one observation on 2026-09-01 found it set to `duxo-967f0`. Check
+  `/actions/variables` before repeating either claim.)
 - **No host-agent release has been published** — the download page's
   `releases/latest` link currently has nothing to resolve to.
+- **TURN is unconfigured.** `.env.local` has no `NEXT_PUBLIC_METERED_TURN_*`
+  values, so `/api/health` reports `turnConfigured: false`. Sessions still
+  work peer-to-peer and fail on roughly 10–15% of networks — and they fail
+  for the *remote* person, which is what makes it hard to notice. Needs a
+  Metered.ca account; verify with `npm run check:turn`.
+
+## Verified on 2026-09-07 (re-run these rather than trusting the list)
+
+The whole pipeline was reproduced on the **pinned Node 20**, not just local
+Node 24 — the two disagree, and a suite can pass here and fail CI on that
+alone:
+
+| Check | Result |
+|---|---|
+| `npm run type-check` | clean |
+| `npm run lint` | 0 errors, 4 warnings (all documented, see above) |
+| `npm run test:run` | 148 passed |
+| `npm run test:rules` | 58 passed (needs a JRE — see below) |
+| `npm run test:e2e` | 13 passed (uses the real Clerk key in `.env.local`) |
+| `npm run build` ×2 | both CI variants, including the no-Firebase-credentials one |
+| `npm run check:backend` | three greens |
+| `cargo fmt --check` | clean |
+
+The emulators need Java, which is not installed and needs no sudo to get: pull
+Temurin 21 from
+`https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jre/hotspot/normal/eclipse`,
+extract it to the scratchpad, and set `JAVA_HOME`/`PATH`.
+
+**The host agent still cannot be built locally** — `libwebkit2gtk-4.1-dev`,
+`libvpx-dev`, `libsoup-3.0-dev` and `pkg-config` are all missing and
+installing them needs a password. CI is the only place it compiles; push to
+`feat/**` or `fix/**` and read the run. `cargo fmt --check` and `rustfmt` do
+work locally and are worth running first, since CI gates on
+`cargo fmt -- --check` and `cargo clippy --all-targets -- -D warnings`.
 
 ## Conventions (from CONTRIBUTING.md)
 
