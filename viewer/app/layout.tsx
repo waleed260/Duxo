@@ -55,6 +55,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
+  // §9.8's token rule cannot reach here: `themeColor` is Next's metadata
+  // API and it emits a <meta> tag, so it takes a CSS colour rather than a
+  // class name. This is the app chrome's accent from tailwind.config.ts.
+  // eslint-disable-next-line no-restricted-syntax
   themeColor: "#ef443b",
   colorScheme: "dark",
   width: "device-width",
@@ -67,7 +71,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
+    /*
+      `suppressHydrationWarning` covers the <html> element only, and it is
+      required rather than cosmetic: the inline script below adds the `js`
+      class before React hydrates, so the live DOM reads `dark js` while the
+      server sent `dark`. React reported that as a hydration mismatch on
+      every single page load — a real warning that buried real ones. The
+      alternative, rendering `js` server-side, would defeat the script's
+      whole purpose (see its comment).
+    */
+    <html lang="en" className="dark" suppressHydrationWarning>
       <head>
         {/*
           The hero sets both faces above the fold, so they are preloaded to

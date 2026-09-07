@@ -85,10 +85,16 @@ export async function generateQRCodeSVG(otpauthUri: string): Promise<string> {
     type: "svg",
     margin: 1,
     width: 200,
+    // Not design tokens by omission: `qrcode` renders the SVG itself and
+    // takes literal colours, and these two are the QR spec's own light/dark
+    // modules — inverted so the code reads on a dark card. A themed value
+    // here would risk a contrast ratio a scanner cannot resolve.
+    /* eslint-disable no-restricted-syntax */
     color: {
       dark: "#ffffff",
       light: "#000000",
     },
+    /* eslint-enable no-restricted-syntax */
   });
 }
 

@@ -128,13 +128,29 @@ is why it cannot be exported statically. It has no hosting target at
 present — Railway was removed on 2026-09-05 — so any host must provide a Node
 server runtime, not a static bucket.
 
-**Design tokens are enforced, not just conventional**: `viewer/tailwind.config.ts`
-is the single source of truth for colors/spacing/radii/type scale; an ESLint
-rule (`no-restricted-syntax` in `eslint.config.mjs`) flags raw hex values
-used outside that file. The landing page (`app/page.tsx`) is a deliberate,
-documented exception — it's an intentionally separate light/monochrome
-surface isolated from the shared dark app chrome, so it uses its own literal
-hex values rather than the app's dark-theme tokens.
+**Two palettes, deliberately**, and knowing which one you are in matters:
+
+- *App chrome* (`/dashboard`, `/settings`, `/session`, `/download`,
+  `/verify-2fa`) uses `viewer/tailwind.config.ts` — the single source of
+  truth for colors/spacing/radii/type scale, accent `#ef443b`.
+- *Marketing + auth* (`app/page.tsx`, `components/landing/*`,
+  `components/auth/AuthScreen.tsx`, which `/login` and `/signup` both wrap)
+  uses `viewer/DESIGN.md` — canvas `#050506`, sage accent `#8FBE8E` — written
+  as literal hex, not tokens.
+
+An ESLint rule (`no-restricted-syntax` in `eslint.config.mjs`) flags raw hex.
+The marketing surface does not trip it, and there is **no exemption in the
+config** — the rule's selector matches a literal that is *entirely* a hex
+value, and that surface writes its colors inside Tailwind arbitrary-value
+classes (`bg-[#8fbe8e]`), which are longer strings. Don't go looking for an
+override that isn't there, and don't assume a hex in a class string was
+reviewed. Where a literal genuinely cannot be a token — Clerk's `appearance`
+API, `qrcode`'s render options, Next's `themeColor` metadata — the disable is
+inline and carries its reason.
+
+`npm run lint` is expected to report exactly **four** warnings, all
+`react-hooks/set-state-in-effect`, all legitimate sync-on-mount effects; the
+rationale is in `eslint.config.mjs`. Anything beyond those four is new.
 
 **Path aliases**: `@/*` → `viewer/` root, `@shared/*` → `viewer/shared/`
 (currently just `types.ts`). Both `tsconfig.json` and `vitest.config.ts`

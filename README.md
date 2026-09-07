@@ -83,45 +83,50 @@ them.
 
 ### Firebase project setup (§0.13 items 4–5)
 
-> **The Firebase backend does not exist yet.** Three services are missing, each
-> confirmed by a probe you can re-run yourself. Nothing in the product works
-> until they exist — every session, code and pairing lives in these.
->
-> ```bash
-> cd viewer && npm run check:backend
-> ```
->
-> That runs all three probes below against the project in `.env.local`, names
-> the console click each missing service needs, and exits non-zero while any
-> of them is missing — so it doubles as the "did that actually take?" check
-> after you enable them. It uses only public config values, no
-> service-account key.
->
-> | Service | Probe | Result |
-> |---|---|---|
-> | Realtime Database | `curl -s -o /dev/null -w '%{http_code}' https://duxo-967f0-default-rtdb.firebaseio.com/.json` | `404` — no instance. A database that exists but is locked answers `401`, so this is not a rules problem. Checked in `us-central1`, `europe-west1` and `asia-southeast1`. |
-> | Cloud Firestore | `firestore.googleapis.com/v1/projects/<id>/databases` with a service-account token | `403` — "API has not been used in this project before" |
-> | Authentication | `identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken` with a deliberately invalid token | `CONFIGURATION_NOT_FOUND`. An enabled project answers `INVALID_CUSTOM_TOKEN`, so this is the project, not the token. |
->
-> **Auth matters more than it looks.** Device pairing mints a custom token
-> server-side (which works — the Admin SDK signs it locally) and then the host
-> exchanges it via `signInWithCustomToken`. That second half fails with
-> `CONFIGURATION_NOT_FOUND` until Auth is enabled, so pairing breaks *after*
-> the web app has reported success.
->
-> **To fix**, in the [Firebase console](https://console.firebase.google.com/)
-> for this project:
->
-> 1. Build → **Realtime Database** → Create Database → `us-central1` → Locked mode
-> 2. Build → **Firestore Database** → Create database → Locked mode
-> 3. Build → **Authentication** → Get started → enable Email/Password
->
-> Spark (free) covers all three, per §0.3. Then deploy the rules below —
-> locked mode denies everything until you do.
->
-> Set the `FIREBASE_PROJECT_ID` **repository variable** to the same project.
-> The workflows had it hardcoded to `duxo-remote`, which is not the project the
-> app is configured against.
+All three services exist on `duxo-967f0` as of 2026-09-05, and the probe that
+used to report them missing now reports them present:
+
+```bash
+cd viewer && npm run check:backend
+```
+
+```
+✓ Realtime Database  exists, and its rules are denying anonymous reads (correct)
+✓ Cloud Firestore    exists, and is refusing an anonymous read (correct)
+✓ Authentication     enabled, and rejecting a deliberately invalid token (correct)
+```
+
+It uses only public config values, no service-account key, so it is safe to
+re-run from anywhere as the "is this still true?" check.
+
+| Service | Where | Note |
+|---|---|---|
+| Realtime Database | `us-central1` | Signaling only — offer/answer/ICE, ephemeral |
+| Cloud Firestore | `nam5`, Standard edition, `(default)` | Durable records — session history, profiles |
+| Authentication | Email/Password enabled | The half of pairing that fails last (see below) |
+
+**Both locations are effectively permanent.** Firestore's `nam5` cannot be
+changed at all after creation. Moving RTDB means creating a new instance and
+updating `NEXT_PUBLIC_FIREBASE_DATABASE_URL` to match — the derived
+`<project>-default-rtdb.firebaseio.com` is only correct while the database
+stays in the default region.
+
+**Why Auth mattered more than it looked.** Device pairing mints a custom token
+server-side — which works even with Auth disabled, because the Admin SDK signs
+it locally — and the host then exchanges it via `signInWithCustomToken`. Only
+that second half fails, with `CONFIGURATION_NOT_FOUND`, so pairing used to
+break *after* the web app had already reported success. It is the failure mode
+to remember if Auth is ever disabled again.
+
+Rules are published and verified live: an anonymous `GET` of
+`pairings/<code>/customToken` answers `200`/`null` while its parent node and
+`sessions` both answer `401` — the narrow read window §0.7 describes, and not
+what Firebase's default rules do. They were published through the console, so
+CI is not yet what keeps them in sync with `firebase/` — see below.
+
+Set the `FIREBASE_PROJECT_ID` **repository variable** to `duxo-967f0`. The
+workflows had it hardcoded to `duxo-remote`, which is not the project the app
+is configured against.
 
 ### Security rules (do this before anything writes user data)
 
@@ -142,11 +147,17 @@ one `firestore-backup.yml` uses) or `FIREBASE_TOKEN`. **Neither is currently
 set**, so the workflow will fail loudly rather than report a green check for a
 deploy that did not happen.
 
-Until this runs, the project is on whatever rules were last set in the
-console — for a new project, Firebase's defaults, which are open. A session
-also cannot reach `REQUESTED` without the viewer-claim clause in
-`database.rules.json`, so an undeployed ruleset shows up as a viewer that
-enters a valid code and then hangs.
+The live project is **not** on Firebase's open defaults — both rulesets were
+published by hand through the console on 2026-09-05 and verified with the
+anonymous probe above. What is still missing is the automation: nothing yet
+guarantees the console's copy and `firebase/` stay the same file. Until the
+secret is set, treat `firebase/` as the intent and the console as the truth,
+and re-run the probe after editing either.
+
+The failure this protects against is quiet. A session cannot reach `REQUESTED`
+without the viewer-claim clause in `database.rules.json`, so a ruleset that
+drifted shows up as a viewer that enters a valid code and then hangs — not as
+an error anyone can read.
 
 ### Hosting environment
 

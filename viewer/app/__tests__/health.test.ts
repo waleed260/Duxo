@@ -11,6 +11,7 @@ const ALL = {
   FIREBASE_PROJECT_ID: "duxo-test",
   FIREBASE_CLIENT_EMAIL: "sa@duxo-test.iam.gserviceaccount.com",
   FIREBASE_PRIVATE_KEY: "-----BEGIN PRIVATE KEY-----AAAA-----END PRIVATE KEY-----",
+  TOTP_MASTER_KEY: "totpmaster_fixture_at_least_32_bytes_long",
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_test_x",
   NEXT_PUBLIC_FIREBASE_API_KEY: "AIzaSyTest",
   NEXT_PUBLIC_FIREBASE_DATABASE_URL: "https://duxo-test.firebaseio.com",
@@ -48,6 +49,22 @@ describe("GET /api/health", () => {
     expect(res.status).toBe(200);
     expect(body.status).toBe("ok");
     expect(body.turnConfigured).toBe(true);
+  });
+
+  it("answers 503 when TOTP_MASTER_KEY is missing, and names it", async () => {
+    // §2.3 — /api/totp/* fails closed while this is unset, so 2FA cannot be
+    // enrolled at all. This endpoint used to report such a deploy as "ok":
+    // the variable was listed only in lib/env.ts, whose exported check
+    // nothing called. A user found out at the moment they tried to turn on
+    // their second factor, which is the whole failure mode /api/health is
+    // supposed to move earlier.
+    const { res, body } = await callHealth({
+      ...ALL,
+      TOTP_MASTER_KEY: undefined,
+    });
+    expect(res.status).toBe(503);
+    expect(body.status).toBe("misconfigured");
+    expect(body.missing.server).toContain("TOTP_MASTER_KEY");
   });
 
   it("answers 503, not 200, when server config is missing", async () => {

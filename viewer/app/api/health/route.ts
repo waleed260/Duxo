@@ -23,6 +23,14 @@ const REQUIRED_SERVER = [
   "FIREBASE_PROJECT_ID",
   "FIREBASE_CLIENT_EMAIL",
   "FIREBASE_PRIVATE_KEY",
+  // §2.3 — /api/totp/* fails closed with 503 while this is unset, so a deploy
+  // without it cannot enrol a second factor at all. It belongs here rather
+  // than in the degraded bucket below: TURN missing costs some callers a
+  // session, this costs every user a security feature the middleware already
+  // enforces. It was previously listed only in lib/env.ts, whose exported
+  // check nothing ever called — so the one deploy state this endpoint was
+  // written to catch was the one it reported as "ok".
+  "TOTP_MASTER_KEY",
 ] as const;
 
 /** Baked into the client bundle at build time, not read at runtime. */

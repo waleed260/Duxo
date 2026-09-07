@@ -26,7 +26,6 @@ export function reportWebVitals(metric: WebVitalMetric): void {
   }
 
   if (process.env.NODE_ENV !== "production") {
-    // eslint-disable-next-line no-console
     console.info(
       `[web-vital] ${metric.name} = ${Math.round(metric.value)} (${metric.label})`,
     );

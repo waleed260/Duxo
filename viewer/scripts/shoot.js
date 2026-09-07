@@ -4,7 +4,7 @@
  * Captures a served page at four viewports plus the open mobile menu, so
  * layout work can be checked against measurements instead of by eye.
  *
- *   node _shot.js [url] [outDir]
+ *   npm run shoot -- [url] [outDir]
  *
  * Defaults to the dev server and ./shots, which is gitignored — earlier
  * revisions hard-coded an absolute scratch path that only existed for one
@@ -15,7 +15,7 @@ const fs = require('fs');
 const { chromium } = require('playwright');
 
 const URL = process.argv[2] || 'http://127.0.0.1:3000/';
-const OUT = path.resolve(process.argv[3] || path.join(__dirname, 'shots'));
+const OUT = path.resolve(process.argv[3] || path.join(__dirname, '..', 'shots'));
 
 const SHOTS = [
   ['desktop', 1487, 1058],
